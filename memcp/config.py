@@ -16,14 +16,12 @@ class Config(BaseSettings):
     mem0_api_base: str
     mem0_api_key: str
 
-    shim_auth_token: str | None = None
+    memcp_auth_tokens: str | None = Field(None, alias="MEMCP_AUTH_TOKENS")
 
-    @field_validator("shim_auth_token", mode="before")
+    @field_validator("memcp_auth_tokens", mode="before")
     @classmethod
-    def _empty_token_is_none(cls, v: str | None) -> str | None:
+    def _empty_tokens_is_none(cls, v: str | None) -> str | None:
         return v if v else None
-
-    mem0_user_id: str = "default_user"
 
     host: str = Field("0.0.0.0", alias="MEMCP_HOST")
     port: int = Field(8080, alias="MEMCP_PORT")

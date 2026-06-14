@@ -61,6 +61,7 @@ async def test_universal_tools_registered(mcp_with_tools):
         "delete_memory",
         "delete_all_memories",
         "memory_status",
+        "export_memories",
     }
     assert universal <= mcp.tool_names
 
@@ -530,3 +531,155 @@ async def test_backend_error_on_entities(mcp_with_tools):
     result = await mcp.call("memory_entities")
     assert result["error"]["code"] == "backend_error"
     assert result["error"]["retry"] is True
+
+
+# ---------------------------------------------------------------------------
+# Multi-tenant isolation (tool layer)
+# ---------------------------------------------------------------------------
+
+
+async def test_tenant_isolation_through_tools(mcp_with_tools):
+    """Two different tenants see completely separate memory pools via tools."""
+    from memcp.auth import reset_tenant, set_tenant
+
+    mcp, _ = mcp_with_tools
+
+    # Alice adds a memory
+    tok = set_tenant("alice")
+    await mcp.call("add_memory", content="alice secret fact")
+    reset_tenant(tok)
+
+    # Bob adds a memory
+    tok = set_tenant("bob")
+    await mcp.call("add_memory", content="bob secret fact")
+    reset_tenant(tok)
+
+    # Alice searches — should only see her own
+    tok = set_tenant("alice")
+    result = await mcp.call("search_memory", query="secret fact")
+    contents = [r["content"] for r in result["results"]]
+    assert "alice secret fact" in contents
+    assert "bob secret fact" not in contents
+    reset_tenant(tok)
+
+    # Bob searches — should only see his own
+    tok = set_tenant("bob")
+    result = await mcp.call("search_memory", query="secret fact")
+    contents = [r["content"] for r in result["results"]]
+    assert "bob secret fact" in contents
+    assert "alice secret fact" not in contents
+    reset_tenant(tok)
+
+
+async def test_tenant_isolation_list(mcp_with_tools):
+    """list_memories respects tenant boundaries."""
+    from memcp.auth import reset_tenant, set_tenant
+
+    mcp, _ = mcp_with_tools
+
+    tok = set_tenant("user_x")
+    await mcp.call("add_memory", content="x data")
+    reset_tenant(tok)
+
+    tok = set_tenant("user_y")
+    await mcp.call("add_memory", content="y data")
+    listing = await mcp.call("list_memories")
+    contents = [m["content"] for m in listing["memories"]]
+    assert "y data" in contents
+    assert "x data" not in contents
+    reset_tenant(tok)
+
+
+async def test_tenant_isolation_delete(mcp_with_tools):
+    """One tenant cannot delete another's memories."""
+    from memcp.auth import reset_tenant, set_tenant
+
+    mcp, _ = mcp_with_tools
+
+    tok = set_tenant("owner")
+    added = await mcp.call("add_memory", content="owned data")
+    memory_id = added["results"][0]["id"]
+    reset_tenant(tok)
+
+    tok = set_tenant("attacker")
+    result = await mcp.call("delete_memory", memory_id=memory_id)
+    assert result["error"]["code"] == "not_found"
+    reset_tenant(tok)
+
+    # Verify still exists for owner
+    tok = set_tenant("owner")
+    result = await mcp.call("get_memory", memory_id=memory_id)
+    assert result["content"] == "owned data"
+    reset_tenant(tok)
+
+
+# ---------------------------------------------------------------------------
+# Input validation bounds
+# ---------------------------------------------------------------------------
+
+
+async def test_empty_content_rejected(mcp_with_tools):
+    mcp, _ = mcp_with_tools
+    result = await mcp.call("add_memory", content="")
+    assert result["error"]["code"] == "validation_error"
+
+
+async def test_empty_query_rejected(mcp_with_tools):
+    mcp, _ = mcp_with_tools
+    result = await mcp.call("search_memory", query="")
+    assert result["error"]["code"] == "validation_error"
+
+
+async def test_zero_limit_rejected(mcp_with_tools):
+    mcp, _ = mcp_with_tools
+    result = await mcp.call("search_memory", query="test", limit=0)
+    assert result["error"]["code"] == "validation_error"
+
+
+async def test_negative_limit_rejected(mcp_with_tools):
+    mcp, _ = mcp_with_tools
+    result = await mcp.call("list_memories", limit=-1)
+    assert result["error"]["code"] == "validation_error"
+
+
+# ---------------------------------------------------------------------------
+# export_memories
+# ---------------------------------------------------------------------------
+
+
+async def test_export_memories_returns_all(mcp_with_tools):
+    mcp, _ = mcp_with_tools
+    await mcp.call("add_memory", content="export one")
+    await mcp.call("add_memory", content="export two")
+    await mcp.call("add_memory", content="export three")
+    result = await mcp.call("export_memories")
+    assert result["count"] == 3
+    assert len(result["memories"]) == 3
+    contents = {m["content"] for m in result["memories"]}
+    assert contents == {"export one", "export two", "export three"}
+
+
+async def test_export_memories_empty(mcp_with_tools):
+    mcp, _ = mcp_with_tools
+    result = await mcp.call("export_memories")
+    assert result["count"] == 0
+    assert result["memories"] == []
+
+
+async def test_export_memories_tenant_isolation(mcp_with_tools):
+    """Export only returns the current tenant's memories."""
+    from memcp.auth import reset_tenant, set_tenant
+
+    mcp, _ = mcp_with_tools
+
+    tok = set_tenant("exporter")
+    await mcp.call("add_memory", content="my data")
+    reset_tenant(tok)
+
+    tok = set_tenant("other_user")
+    await mcp.call("add_memory", content="their data")
+    result = await mcp.call("export_memories")
+    contents = {m["content"] for m in result["memories"]}
+    assert "their data" in contents
+    assert "my data" not in contents
+    reset_tenant(tok)

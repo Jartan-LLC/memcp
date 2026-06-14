@@ -47,10 +47,14 @@ class MemoryBackend(ABC):
     ) -> list[Memory]: ...
 
     @abstractmethod
-    async def delete(self, user_id: str, memory_id: str) -> bool: ...
+    async def delete(self, user_id: str, memory_id: str) -> bool:
+        """Raises MemoryAPIError(404) if not found or not owned by user_id."""
+        ...
 
     @abstractmethod
-    async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None: ...
+    async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
+        """Returns count of deleted memories, or None if backend doesn't report counts."""
+        ...
 
     @abstractmethod
     async def health(self) -> HealthStatus: ...
@@ -64,6 +68,7 @@ class MemoryBackend(ABC):
     # --- optional (declared in capabilities()) ---
 
     async def get(self, user_id: str, memory_id: str) -> Memory | None:
+        """Returns None if not found or not owned by user_id."""
         raise NotImplementedError
 
     async def update(
@@ -74,6 +79,7 @@ class MemoryBackend(ABC):
         *,
         metadata: dict[str, Any] | None = None,
     ) -> Memory:
+        """Raises MemoryAPIError(404) if not found or not owned by user_id."""
         raise NotImplementedError
 
     async def list_memories(

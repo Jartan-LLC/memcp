@@ -49,11 +49,12 @@ class PlainFormatter(logging.Formatter):
 
 
 class TenantContextFilter(logging.Filter):
-    """Attach tenant user_id to every log record. Defaults to '-'."""
+    """Attach tenant user_id from contextvar to every log record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if not hasattr(record, "user_id"):
-            record.user_id = "-"  # type: ignore[attr-defined]
+        from memcp.auth import get_tenant
+
+        record.user_id = get_tenant()  # type: ignore[attr-defined]
         return True
 
 

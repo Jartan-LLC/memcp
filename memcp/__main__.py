@@ -23,8 +23,8 @@ def main() -> None:
         raise SystemExit(1) from None
     setup_logging(level=config.log_level, fmt=config.log_format)
 
-    if not config.shim_auth_token:
-        logger.warning("SHIM_AUTH_TOKEN is unset — the MCP endpoint is UNAUTHENTICATED.")
+    if not config.memcp_auth_tokens:
+        logger.warning("MEMCP_AUTH_TOKENS is unset — the MCP endpoint is UNAUTHENTICATED.")
 
     app, _backend = create_app(config)
     uvicorn.run(app, host=config.host, port=config.port, log_config=None)

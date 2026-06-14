@@ -13,6 +13,12 @@ from typing import Any
 _MEMORY_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
 _NESTED_FILTER_KEYS = frozenset({"AND", "OR", "NOT", "and", "or", "not"})
 
+MAX_CONTENT_LENGTH = 100_000
+MAX_SCOPE_KEYS = 10
+MAX_SCOPE_KEY_LENGTH = 64
+MAX_SCOPE_VALUE_LENGTH = 256
+MAX_QUERY_LENGTH = 10_000
+
 
 def validate_memory_id(memory_id: str) -> str:
     if not _MEMORY_ID_RE.match(memory_id):
@@ -21,6 +27,25 @@ def validate_memory_id(memory_id: str) -> str:
             "underscores (max 128 chars)."
         )
     return memory_id
+
+
+def validate_content(content: str) -> None:
+    if not content:
+        raise ValueError("content must not be empty")
+    if len(content) > MAX_CONTENT_LENGTH:
+        raise ValueError(f"content exceeds maximum length of {MAX_CONTENT_LENGTH} chars")
+
+
+def validate_query(query: str) -> None:
+    if not query:
+        raise ValueError("query must not be empty")
+    if len(query) > MAX_QUERY_LENGTH:
+        raise ValueError(f"query exceeds maximum length of {MAX_QUERY_LENGTH} chars")
+
+
+def validate_limit(limit: int) -> None:
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
 
 
 def reject_nested_filters(d: dict[str, Any]) -> None:

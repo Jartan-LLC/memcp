@@ -31,8 +31,7 @@ pip install -e ".[dev]"
 |---|---|---|
 | `MEM0_API_BASE` | Yes | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | Yes | API key for the mem0 server |
-| `SHIM_AUTH_TOKEN` | No | Bearer token clients must present (unset = open) |
-| `MEM0_USER_ID` | No | Fixed user ID for all calls (default: `default_user`) |
+| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob` (unset = open) |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
 | `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
@@ -53,7 +52,7 @@ python -m memcp
       "type": "streamable-http",
       "url": "https://your-host:8080/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_SHIM_AUTH_TOKEN"
+        "Authorization": "Bearer YOUR_TOKEN"
       }
     }
   }
@@ -71,6 +70,7 @@ python -m memcp
 | `delete_memory` | Delete a single memory by ID |
 | `delete_all_memories` | Delete all memories within a scope |
 | `memory_status` | Server and backend information |
+| `export_memories` | Export all memories for backup/portability |
 
 ### Optional (backend-dependent)
 

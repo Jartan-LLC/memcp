@@ -12,7 +12,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
-from memcp.auth import BearerGate
+from memcp.auth import BearerGate, StaticResolver
 from memcp.backend import MemoryBackend
 from memcp.backend.mem0 import Mem0Backend
 from memcp.config import Config
@@ -50,7 +50,11 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
     backend = Mem0Backend(config.mem0_api_base, config.mem0_api_key)
     register_tools(mcp, backend, config)
 
-    mcp_app = BearerGate(mcp.streamable_http_app(), config.shim_auth_token)
+    resolver = None
+    if config.memcp_auth_tokens:
+        resolver = StaticResolver.from_env(config.memcp_auth_tokens)
+
+    mcp_app = BearerGate(mcp.streamable_http_app(), resolver)
 
     async def health(request: Request) -> JSONResponse:
         status = await backend.health()
