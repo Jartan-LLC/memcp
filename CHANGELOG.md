@@ -23,9 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structured JSON/plain logging with tenant context
 - Log injection protection in plain formatter
 - Dockerfile + docker-compose for deployment
-- CI pipeline (ruff, pyright, pytest)
+- CI pipeline (ruff, pyright, pytest, Docker build + health check)
 - PyPI + Docker image publish workflows
 - 134 tests (conformance, tool layer, auth, mock adapter, tenant isolation, integration)
+- Docker build verification in CI (container starts, `/health` responds)
 
 ### Changed
 - Replaced single `SHIM_AUTH_TOKEN` + `MEM0_USER_ID` with `MEMCP_AUTH_TOKENS`

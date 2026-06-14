@@ -8,6 +8,7 @@ Backend-agnostic, multi-tenant MCP memory server. Python, FastMCP, deployed behi
 - Read README.md and relevant docs before modifying unfamiliar code
 - Run Verify commands before declaring work done
 - Update docs and skills alongside code changes
+- Update CHANGELOG.md when adding features, fixing bugs, or making breaking changes
 - Write plans to `.claude/workspace/` in the project root for non-trivial changes
 
 ### Anti-patterns
