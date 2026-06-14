@@ -1,5 +1,9 @@
 # memcp
 
+[![PyPI](https://img.shields.io/pypi/v/memcp-server)](https://pypi.org/project/memcp-server/)
+[![CI](https://github.com/Jartan-LLC/memcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Jartan-LLC/memcp/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+
 Backend-agnostic, multi-tenant MCP memory server. AI clients connect and get persistent long-term memory over streamable HTTP.
 
 Currently wraps [mem0](https://github.com/mem0ai/mem0) as the first backend. Designed for backend agnosticism — additional backends (Cognee, etc.) planned.
@@ -17,8 +21,15 @@ Currently wraps [mem0](https://github.com/mem0ai/mem0) as the first backend. Des
 ### 1. Install and run
 
 ```bash
-git clone https://github.com/Jartan-LLC/mem0-mcp.git
-cd mem0-mcp
+pip install memcp-server
+MEMCP_BACKEND=in_memory python -m memcp
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/Jartan-LLC/memcp.git
+cd memcp
 pip install -e ".[dev]"
 MEMCP_BACKEND=in_memory python -m memcp
 ```

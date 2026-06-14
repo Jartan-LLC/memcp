@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "memcp"
+name = "memcp-server"
 version = "0.1.0"
 description = "Backend-agnostic, multi-tenant MCP memory server"
 readme = "README.md"
@@ -30,6 +30,9 @@ dev = [
     "ruff>=0.15.16",
     "pyright>=1.1",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["memcp"]
 
 [tool.ruff]
 target-version = "py312"
