@@ -13,12 +13,14 @@ from memcp.auth import get_tenant
 from memcp.backend.base import MemoryBackend
 from memcp.config import Config
 from memcp.types import (
+    MAX_EXPORT,
     MAX_SCOPE_KEY_LENGTH,
     MAX_SCOPE_KEYS,
     MAX_SCOPE_VALUE_LENGTH,
     NOT_FOUND_MSG,
     MemoryAPIError,
     canonical_error,
+    reject_nested_filters,
     validate_content,
     validate_limit,
     validate_memory_id,
@@ -183,35 +185,36 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             "scope_keys": backend.scope_keys(),
         }
 
-    MAX_EXPORT = 10_000
-
-    @mcp.tool(
-        annotations=READ_ONLY,
-        description=(
-            "Export all memories for backup or portability. Returns a JSON array "
-            "of all memories. For browsing or searching, use list_memories or "
-            "search_memory instead."
-        ),
-    )
-    async def export_memories() -> Any:
-        user_id = get_tenant()
-        try:
-            result = await backend.list_memories(user_id, limit=MAX_EXPORT)
-        except MemoryAPIError as e:
-            return _backend_error(e)
-        if len(result.memories) >= MAX_EXPORT:
-            return canonical_error(
-                "validation_error",
-                f"Too many memories to export (>{MAX_EXPORT}). Contact admin for bulk export.",
-            )
-        return {
-            "memories": [_serialize_memory(m) for m in result.memories],
-            "count": len(result.memories),
-        }
-
     # --- optional tools (registered if backend declares capability) ---
 
     caps = backend.capabilities()
+
+    if "list_memories" in caps:
+
+        @mcp.tool(
+            annotations=READ_ONLY,
+            description=(
+                "Export all memories for backup or portability. Returns a JSON array "
+                "of all memories. For browsing or searching, use list_memories or "
+                "search_memory instead."
+            ),
+        )
+        async def export_memories() -> Any:
+            user_id = get_tenant()
+            try:
+                result = await backend.list_memories(user_id, limit=MAX_EXPORT + 1)
+            except MemoryAPIError as e:
+                return _backend_error(e)
+            if len(result.memories) > MAX_EXPORT:
+                return canonical_error(
+                    "validation_error",
+                    f"Too many memories to export (limit {MAX_EXPORT})."
+                    " Contact admin for bulk export.",
+                )
+            return {
+                "memories": [_serialize_memory(m) for m in result.memories],
+                "count": len(result.memories),
+            }
 
     if "get_memory" in caps:
 
@@ -340,6 +343,10 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             scope: dict[str, Any] | None = None,
             limit: int = 100,
         ) -> Any:
+            try:
+                validate_limit(limit)
+            except ValueError as e:
+                return canonical_error("validation_error", str(e))
             user_id = get_tenant()
             try:
                 scope = _validate_scope(scope, allowed_scope_keys)
@@ -374,8 +381,7 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
     if "user_id" in scope:
         logger.warning("Stripped user_id from scope dict; remaining keys: %s", list(scope.keys()))
         scope = {k: v for k, v in scope.items() if k != "user_id"}
-    from memcp.types import reject_nested_filters
-
+    reject_nested_filters(scope)
     if len(scope) > MAX_SCOPE_KEYS:
         raise _InvalidScope(
             canonical_error("validation_error", f"Scope has too many keys (max {MAX_SCOPE_KEYS})")
@@ -388,6 +394,13 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
                     f"Scope key too long: {k!r} (max {MAX_SCOPE_KEY_LENGTH})",
                 )
             )
+        if v is not None and not isinstance(v, (str, int, float, bool)):
+            raise _InvalidScope(
+                canonical_error(
+                    "validation_error",
+                    f"Scope value for {k!r} must be a string or number, got {type(v).__name__}",
+                )
+            )
         if isinstance(v, str) and len(v) > MAX_SCOPE_VALUE_LENGTH:
             raise _InvalidScope(
                 canonical_error(
@@ -395,7 +408,6 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
                     f"Scope value too long for {k!r} (max {MAX_SCOPE_VALUE_LENGTH})",
                 )
             )
-    reject_nested_filters(scope)
     unknown = set(scope) - allowed_keys
     if unknown:
         raise _InvalidScope(

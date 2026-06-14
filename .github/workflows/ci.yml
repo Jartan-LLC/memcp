@@ -52,8 +52,11 @@ jobs:
             -e MEM0_API_KEY=fake \
             -p 8080:8080 \
             memcp:ci
-          sleep 3
-          STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health || true)
+          for i in $(seq 1 15); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health 2>/dev/null || true)
+            if [ "$STATUS" = "503" ] || [ "$STATUS" = "200" ]; then break; fi
+            sleep 1
+          done
           docker logs memcp-ci
           docker stop memcp-ci
           if [ "$STATUS" = "503" ] || [ "$STATUS" = "200" ]; then

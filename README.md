@@ -70,7 +70,6 @@ python -m memcp
 | `delete_memory` | Delete a single memory by ID |
 | `delete_all_memories` | Delete all memories within a scope |
 | `memory_status` | Server and backend information |
-| `export_memories` | Export all memories for backup/portability |
 
 ### Optional (backend-dependent)
 
@@ -79,6 +78,7 @@ python -m memcp
 | `get_memory` | Fetch a single memory by ID |
 | `update_memory` | Replace a memory's content |
 | `list_memories` | List memories, optionally scoped |
+| `export_memories` | Export all memories for backup/portability |
 | `memory_history` | Change history for a memory |
 | `memory_entities` | Extracted entities and relationships |
 

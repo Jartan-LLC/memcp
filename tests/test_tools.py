@@ -61,7 +61,6 @@ async def test_universal_tools_registered(mcp_with_tools):
         "delete_memory",
         "delete_all_memories",
         "memory_status",
-        "export_memories",
     }
     assert universal <= mcp.tool_names
 
@@ -74,6 +73,7 @@ async def test_optional_tools_registered(mcp_with_tools):
         "list_memories",
         "memory_history",
         "memory_entities",
+        "export_memories",
     }
     assert optional <= mcp.tool_names
 

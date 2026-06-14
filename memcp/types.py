@@ -18,6 +18,8 @@ MAX_SCOPE_KEYS = 10
 MAX_SCOPE_KEY_LENGTH = 64
 MAX_SCOPE_VALUE_LENGTH = 256
 MAX_QUERY_LENGTH = 10_000
+MAX_LIMIT = 1_000
+MAX_EXPORT = 10_000
 
 
 def validate_memory_id(memory_id: str) -> str:
@@ -46,6 +48,8 @@ def validate_query(query: str) -> None:
 def validate_limit(limit: int) -> None:
     if limit < 1:
         raise ValueError("limit must be at least 1")
+    if limit > MAX_LIMIT:
+        raise ValueError(f"limit exceeds maximum of {MAX_LIMIT}")
 
 
 def reject_nested_filters(d: dict[str, Any]) -> None:

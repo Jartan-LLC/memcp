@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-request tenant identity via contextvars
 - 11 MCP tools: add, search, delete, delete_all, status, export, get, update, list, history, entities
 - Scope key validation against backend-declared keys
-- Input validation (content length, query length, limit bounds, scope size)
+- Input validation (content length, query length, limit min/max, scope size/types)
 - Nested boolean filter rejection with canonical error
 - Canonical error objects with retry semantics
 - `/health` endpoint (pings backend, returns 200/503)
@@ -25,8 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dockerfile + docker-compose for deployment
 - CI pipeline (ruff, pyright, pytest, Docker build + health check)
 - PyPI + Docker image publish workflows
-- 134 tests (conformance, tool layer, auth, mock adapter, tenant isolation, integration)
-- Docker build verification in CI (container starts, `/health` responds)
+- Test suite: conformance, tool layer, auth, mock adapter, tenant isolation, integration
 
 ### Changed
 - Replaced single `SHIM_AUTH_TOKEN` + `MEM0_USER_ID` with `MEMCP_AUTH_TOKENS`
