@@ -12,47 +12,35 @@ Currently wraps [mem0](https://github.com/mem0ai/mem0) as the first backend. Des
 - Stateless HTTP transport — safe behind reverse proxies
 - In-memory backend for dev/testing (no external deps)
 
-## Setup
+## Getting Started
 
-### Requirements
-
-- Python 3.12+
-- A running [mem0](https://github.com/mem0ai/mem0) self-hosted instance (not needed for `MEMCP_BACKEND=in_memory`)
-
-### Install
+### 1. Install and run
 
 ```bash
+git clone https://github.com/Jartan-LLC/mem0-mcp.git
+cd mem0-mcp
 pip install -e ".[dev]"
-```
-
-### Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `MEMCP_BACKEND` | No | Backend: `mem0` (default) or `in_memory` |
-| `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
-| `MEM0_API_KEY` | mem0 | API key for the mem0 server |
-| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob` (unset or empty = unauthenticated) |
-| `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
-| `MEMCP_PORT` | No | Bind port (default: `8080`) |
-| `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
-| `MEMCP_LOG_FORMAT` | No | Log format: `json` or `plain` (default: `json`) |
-
-### Run
-
-```bash
-python -m memcp
-```
-
-### Quick start without mem0
-
-```bash
 MEMCP_BACKEND=in_memory python -m memcp
 ```
 
-No external dependencies — memories are stored in-process (lost on restart). Useful for testing and development.
+The server starts on `http://localhost:8080`. No external dependencies needed — the in-memory backend stores everything in-process (lost on restart).
 
-### Connect from Claude Code
+### 2. Connect from Claude Code
+
+Add to your MCP settings (Claude Code → Settings → MCP Servers):
+
+```json
+{
+  "mcpServers": {
+    "memcp": {
+      "type": "streamable-http",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+For authenticated deployments, add the `headers` field:
 
 ```json
 {
@@ -67,6 +55,36 @@ No external dependencies — memories are stored in-process (lost on restart). U
   }
 }
 ```
+
+### 3. Try it
+
+Ask Claude to remember something:
+> "Remember that I prefer Python 3.12 and use ruff for linting."
+
+In a new conversation, ask:
+> "What linter do I use?"
+
+Claude searches memory automatically and uses the stored context.
+
+## Configuration
+
+### Requirements
+
+- Python 3.12+
+- A running [mem0](https://github.com/mem0ai/mem0) self-hosted instance (not needed for `MEMCP_BACKEND=in_memory`)
+
+### Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `MEMCP_BACKEND` | No | Backend: `mem0` (default) or `in_memory` |
+| `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
+| `MEM0_API_KEY` | mem0 | API key for the mem0 server |
+| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob` (unset or empty = unauthenticated) |
+| `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
+| `MEMCP_PORT` | No | Bind port (default: `8080`) |
+| `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
+| `MEMCP_LOG_FORMAT` | No | Log format: `json` or `plain` (default: `json`) |
 
 ## MCP Tools
 
