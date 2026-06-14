@@ -70,7 +70,26 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
     mcp_starlette = mcp.streamable_http_app()
     session_manager = mcp.session_manager
 
-    mcp_app = BearerGate(mcp_starlette, resolver)
+    # Ensure Accept header includes what FastMCP requires — some MCP clients
+    # (e.g. Claude Code) may not send it, causing 406 (anthropics/claude-code#45368).
+    # Only applies to the MCP endpoint; other routes pass through unchanged.
+    _REQUIRED_ACCEPT = b"text/event-stream, application/json"
+
+    async def _ensure_accept(scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http" and scope.get("path", "").startswith("/mcp"):
+            headers = list(scope.get("headers") or [])
+            accept_parts = {
+                p.strip().split(b";")[0]
+                for v in (v for k, v in headers if k == b"accept")
+                for p in v.split(b",")
+            }
+            if b"text/event-stream" not in accept_parts:
+                headers = [(k, v) for k, v in headers if k != b"accept"]
+                headers.append((b"accept", _REQUIRED_ACCEPT))
+                scope = {**scope, "headers": headers}
+        await mcp_starlette(scope, receive, send)
+
+    mcp_app = BearerGate(_ensure_accept, resolver)
 
     async def health(request: Request) -> JSONResponse:
         status = await backend.health()
