@@ -48,8 +48,3 @@ logs/
 # Council session artifacts
 council-transcript-*
 council-report-*
-council_meetings/
-
-
-# Local-only skills
-.claude/skills/llm-council/
