@@ -30,18 +30,26 @@ jobs:
       id-token: write
       actions: read
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
-          token: ${{ secrets.PAT }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1.0.144
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ steps.app-token.outputs.token }}
 
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
