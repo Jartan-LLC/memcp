@@ -27,7 +27,7 @@ class FakeMCP:
     def __init__(self) -> None:
         self._tools: dict[str, Any] = {}
 
-    def tool(self, description: str = "", annotations: dict | None = None):
+    def tool(self, **kwargs: Any):
         def decorator(fn):
             self._tools[fn.__name__] = fn
             return fn
@@ -932,6 +932,44 @@ async def test_import_memories_backend_error_per_entry(mcp_with_tools):
     assert len(result["errors"]) == 1
     assert result["errors"][0]["index"] == 1
     backend.add = original_add
+
+
+async def test_import_memories_overwrite_update_error(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="existing", infer=False)
+    original = backend.update
+
+    async def fail_update(*args, **kwargs):
+        raise MemoryAPIError(503, "update failed")
+
+    backend.update = fail_update
+    result = await mcp.call(
+        "import_memories",
+        memories=[{"content": "existing"}],
+        on_conflict="overwrite",
+    )
+    assert result["imported"] == 0
+    assert len(result["errors"]) == 1
+    backend.update = original
+
+
+async def test_import_memories_overwrite_requires_capability(config):
+    """overwrite rejected when backend lacks update_memory capability."""
+    from memcp.backend.in_memory import InMemoryBackend
+
+    class NoUpdateBackend(InMemoryBackend):
+        def capabilities(self):
+            return super().capabilities() - {"update_memory"}
+
+    backend = NoUpdateBackend()
+    mcp = FakeMCP()
+    register_tools(mcp, backend, config)
+    result = await mcp.call(
+        "import_memories",
+        memories=[{"content": "test"}],
+        on_conflict="overwrite",
+    )
+    assert result["error"]["code"] == "not_supported"
 
 
 async def test_import_memories_scope_injection_stripped(mcp_with_tools):

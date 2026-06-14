@@ -55,7 +55,7 @@ def _log_tool_call(fn: Any) -> Any:
             return result
         except Exception:
             duration_ms = (time.monotonic() - start) * 1000
-            logger.warning(
+            logger.error(
                 "tool=%s status=exception duration_ms=%.1f",
                 fn.__name__,
                 duration_ms,
@@ -251,7 +251,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             description=(
                 "Batch-import from JSON array. Each entry needs 'content'; "
                 "optional 'scope'/'metadata'. Stored verbatim (no extraction). "
-                "Deduped by exact content match. "
+                "Deduped by exact content match (scope-independent). "
                 "on_conflict: skip (default), overwrite, duplicate."
             ),
         )
@@ -279,7 +279,8 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
 
             user_id = get_tenant()
 
-            # Build dedup index from existing memories
+            # Build dedup index from existing memories (capped at MAX_EXPORT;
+            # users with >10k memories get best-effort dedup)
             existing: dict[str, str] = {}
             if on_conflict != "duplicate":
                 try:
@@ -294,8 +295,8 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
 
             for i, entry in enumerate(memories):
                 content = entry.get("content")
-                if not content or not isinstance(content, str):
-                    errors.append({"index": i, "error": "missing or empty content"})
+                if not isinstance(content, str):
+                    errors.append({"index": i, "error": "missing or invalid content"})
                     continue
                 try:
                     validate_content(content)
@@ -322,7 +323,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                         await backend.update(user_id, dup_id, content, metadata=metadata)
                         imported.append({"id": dup_id, "index": i, "action": "updated"})
                     except MemoryAPIError as e:
-                        errors.append({"index": i, "error": f"backend error ({e.status})"})
+                        errors.append({"index": i, "error": str(e)})
                     continue
 
                 try:
@@ -335,7 +336,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                             imported.append({"id": r.id, "index": i, "action": "created"})
                             existing[content] = r.id
                 except MemoryAPIError as e:
-                    errors.append({"index": i, "error": f"backend error ({e.status})"})
+                    errors.append({"index": i, "error": str(e)})
 
             return {
                 "imported": len(imported),

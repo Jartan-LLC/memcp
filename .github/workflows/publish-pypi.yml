@@ -4,14 +4,12 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   id-token: write
 
 jobs:
   publish:
-    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     environment: pypi
     steps:

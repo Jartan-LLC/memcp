@@ -100,5 +100,7 @@ The public release. Protocol stabilization and semver guarantee.
 | `messages` param on add_memory | Unlikely | Multi-turn input is mem0-specific; breaks backend agnosticism |
 | In-memory backend vector search | v0.3+ | Lightweight semantic search (e.g. sentence-transformers) to replace keyword matching |
 | Idempotency key on add_memory | v0.3+ | Prevent duplicate storage from retry loops |
+| Scope-aware import dedup | v0.2+ | Currently content-only; same content in different scopes treated as duplicate |
+| Strip backend error details from MCP responses | v0.3+ | Currently raw backend messages exposed; sanitize to status code + generic message |
 | Nested boolean filter support | Never unless mem0 fixes upstream | Rejected by design (502s) |
 | Server-side deduplication | Backend concern | mem0 does it, others may not |

@@ -1,4 +1,6 @@
-FROM python:3.12-slim AS build
+ARG PYTHON_VERSION=3.12
+
+FROM python:${PYTHON_VERSION}-slim AS build
 
 WORKDIR /app
 
@@ -7,13 +9,13 @@ COPY memcp/ memcp/
 
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
 
-FROM python:3.12-slim
+FROM python:${PYTHON_VERSION}-slim
 
 WORKDIR /app
 
 RUN adduser --disabled-password --gecos "" memcp
 
-COPY --from=build /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=build /usr/local/lib /usr/local/lib
 COPY --from=build /usr/local/bin/memcp /usr/local/bin/memcp
 
 USER memcp
