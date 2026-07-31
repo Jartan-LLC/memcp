@@ -251,8 +251,8 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             description=(
                 "Batch-import from JSON array. Each entry needs 'content'; "
                 "optional 'scope'/'metadata'. Stored verbatim (no extraction). "
-                "Deduped by exact content match (scope-independent). "
-                "on_conflict: skip (default), overwrite, duplicate."
+                "Deduped by content+scope (same content in different scopes "
+                "is distinct). on_conflict: skip (default), overwrite, duplicate."
             ),
         )
         async def import_memories(
@@ -280,12 +280,14 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             user_id = get_tenant()
 
             # Build dedup index from existing memories (capped at MAX_EXPORT;
-            # users with >10k memories get best-effort dedup)
-            existing: dict[str, str] = {}
+            # users with >10k memories get best-effort dedup).
+            # Key is (content, frozen_scope) so identical content under
+            # different scopes is treated as distinct.
+            existing: dict[tuple[str, frozenset[tuple[str, Any]]], str] = {}
             if on_conflict != "duplicate":
                 try:
                     result = await backend.list_memories(user_id, limit=MAX_EXPORT + 1)
-                    existing = {m.content: m.id for m in result.memories}
+                    existing = {_dedup_key(m.content, m.scope): m.id for m in result.memories}
                 except MemoryAPIError as e:
                     return _backend_error(e)
 
@@ -312,7 +314,8 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                         errors.append({"index": i, "error": e.error["error"]["message"]})
                         continue
                 metadata = entry.get("metadata")
-                dup_id = existing.get(content)
+                key = _dedup_key(content, scope)
+                dup_id = existing.get(key)
 
                 if dup_id and on_conflict == "skip":
                     skipped.append({"index": i, "existing_id": dup_id})
@@ -334,7 +337,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                         items = result if isinstance(result, list) else [result]
                         for r in items:
                             imported.append({"id": r.id, "index": i, "action": "created"})
-                            existing[content] = r.id
+                            existing[key] = r.id
                     else:
                         errors.append({"index": i, "error": "stored nothing"})
                 except MemoryAPIError as e:
@@ -500,6 +503,14 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _dedup_key(
+    content: str, scope: dict[str, Any] | None
+) -> tuple[str, frozenset[tuple[str, Any]]]:
+    """Build a hashable dedup key from content + scope."""
+    frozen = frozenset(scope.items()) if scope else frozenset()
+    return (content, frozen)
 
 
 class _ScopeError(Exception):
