@@ -13,6 +13,87 @@ Aspects compared per memory: `content`, `scope`, `metadata`, `memory_id`, `creat
 
 ## Pairs
 
+### `cognee` → `cognee`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- The backup-and-restore case. Memories, scopes and metadata survive; the graph is rebuilt on the target by re-running extraction, so its node ids differ from the source's and its shape depends on the LLM that ran, not on the one that built the original.
+
+### `cognee` → `in_memory`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- The knowledge graph does not migrate. Entities and relationships are derived by cognee from the memories rather than stored beside them, and export_memories carries memories only — so the graph is rebuilt from scratch on the target if the target builds one, and simply does not exist if it does not.
+- in_memory does not declare memory_entities, so after this migration the graph is not merely stale — the tool is gone from the surface. Retrieval drops to word overlap, and nothing survives a restart.
+
+### `cognee` → `mem0`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- The knowledge graph does not migrate. Entities and relationships are derived by cognee from the memories rather than stored beside them, and export_memories carries memories only — so the graph is rebuilt from scratch on the target if the target builds one, and simply does not exist if it does not.
+- mem0 declares memory_entities, so memory_entities keeps answering — but it answers from mem0's own extraction over the imported memories, which is a different graph with different nodes, not cognee's graph moved across.
+- mem0 stores a content hash and may deduplicate server-side. Import writes with infer=false, so nothing is re-extracted, but a target that already holds the same content in the same scope can collapse the write.
+
+### `cognee` → `sqlite`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- The knowledge graph does not migrate. Entities and relationships are derived by cognee from the memories rather than stored beside them, and export_memories carries memories only — so the graph is rebuilt from scratch on the target if the target builds one, and simply does not exist if it does not.
+- sqlite does not declare memory_entities either, so the eleven-tool keyless surface is what an agent sees afterwards. This is the downgrade that keeps the memories and the durability and gives up the graph and semantic ranking.
+
+### `in_memory` → `cognee`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- Importing into cognee runs its extraction pipeline over every memory, so the target ends up with a graph the source never had — one LLM call per memory, at whatever that endpoint costs.
+- cognee deduplicates by content hash within a dataset. memcp prefixes each uploaded file with the memory's own id, so identical content written into two different scopes stays two memories rather than collapsing into one.
+- Ranking changes from word overlap to embedding similarity, so a query that found a memory by sharing its words may now find it by meaning, or miss it.
+
 ### `in_memory` → `in_memory`
 
 | Does not survive | Why |
@@ -54,6 +135,23 @@ Notes, not asserted:
 
 - Both backends rank through memcp.backend.keyword, so this pair is a durability change rather than a retrieval change: the same query returns the same order.
 
+### `mem0` → `cognee`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- Importing into cognee runs its extraction pipeline over every memory, so the target ends up with a graph the source never had — one LLM call per memory, at whatever that endpoint costs.
+- cognee deduplicates by content hash within a dataset. memcp prefixes each uploaded file with the memory's own id, so identical content written into two different scopes stays two memories rather than collapsing into one.
+- Both sides retrieve semantically, and both have a graph, but they are not the same graph: mem0's entities come from its own extraction over what it chose to store, cognee's from a fresh pass over the migrated content.
+
 ### `mem0` → `in_memory`
 
 | Does not survive | Why |
@@ -94,6 +192,23 @@ Survives: `content`, `scope`, `metadata`.
 Notes, not asserted:
 
 - sqlite retrieval is keyword matching, not vector similarity — the same scorer in_memory uses. Content and scope survive; result order does not, and a query that matched semantically may not match at all.
+
+### `sqlite` → `cognee`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- Importing into cognee runs its extraction pipeline over every memory, so the target ends up with a graph the source never had — one LLM call per memory, at whatever that endpoint costs.
+- cognee deduplicates by content hash within a dataset. memcp prefixes each uploaded file with the memory's own id, so identical content written into two different scopes stays two memories rather than collapsing into one.
+- This is the upgrade path off the keyless default: same memories, same scopes, and a graph plus semantic retrieval that sqlite has no way to offer. It stops being keyless — cognee needs an LLM endpoint for both extraction and embeddings.
 
 ### `sqlite` → `in_memory`
 

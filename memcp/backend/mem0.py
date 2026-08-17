@@ -87,6 +87,7 @@ def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
 class Mem0Backend(MemoryBackend):
     # mem0 runs content through an LLM on add(infer=True) and may store nothing.
     extracts_facts = True
+    retrieval = "semantic"
 
     """Adapter for self-hosted mem0 REST API."""
 

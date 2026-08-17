@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from memcp.deploy.images import MEM0_SOURCE_PIN, MEM0_SOURCE_REPO, PGVECTOR
+from memcp.deploy.images import COGNEE, MEM0_SOURCE_PIN, MEM0_SOURCE_REPO, PGVECTOR
 from memcp.deploy.model import (
     BindMount,
     Deployment,
@@ -30,7 +30,7 @@ from memcp.deploy.model import (
     VolumeMount,
 )
 
-BACKENDS = ("sqlite", "in_memory", "mem0")
+BACKENDS = ("sqlite", "in_memory", "mem0", "cognee")
 DEFAULT_BACKEND = "sqlite"
 DEFAULT_PROJECT = "memcp"
 DEFAULT_PORT = 8080
@@ -47,6 +47,8 @@ MEM0_ADMIN_KEY_VAR = "MEM0_ADMIN_API_KEY"
 MEM0_JWT_SECRET_VAR = "MEM0_JWT_SECRET"
 POSTGRES_PASSWORD_VAR = "POSTGRES_PASSWORD"
 OPENAI_API_KEY_VAR = "OPENAI_API_KEY"
+COGNEE_TENANT_SECRET_VAR = "COGNEE_TENANT_SECRET"
+COGNEE_LLM_API_KEY_VAR = "COGNEE_LLM_API_KEY"
 
 
 @dataclass(frozen=True)
@@ -373,10 +375,168 @@ def mem0_stack(options: StackOptions) -> Deployment:
     )
 
 
+def _cognee_llm_secret(options: StackOptions) -> RequiredSecret:
+    """Who supplies cognee's model access — the operator, or nobody.
+
+    Cognee needs two models, not one: an LLM to extract the graph and an embedder to
+    make anything retrievable. Both go through the same OpenAI-compatible client and
+    the same key, so a local endpoint replaces both at once and a missing key stops
+    both. Unlike mem0, cognee has no path that stores something useful without them.
+    """
+    if options.llm_base_url:
+        return RequiredSecret(
+            COGNEE_LLM_API_KEY_VAR,
+            minted=True,
+            description=(
+                f"placeholder for the local endpoint at {options.llm_base_url}, which "
+                "does not check it — cognee's client library requires the variable to exist"
+            ),
+        )
+    return RequiredSecret(
+        COGNEE_LLM_API_KEY_VAR,
+        minted=False,
+        description=(
+            "cognee extracts a knowledge graph and embeds every memory through an LLM "
+            "provider. Neither happens without a key, and a memory that is not embedded "
+            "is not findable."
+        ),
+        how_to_obtain=(
+            "Create a key at https://platform.openai.com/api-keys, then export "
+            f"{COGNEE_LLM_API_KEY_VAR}=sk-... — it is a metered account, so this "
+            "deployment costs money per memory written, on both an extraction call and "
+            "an embedding call. To keep the money out of it, point --llm-base-url at a "
+            "local OpenAI-compatible endpoint; how well cognee extracts against a small "
+            "local model is not something this repository has measured. `--backend "
+            "sqlite` needs no model at all, and gives up the graph and semantic search."
+        ),
+    )
+
+
+def cognee_stack(options: StackOptions) -> Deployment:
+    """memcp in front of a cognee server holding an embedded graph, vector and SQL store.
+
+    Cognee ships all three databases inside its own image — Kuzu for the graph, LanceDB
+    for vectors, SQLite for the rest — so this stack is two containers and one volume
+    rather than mem0's three and two. Everything cognee persists lives under
+    /app/.cognee_system and /app/.data_storage on that volume.
+    """
+    cognee_data = VolumeMount(
+        "cognee_data",
+        "/app/.cognee_system",
+        "cognee's graph (Kuzu), vector index (LanceDB) and relational store (SQLite)",
+    )
+    cognee_files = VolumeMount(
+        "cognee_files", "/app/.data_storage", "the raw text of every memory, as cognee stores it"
+    )
+
+    engine = Service(
+        name="cognee",
+        image=COGNEE.reference,
+        env=(
+            # Multi-tenant mode, explicitly. This is memcp's entire tenant boundary on
+            # this backend: memcp derives one cognee account per tenant and cognee is
+            # what keeps them apart. Turned off, cognee serves every request as one
+            # default user and fifteen agents share one memory — so memcp's own
+            # /health probes for it and refuses to come up healthy without it.
+            EnvVar("ENABLE_BACKEND_ACCESS_CONTROL", "true"),
+            EnvVar("REQUIRE_AUTHENTICATION", "true"),
+            EnvVar("LLM_PROVIDER", "custom" if options.llm_base_url else "openai"),
+            EnvVar("LLM_MODEL", "openai/gpt-4o-mini"),
+            EnvVar("LLM_API_KEY", f"${{{COGNEE_LLM_API_KEY_VAR}}}", secret=True),
+            EnvVar("EMBEDDING_PROVIDER", "openai"),
+            EnvVar("EMBEDDING_MODEL", "openai/text-embedding-3-small"),
+            EnvVar("EMBEDDING_API_KEY", f"${{{COGNEE_LLM_API_KEY_VAR}}}", secret=True),
+            EnvVar("EMBEDDING_DIMENSIONS", "1536"),
+            # Both endpoints are named in the plan when set, because they are where
+            # every memory's text is sent (C6 — a plan that hides an egress destination
+            # is the criterion failing).
+            *(
+                (
+                    EnvVar("LLM_ENDPOINT", options.llm_base_url),
+                    EnvVar("EMBEDDING_ENDPOINT", options.llm_base_url),
+                )
+                if options.llm_base_url
+                else ()
+            ),
+            EnvVar("TELEMETRY_DISABLED", "true"),
+            EnvVar("ENV", "prod"),
+        ),
+        volumes=(cognee_data, cognee_files),
+        healthcheck={
+            # Liveness only: /health needs no credential and says the HTTP layer is up.
+            # What proves the credential and the tenant partitioning work is memcp's own
+            # /health, which authenticates as a tenant and checks that an unauthenticated
+            # read is refused.
+            "test": [
+                "CMD",
+                "python",
+                "-c",
+                "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')",
+            ],
+            "interval": "5s",
+            "timeout": "10s",
+            "retries": 60,
+            "start_period": "30s",
+        },
+        description=f"cognee {COGNEE.tag} — the knowledge graph, and the only thing that has one",
+    )
+
+    memcp = _memcp_service(
+        env=(
+            EnvVar("MEMCP_BACKEND", "cognee"),
+            EnvVar("COGNEE_API_BASE", "http://cognee:8000"),
+            EnvVar(
+                COGNEE_TENANT_SECRET_VAR,
+                f"${{{COGNEE_TENANT_SECRET_VAR}}}",
+                secret=True,
+                description="derives every tenant's cognee account",
+            ),
+        ),
+        build_context=options.build_context,
+        build_dockerfile=options.build_dockerfile,
+        port=options.port,
+        bind=options.bind,
+        depends_on=("cognee",),
+    )
+
+    return Deployment(
+        backend="cognee",
+        project_name=options.project,
+        services=[engine, memcp],
+        volumes=[cognee_data, cognee_files],
+        secrets=[
+            MEMCP_TOKEN_SECRET,
+            RequiredSecret(
+                COGNEE_TENANT_SECRET_VAR,
+                minted=True,
+                description=(
+                    "derives one cognee account per memcp tenant. Losing it does not lose "
+                    "the memories, but a different value addresses different accounts, so "
+                    "every tenant would come up empty"
+                ),
+            ),
+            _cognee_llm_secret(options),
+        ],
+        durable=True,
+        notes=[
+            "cognee publishes no host port. The only route to stored memories is memcp's "
+            "bearer gate, and cognee's own accounts are reachable only from inside the "
+            "compose network.",
+            "This is the backend with a real graph: memory_entities returns entities and "
+            "the relationships between them, which is why the keyless stacks do not "
+            "register that tool at all.",
+            "Every add_memory runs cognee's extraction pipeline inside the request, so a "
+            "write is slower here than on any other backend and returns only once the "
+            "memory is findable.",
+        ],
+    )
+
+
 _BUILDERS = {
     "in_memory": in_memory_stack,
     "sqlite": sqlite_stack,
     "mem0": mem0_stack,
+    "cognee": cognee_stack,
 }
 
 

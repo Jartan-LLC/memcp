@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
+from memcp.backend.cognee import DEFAULT_EMAIL_DOMAIN as COGNEE_DEFAULT_EMAIL_DOMAIN
+
 
 def is_loopback(host: str) -> bool:
     """True when binding `host` cannot be reached from another machine.
@@ -29,7 +31,7 @@ class Config(BaseSettings):
 
     model_config = {"env_prefix": "", "populate_by_name": True}
 
-    memcp_backend: Literal["mem0", "in_memory", "sqlite"] = Field(
+    memcp_backend: Literal["mem0", "in_memory", "sqlite", "cognee"] = Field(
         default="mem0", alias="MEMCP_BACKEND"
     )
 
@@ -39,6 +41,16 @@ class Config(BaseSettings):
 
     # sqlite backend config
     memcp_sqlite_path: str = Field(default="memcp.sqlite3", alias="MEMCP_SQLITE_PATH")
+
+    # cognee backend config (required when MEMCP_BACKEND=cognee)
+    cognee_api_base: str | None = None
+    # Derives every tenant's cognee account. Two memcp processes serving the same
+    # cognee server must hold the same value or they address different tenants.
+    cognee_tenant_secret: str | None = None
+    cognee_dataset: str = Field(default="memcp", alias="COGNEE_DATASET")
+    cognee_email_domain: str = Field(
+        default=COGNEE_DEFAULT_EMAIL_DOMAIN, alias="COGNEE_EMAIL_DOMAIN"
+    )
 
     memcp_auth_tokens: str | None = Field(default=None, alias="MEMCP_AUTH_TOKENS")
 
@@ -87,6 +99,15 @@ class Config(BaseSettings):
                 raise ValueError("MEM0_API_BASE is required when MEMCP_BACKEND=mem0")
             if not self.mem0_api_key:
                 raise ValueError("MEM0_API_KEY is required when MEMCP_BACKEND=mem0")
+        if self.memcp_backend == "cognee":
+            if not self.cognee_api_base:
+                raise ValueError("COGNEE_API_BASE is required when MEMCP_BACKEND=cognee")
+            if not self.cognee_tenant_secret:
+                raise ValueError(
+                    "COGNEE_TENANT_SECRET is required when MEMCP_BACKEND=cognee. It "
+                    "derives each tenant's cognee account, so an unset secret would "
+                    "put every tenant in the same one."
+                )
         return self
 
     @model_validator(mode="after")

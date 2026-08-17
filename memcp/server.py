@@ -15,6 +15,7 @@ from starlette.routing import Mount, Route
 
 from memcp.auth import BearerGate, StaticResolver
 from memcp.backend import MemoryBackend
+from memcp.backend.cognee import CogneeBackend
 from memcp.backend.in_memory import InMemoryBackend
 from memcp.backend.mem0 import Mem0Backend
 from memcp.backend.sqlite import SqliteBackend
@@ -50,6 +51,17 @@ def _create_backend(config: Config) -> MemoryBackend:
         if not config.mem0_api_base or not config.mem0_api_key:
             raise ValueError("MEM0_API_BASE and MEM0_API_KEY required for mem0 backend")
         return Mem0Backend(config.mem0_api_base, config.mem0_api_key)
+    if config.memcp_backend == "cognee":
+        if not config.cognee_api_base or not config.cognee_tenant_secret:
+            raise ValueError(
+                "COGNEE_API_BASE and COGNEE_TENANT_SECRET required for cognee backend"
+            )
+        return CogneeBackend(
+            config.cognee_api_base,
+            config.cognee_tenant_secret,
+            dataset=config.cognee_dataset,
+            email_domain=config.cognee_email_domain,
+        )
     raise ValueError(f"Unknown backend: {config.memcp_backend}")
 
 

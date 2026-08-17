@@ -66,8 +66,29 @@ def _mem0_spec() -> BackendSpec:
     return BackendSpec("mem0", factory, unavailable_reason=reason)
 
 
+def _cognee_spec() -> BackendSpec:
+    """A cognee server, if one is configured.
+
+    The tenant secret is part of the address, not just the credential: it derives every
+    tenant login, so a run with a different secret would be talking to different
+    accounts on the same server. It is required rather than defaulted for that reason.
+    """
+    from memcp.backend.cognee import CogneeBackend
+
+    base = os.environ.get("COGNEE_API_BASE")
+    secret = os.environ.get("COGNEE_TENANT_SECRET")
+
+    def factory() -> MemoryBackend:
+        if not base or not secret:  # pragma: no cover - guarded by unavailable_reason
+            raise RuntimeError("COGNEE_API_BASE and COGNEE_TENANT_SECRET are required")
+        return CogneeBackend(base, secret, dataset=os.environ.get("COGNEE_DATASET", "memcp"))
+
+    reason = None if base and secret else "COGNEE_API_BASE and COGNEE_TENANT_SECRET are not set"
+    return BackendSpec("cognee", factory, unavailable_reason=reason)
+
+
 def builtin_specs() -> list[BackendSpec]:
-    return [_in_memory_spec(), _sqlite_spec(), _mem0_spec()]
+    return [_in_memory_spec(), _sqlite_spec(), _mem0_spec(), _cognee_spec()]
 
 
 def extra_specs() -> list[BackendSpec]:

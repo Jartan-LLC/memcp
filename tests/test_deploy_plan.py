@@ -18,7 +18,7 @@ import pytest
 import yaml
 
 from memcp.deploy import compose as compose_yaml
-from memcp.deploy.images import ALL_IMAGES, MEM0_SOURCE_PIN
+from memcp.deploy.images import ALL_IMAGES, COGNEE, MEM0_SOURCE_PIN
 from memcp.deploy.model import SECRET_PLACEHOLDER
 from memcp.deploy.stacks import BACKENDS, StackOptions, build
 
@@ -152,11 +152,15 @@ def test_c6_plan_declares_containers_volumes_ports_and_env():
         assert volume in text
 
 
-def test_c3_a_backend_that_needs_a_key_names_the_variable():
+@pytest.mark.parametrize(
+    ("backend", "variable"),
+    [("mem0", "OPENAI_API_KEY"), ("cognee", "COGNEE_LLM_API_KEY")],
+)
+def test_c3_a_backend_that_needs_a_key_names_the_variable(backend: str, variable: str):
     """C3 — no secret is invented silently."""
-    required = plan("mem0").operator_secrets  # type: ignore[attr-defined]
-    assert [s.name for s in required] == ["OPENAI_API_KEY"]
-    assert "OPENAI_API_KEY" in required[0].how_to_obtain
+    required = plan(backend).operator_secrets  # type: ignore[attr-defined]
+    assert [s.name for s in required] == [variable]
+    assert variable in required[0].how_to_obtain
 
 
 def test_keyless_stacks_require_nothing_from_the_operator():
@@ -170,12 +174,55 @@ def test_keyless_stacks_require_nothing_from_the_operator():
 def test_only_durable_stacks_declare_a_volume():
     assert plan("sqlite").volumes  # type: ignore[attr-defined]
     assert plan("mem0").volumes  # type: ignore[attr-defined]
+    assert plan("cognee").volumes  # type: ignore[attr-defined]
     assert plan("in_memory").volumes == []  # type: ignore[attr-defined]
+
+
+def test_cognee_pin_matches_the_conformance_stack():
+    """One digest for the cognee image, in two places that must not drift.
+
+    ci/cognee proved the adapter against this release; provisioning must stand up the
+    same one, or `memcp up --backend cognee` ships something CI never exercised.
+    """
+    compose = (REPO_ROOT / "ci" / "cognee" / "docker-compose.yml").read_text()
+    assert COGNEE.reference in compose
+
+
+def test_cognee_turns_on_the_isolation_it_depends_on():
+    """memcp's tenant boundary on this backend *is* cognee's per-user access control.
+
+    Provisioned with it off, every memcp tenant would resolve to cognee's one default
+    user and fifteen agents would read each other's memories.
+    """
+    deployment = plan("cognee")
+    engine = next(s for s in deployment.services if s.name == "cognee")  # type: ignore[attr-defined]
+    env = {e.name: e.value for e in engine.env}
+    assert env["ENABLE_BACKEND_ACCESS_CONTROL"] == "true"
+    assert env["REQUIRE_AUTHENTICATION"] == "true"
+
+
+def test_cognee_tenant_secret_is_minted_and_never_shown():
+    deployment = plan("cognee")
+    minted = {s.name for s in deployment.minted_secrets}  # type: ignore[attr-defined]
+    assert "COGNEE_TENANT_SECRET" in minted
+    env = {e.name: e for e in deployment.memcp_service.env}  # type: ignore[attr-defined]
+    assert env["COGNEE_TENANT_SECRET"].secret
+
+
+def test_cognee_plan_names_every_egress_destination():
+    """C6 — a plan that omits where memories are sent is the criterion failing.
+
+    Cognee makes two outbound calls per memory, to an extractor and an embedder, and
+    `--llm-base-url` redirects both. Both have to appear.
+    """
+    text = plan("cognee", llm_base_url="http://localhost:11434/v1").render_plan()  # type: ignore[attr-defined]
+    assert "LLM_ENDPOINT=http://localhost:11434/v1" in text
+    assert "EMBEDDING_ENDPOINT=http://localhost:11434/v1" in text
 
 
 def test_unknown_backend_names_the_ones_that_exist():
     with pytest.raises(ValueError, match="sqlite"):
-        plan("cognee")
+        plan("neo4j")
 
 
 def test_dns_rebinding_protection_is_set_explicitly():
