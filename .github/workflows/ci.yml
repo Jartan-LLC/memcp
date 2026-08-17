@@ -22,10 +22,6 @@ on:
 permissions:
   contents: read
 
-# uv installs everything here, in place of pip. `--system` on every call would
-# say the same thing at every call site, so it is set once: uv targets the
-# interpreter actions/setup-python put on PATH rather than demanding a
-# virtualenv.
 env:
   UV_SYSTEM_PYTHON: 1
 
@@ -42,14 +38,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      # uv's own version is read from ci/requirements.txt, the file that pins
-      # the gate's tools — so Dependabot's "/ci" entry bumps uv too, and the
-      # runner, the devcontainer and the Dockerfile never drift apart. Without
-      # `version-file` this action installs uv `latest`, which is the
-      # unpinned-CI-tool failure JAR-278 closed. setup-uv's cache replaces
-      # setup-python's `cache: pip`: it keys off pyproject.toml and
-      # ci/requirements.txt, and it caches uv's own wheel store, which is what
-      # the install actually reads.
+      # `version-file` is required: without it this action installs uv `latest`,
+      # not the ci/requirements.txt pin.
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version-file: ci/requirements.txt

@@ -2,11 +2,8 @@
 
 echo "Setting up development environment..."
 
-# uv installs every Python dependency below, in place of pip. Its version comes
-# from ci/requirements.txt — the one line CI's setup-uv reads too — so the
-# container, the Dockerfile and the runner never drift apart, and Dependabot's
-# "/ci" entry moves all three at once. Bootstrapped with pip because pip is what
-# the python devcontainer feature ships; nothing else here uses it.
+# Pinned from ci/requirements.txt so the container matches CI, and bootstrapped
+# with pip because that is what the python devcontainer feature ships.
 echo "Installing uv..."
 uv_pin=$(sed -n 's/^\(uv==[^[:space:]]*\).*/\1/p' ci/requirements.txt 2>/dev/null | head -1)
 if [ -n "$uv_pin" ]; then
@@ -15,8 +12,6 @@ else
     echo "Warning: no pinned uv in ci/requirements.txt; Python installs below will fail" >&2
 fi
 
-# --system: the container is the isolation, so packages go to its interpreter
-# rather than a venv. uv refuses a non-venv target without this.
 echo "Installing Python dependencies..."
 while IFS= read -r -d '' req_file; do
     echo "  Installing from $req_file..."
