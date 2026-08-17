@@ -1,7 +1,8 @@
 """In-memory backend adapter — for conformance tests, dev mode, and demos.
 
 Stores memories in plain dicts. No persistence, no extraction, no vector search.
-Search uses substring matching on content as a trivial approximation.
+Search is the keyword scorer in `memcp.backend.keyword`, shared with the sqlite
+backend so the two rank identically.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from memcp.types import (
 )
 
 from .base import MemoryBackend
+from .keyword import score as _score
 
 
 class InMemoryBackend(MemoryBackend):
@@ -79,7 +81,6 @@ class InMemoryBackend(MemoryBackend):
         if scope:
             reject_nested_filters(scope)
         results = []
-        query_lower = query.lower()
         for mid, entry in self._store.items():
             if entry["user_id"] != user_id:
                 continue
@@ -87,14 +88,10 @@ class InMemoryBackend(MemoryBackend):
                 entry_scope = entry.get("scope", {})
                 if not all(entry_scope.get(k) == v for k, v in scope.items()):
                     continue
-            content_lower = entry["content"].lower()
-            # Trivial relevance: count query word matches
-            words = query_lower.split()
-            matches = sum(1 for w in words if w in content_lower)
-            if matches == 0 and query_lower not in content_lower:
+            relevance = _score(query, entry["content"])
+            if relevance is None:
                 continue
-            score = matches / max(len(words), 1)
-            results.append((score, mid, entry))
+            results.append((relevance, mid, entry))
         results.sort(key=lambda x: x[0], reverse=True)
         return [
             Memory(
@@ -137,12 +134,12 @@ class InMemoryBackend(MemoryBackend):
         return HealthStatus(status="healthy", backend="in_memory", latency_ms=0.0)
 
     def capabilities(self) -> set[str]:
+        # No memory_entities: see entities() below.
         return {
             "get_memory",
             "update_memory",
             "list_memories",
             "memory_history",
-            "memory_entities",
         }
 
     def scope_keys(self) -> list[str]:
@@ -248,13 +245,15 @@ class InMemoryBackend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        count = sum(1 for e in self._store.values() if e["user_id"] == user_id)
-        if count == 0:
-            return EntitiesResult(entities=[], relationships=[])
-        return EntitiesResult(
-            entities=[{"id": user_id, "type": "user", "total_memories": count}],
-            relationships=[],
-        )
+        """Not implemented: there is no graph here to return.
+
+        This backend used to answer with one synthetic node carrying a memory count
+        and no relationships. That made `memory_status` advertise the knowledge-graph
+        capability on the default install while the documentation said the graph
+        needs a key — and an agent reads `memory_status`, not the README. Declaring
+        nothing is the honest answer; `memory_entities` is simply not registered.
+        """
+        raise NotImplementedError
 
     async def close(self) -> None:
         self._store.clear()

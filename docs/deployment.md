@@ -35,20 +35,30 @@ Docker image does and what an existing deployment runs.
 
 | `--backend` | Durable | Needs a key | What it is |
 |---|---|---|---|
-| `sqlite` (default) | yes | no | One SQLite file. Word-overlap retrieval, no fact extraction. |
+| `sqlite` (default) | yes | no | One SQLite file. Keyword retrieval, no fact extraction, no knowledge graph. |
 | `in_memory` | **no** | no | Process memory. Everything is lost on restart. A smoke test, not a deployment. |
-| `mem0` | yes | yes, unless you bring a local LLM | mem0's REST server on pgvector. Real embeddings, real extraction. |
+| `mem0` | yes | yes, unless you bring a local LLM | mem0's REST server on pgvector. Real embeddings, real extraction, a real graph. |
 
 ### The keyless path, and what it costs you
 
-`sqlite` needs no account because it does no LLM work. Retrieval is word overlap
-against stored content rather than embedding similarity, and `add_memory` stores what
-you give it instead of extracting facts from it. For a personal or single-project
-brain that is usually enough, and it is the difference between installing memcp and
-having a brain, and installing memcp and then going to get an OpenAI account.
+`sqlite` needs no account because it does no LLM work, and that is exactly what it
+costs you:
 
-For semantic search and a knowledge graph you need a model, and that is what `mem0`
-is for.
+- **Retrieval is keyword matching.** Query and content are split into tokens, and two
+  tokens match when they are equal or share a four-character prefix — so `linter`
+  finds `linting`, and a question phrased in words that do not appear in the memory
+  finds nothing. It is not embedding similarity and it does not know that two
+  different words mean the same thing.
+- **Nothing is extracted.** `add_memory` stores what you give it. The `infer`
+  argument exists on every backend and this one cannot honour it, so it is accepted
+  and ignored; `memory_status` reports `extracts_facts: false`.
+- **There is no knowledge graph.** `memory_entities` is not registered at all rather
+  than answering with an empty one.
+
+For a personal or single-project brain that is usually enough, and it is the
+difference between installing memcp and having memory, and installing memcp and then
+going to get an OpenAI account. For search that matches on meaning, extraction, and a
+graph, you need a model — that is what `mem0` is for.
 
 ### mem0 without a provider bill
 
@@ -65,9 +75,11 @@ requires the variable to exist even when the endpoint ignores it. Without
 `--llm-base-url`, `OPENAI_API_KEY` is yours to supply and `memcp up` refuses to start
 without it rather than standing up a stack that half-works.
 
-We have not published a measured claim about how well a local model performs as
-mem0's extractor. The plumbing is exercised in CI against a deterministic stand-in;
-model quality is not something this repository has measured.
+**This is plumbing, not a quality claim.** CI exercises the path against a
+deterministic stand-in, which proves the stack comes up and the round trip works. How
+well any particular local model performs as mem0's extractor or embedder is something
+this repository has not measured, so do not read this section as saying memcp works
+well with local models — only that it connects to them.
 
 ## What gets created
 

@@ -41,6 +41,7 @@ from memcp.types import (
 )
 
 from .base import MemoryBackend
+from .keyword import score as _score
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS memories (
@@ -64,21 +65,6 @@ CREATE TABLE IF NOT EXISTS history (
 );
 CREATE INDEX IF NOT EXISTS idx_history_memory ON history (memory_id);
 """
-
-
-def _score(query: str, content: str) -> float | None:
-    """Word-overlap relevance. None means no match at all.
-
-    Identical to InMemoryBackend.search's scoring — the two backends are meant to
-    rank the same way, so a migration between them does not reorder results.
-    """
-    query_lower = query.lower()
-    content_lower = content.lower()
-    words = query_lower.split()
-    matches = sum(1 for w in words if w in content_lower)
-    if matches == 0 and query_lower not in content_lower:
-        return None
-    return matches / max(len(words), 1)
 
 
 class SqliteBackend(MemoryBackend):
@@ -239,12 +225,12 @@ class SqliteBackend(MemoryBackend):
         )
 
     def capabilities(self) -> set[str]:
+        # No memory_entities: see entities() below.
         return {
             "get_memory",
             "update_memory",
             "list_memories",
             "memory_history",
-            "memory_entities",
         }
 
     def scope_keys(self) -> list[str]:
@@ -338,19 +324,15 @@ class SqliteBackend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        def op() -> int:
-            row = self._conn.execute(
-                "SELECT COUNT(*) AS n FROM memories WHERE user_id = ?", (user_id,)
-            ).fetchone()
-            return int(row["n"])
+        """Not implemented: there is no graph here to return.
 
-        count = await self._run(op)
-        if count == 0:
-            return EntitiesResult(entities=[], relationships=[])
-        return EntitiesResult(
-            entities=[{"id": user_id, "type": "user", "total_memories": count}],
-            relationships=[],
-        )
+        This backend used to answer with one synthetic node carrying a memory count
+        and no relationships. That made `memory_status` advertise the knowledge-graph
+        capability on the default install while the documentation said the graph
+        needs a key — and an agent reads `memory_status`, not the README. Declaring
+        nothing is the honest answer; `memory_entities` is simply not registered.
+        """
+        raise NotImplementedError
 
     async def close(self) -> None:
         async with self._lock:

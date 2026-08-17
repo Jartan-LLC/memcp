@@ -99,6 +99,12 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             "default (may store nothing); infer=false for verbatim. "
             "Bulk: use import_memories."
         )
+        if backend.extracts_facts
+        else (
+            "Store a fact/preference/decision. This backend has no model behind it, "
+            "so content is stored verbatim and the infer argument is accepted but "
+            "has no effect. Bulk: use import_memories."
+        )
     )
     async def add_memory(
         content: str,
@@ -219,6 +225,11 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             "version": config.version,
             "capabilities": sorted(backend.capabilities()),
             "scope_keys": backend.scope_keys(),
+            # False means add_memory stores content verbatim and ignores `infer`.
+            # The argument shape is the same either way, so this is the only way a
+            # caller can find out.
+            "extracts_facts": backend.extracts_facts,
+            "retrieval": "semantic" if backend.extracts_facts else "keyword",
         }
 
     # --- optional tools (registered if backend declares capability) ---

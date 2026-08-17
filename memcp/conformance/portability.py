@@ -112,9 +112,10 @@ PAIR_NOTES: dict[tuple[str, str], tuple[str, ...]] = {
         "holds the same content in the same scope can collapse the write.",
     ),
     ("mem0", "in_memory"): (
-        "in_memory search is word-overlap, not vector similarity. Content and scope "
-        "survive, but ranking does not — a query's result order after migration is "
-        "not the source's order.",
+        "in_memory retrieval is keyword matching, not vector similarity. Content and "
+        "scope survive, but ranking does not — a query's result order after migration "
+        "is not the source's order, and a query that matched semantically may not "
+        "match at all.",
     ),
     ("sqlite", "mem0"): (
         "mem0 stores a content hash and may deduplicate server-side. Import writes "
@@ -122,12 +123,14 @@ PAIR_NOTES: dict[tuple[str, str], tuple[str, ...]] = {
         "holds the same content in the same scope can collapse the write.",
     ),
     ("mem0", "sqlite"): (
-        "sqlite search is word-overlap, not vector similarity — the same scoring "
-        "in_memory uses. Content and scope survive; result order does not.",
+        "sqlite retrieval is keyword matching, not vector similarity — the same "
+        "scorer in_memory uses. Content and scope survive; result order does not, and "
+        "a query that matched semantically may not match at all.",
     ),
     ("in_memory", "sqlite"): (
-        "The two backends score identically, so this pair is a durability change "
-        "rather than a retrieval change: the same query returns the same order.",
+        "Both backends rank through memcp.backend.keyword, so this pair is a "
+        "durability change rather than a retrieval change: the same query returns the "
+        "same order.",
     ),
     ("sqlite", "in_memory"): (
         "The reverse of the same pair, and the way to read a deployment's SQLite "

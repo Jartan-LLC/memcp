@@ -80,6 +80,16 @@ async def _call(client: AsyncClient, token: str, name: str, arguments: dict[str,
     return result
 
 
+async def _tool_names(client: AsyncClient, token: str) -> set[str]:
+    resp = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        headers={**MCP_HEADERS, "Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, f"tools/list: HTTP {resp.status_code}"
+    return {t["name"] for t in _parse(resp.text).get("result", {}).get("tools", [])}
+
+
 def _text(value: Any) -> str:
     return json.dumps(value) if not isinstance(value, str) else value
 
@@ -121,8 +131,12 @@ async def test_mallory_cannot_reach_alices_memory_through_any_tool(
         exported = await _call(client, MALLORY_TOKEN, "export_memories", {})
         assert SECRET not in _text(exported), "export_memories leaked across tenants"
 
-        entities = await _call(client, MALLORY_TOKEN, "memory_entities", {})
-        assert entities["entities"] == [], "memory_entities enumerated another tenant"
+        # memory_entities is only registered by a backend that declares a graph, and
+        # neither keyless backend does any more. Where it exists it is held to the
+        # same bar; where it does not, its absence is the assertion.
+        if "memory_entities" in await _tool_names(client, MALLORY_TOKEN):
+            entities = await _call(client, MALLORY_TOKEN, "memory_entities", {})
+            assert entities["entities"] == [], "memory_entities enumerated another tenant"
 
         history = await _call(client, MALLORY_TOKEN, "memory_history", {"memory_id": memory_id})
         assert SECRET not in _text(history), "memory_history leaked prior content"

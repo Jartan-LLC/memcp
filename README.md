@@ -8,11 +8,16 @@ Backend-agnostic, multi-tenant MCP memory server. AI clients connect and get per
 
 One command provisions the memory backend too — you do not stand up a memory engine first and then wire memcp to it.
 
+**What you get with no account and no API key:** `memcp up` gives you durable,
+multi-tenant memory. Retrieval on that default backend is keyword matching, not
+semantic search, and nothing is extracted from what you store — the semantic and
+graph engines need a key.
+
 ## Features
 
 - One-command deployment that provisions memcp **and** its memory backend
-- Durable local storage with no API key and no account (`sqlite`), or mem0 on pgvector for semantic search and a knowledge graph
-- Semantic search, list, add, update, delete memories
+- Durable, keyless local storage (`sqlite`), or mem0 on pgvector when you want semantic search and a knowledge graph
+- Add, search, list, update and delete memories over MCP
 - Flat scope-based filtering (agent_id, run_id)
 - Per-tenant bearer token auth, minted per deployment, never defaulted
 - Stateless HTTP transport — safe behind reverse proxies
@@ -28,7 +33,9 @@ memcp up
 
 Needs Docker and nothing else. It creates the stack, waits until it is healthy,
 prints a bearer token once, and prints the MCP client snippet containing it. The
-default backend is `sqlite`: durable, no account, no key.
+backend `memcp up` provisions by default is `sqlite` — durable, no account, no key,
+keyword retrieval. `memory_status` reports which backend you are on and whether it
+extracts facts, so a client can find out without reading this file.
 
 **Time to first memory: under 20 seconds.** That is the wall clock from `memcp up`
 starting to `add_memory` then `search_memory` both succeeding over MCP, on a clean
@@ -112,7 +119,10 @@ Ask Claude to remember something:
 In a new conversation, ask:
 > "What linter do I use?"
 
-Claude searches memory automatically and uses the stored context.
+Claude searches memory automatically and uses the stored context. On the default
+`sqlite` backend this works because `linter` and `linting` share a stem — matching is
+lexical, so a question phrased in words that do not appear in the memory will not
+find it. `mem0` is the backend that matches on meaning.
 
 ## Configuration
 
@@ -126,7 +136,7 @@ Claude searches memory automatically and uses the stored context.
 
 | Variable | Required | Description |
 |---|---|---|
-| `MEMCP_BACKEND` | No | Backend: `mem0` (default), `sqlite` or `in_memory` |
+| `MEMCP_BACKEND` | No | Backend for the server itself: `mem0`, `sqlite` or `in_memory`. Defaults to `mem0` when you run the server directly; `memcp up` provisions `sqlite` unless you pass `--backend` |
 | `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
@@ -143,11 +153,11 @@ Claude searches memory automatically and uses the stored context.
 
 | Tool | Description |
 |---|---|
-| `add_memory` | Store a fact/preference/decision. Extracts facts by default (may store nothing); `infer=false` for verbatim. Bulk: use `import_memories` |
-| `search_memory` | Semantic search, ranked by relevance. `threshold` filters by minimum similarity (0-1). For browsing: `list_memories` |
+| `add_memory` | Store a fact/preference/decision. On `mem0`, extracts facts by default (may store nothing) and `infer=false` stores verbatim. On `sqlite` and `in_memory` there is no model, so content is always stored verbatim and `infer` has no effect — the tool's own description says which, per deployment. Bulk: use `import_memories` |
+| `search_memory` | Ranked search — semantic on `mem0`, keyword on `sqlite` and `in_memory`. `threshold` filters by minimum score (0-1). For browsing: `list_memories` |
 | `delete_memory` | Delete one memory by ID. Confirm with user first |
 | `delete_all_memories` | Bulk-delete by scope (e.g. agent_id, run_id), not content. Requires at least one scope key. Confirm first |
-| `memory_status` | Returns server version, backend type, capabilities, valid scope keys. No memory content |
+| `memory_status` | Returns server version, backend type, capabilities, valid scope keys, whether the backend extracts facts, and whether retrieval is semantic or keyword. No memory content |
 
 ### Optional (backend-dependent)
 
@@ -159,7 +169,7 @@ Claude searches memory automatically and uses the stored context.
 | `export_memories` | Export memories as JSON (max 10k, truncates with flag). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
 | `import_memories` | Batch-import from JSON. Dedup via exact content match (scope-independent). `on_conflict`: skip, overwrite, duplicate (requires `list_memories`; overwrite requires `update_memory`) |
 | `memory_history` | Change log for a memory: timestamps and previous/current content per create/update event |
-| `memory_entities` | Knowledge graph: entities and relationships. Not a search tool — use `search_memory` for topics |
+| `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `mem0` does, `sqlite` and `in_memory` do not, so it is absent on a keyless install. Not a search tool — use `search_memory` for topics |
 
 ## Docker
 
@@ -214,13 +224,13 @@ Both run on every pull request against a real mem0, stood up locally with no API
 - Entities endpoint does not filter by user — post-filtered client-side
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 
-**sqlite backend:**
-- Search is word overlap on content, not vector similarity
-- `add_memory` stores content verbatim — no fact extraction, because extraction needs an LLM and this backend exists to need none
+**sqlite and in-memory backends (no model behind them):**
+- Retrieval is keyword matching, not vector similarity. Tokens match when they are equal or share a four-character prefix, so `linter` finds `linting` but a question phrased in different words finds nothing
+- `add_memory` stores content verbatim. There is no fact extraction, so `infer` is accepted and ignored; `memory_status` reports `extracts_facts: false`
+- No knowledge graph, so `memory_entities` is not registered at all
 
-**In-memory backend:**
+**In-memory backend, additionally:**
 - Loses all data on restart
-- Search uses keyword matching, not semantic/vector similarity
 
 **General:**
 - No date/time-based filtering on search or list

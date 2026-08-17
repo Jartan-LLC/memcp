@@ -52,7 +52,7 @@ Survives: `content`, `scope`, `metadata`.
 
 Notes, not asserted:
 
-- The two backends score identically, so this pair is a durability change rather than a retrieval change: the same query returns the same order.
+- Both backends rank through memcp.backend.keyword, so this pair is a durability change rather than a retrieval change: the same query returns the same order.
 
 ### `mem0` → `in_memory`
 
@@ -67,7 +67,7 @@ Survives: `content`, `scope`, `metadata`.
 
 Notes, not asserted:
 
-- in_memory search is word-overlap, not vector similarity. Content and scope survive, but ranking does not — a query's result order after migration is not the source's order.
+- in_memory retrieval is keyword matching, not vector similarity. Content and scope survive, but ranking does not — a query's result order after migration is not the source's order, and a query that matched semantically may not match at all.
 
 ### `mem0` → `mem0`
 
@@ -93,7 +93,7 @@ Survives: `content`, `scope`, `metadata`.
 
 Notes, not asserted:
 
-- sqlite search is word-overlap, not vector similarity — the same scoring in_memory uses. Content and scope survive; result order does not.
+- sqlite retrieval is keyword matching, not vector similarity — the same scorer in_memory uses. Content and scope survive; result order does not, and a query that matched semantically may not match at all.
 
 ### `sqlite` → `in_memory`
 

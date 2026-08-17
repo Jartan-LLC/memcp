@@ -14,7 +14,7 @@ import pytest
 from memcp.backend.in_memory import InMemoryBackend
 from memcp.config import Config
 from memcp.tools import register_tools
-from memcp.types import MemoryAPIError
+from memcp.types import EntitiesResult, MemoryAPIError
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -42,9 +42,45 @@ class FakeMCP:
         return set(self._tools.keys())
 
 
+class GraphBackend(InMemoryBackend):
+    """A backend that declares the knowledge graph, so the tool layer's
+    memory_entities path stays covered.
+
+    No keyless backend claims that capability any more — returning one synthetic
+    node was a graph on paper only. mem0 is the real one, and it is not reachable
+    from a unit test, so this stands in for it here.
+    """
+
+    def capabilities(self) -> set[str]:
+        return super().capabilities() | {"memory_entities"}
+
+    async def entities(
+        self,
+        user_id: str,
+        *,
+        scope: dict[str, Any] | None = None,
+        limit: int = 100,
+    ) -> EntitiesResult:
+        count = sum(1 for e in self._store.values() if e["user_id"] == user_id)
+        if count == 0:
+            return EntitiesResult(entities=[], relationships=[])
+        return EntitiesResult(
+            entities=[{"id": user_id, "type": "user", "total_memories": count}],
+            relationships=[],
+        )
+
+
 @pytest.fixture
 def mcp_with_tools(config: Config, backend: InMemoryBackend) -> tuple[FakeMCP, InMemoryBackend]:
     mcp = FakeMCP()
+    register_tools(mcp, backend, config)
+    return mcp, backend
+
+
+@pytest.fixture
+def mcp_with_graph(config: Config) -> tuple[FakeMCP, GraphBackend]:
+    mcp = FakeMCP()
+    backend = GraphBackend()
     register_tools(mcp, backend, config)
     return mcp, backend
 
@@ -73,11 +109,35 @@ async def test_optional_tools_registered(mcp_with_tools):
         "update_memory",
         "list_memories",
         "memory_history",
-        "memory_entities",
         "export_memories",
         "import_memories",
     }
     assert optional <= mcp.tool_names
+
+
+async def test_entities_tool_is_absent_without_the_capability(mcp_with_tools):
+    """A backend with no graph must not advertise one through the tool surface.
+
+    memory_status reports capabilities and an agent reads it; registering
+    memory_entities for a backend that has nothing to put in it is the same
+    over-claim one layer up.
+    """
+    mcp, backend = mcp_with_tools
+    assert "memory_entities" not in mcp.tool_names
+    assert "memory_entities" not in backend.capabilities()
+
+
+async def test_entities_tool_is_present_with_the_capability(mcp_with_graph):
+    mcp, _ = mcp_with_graph
+    assert "memory_entities" in mcp.tool_names
+
+
+async def test_memory_status_reports_extraction_and_retrieval(mcp_with_tools):
+    """`infer` is accepted on every backend and honoured only by some (JAR-383)."""
+    mcp, _ = mcp_with_tools
+    status = await mcp.call("memory_status")
+    assert status["extracts_facts"] is False
+    assert status["retrieval"] == "keyword"
 
 
 # ---------------------------------------------------------------------------
@@ -331,8 +391,8 @@ async def test_memory_history_invalid_id(mcp_with_tools):
 # ---------------------------------------------------------------------------
 
 
-async def test_memory_entities_returns_structure(mcp_with_tools):
-    mcp, _ = mcp_with_tools
+async def test_memory_entities_returns_structure(mcp_with_graph):
+    mcp, _ = mcp_with_graph
     await mcp.call("add_memory", content="entity test fact")
     result = await mcp.call("memory_entities")
     assert "entities" in result
@@ -555,8 +615,8 @@ async def test_backend_error_on_history(mcp_with_tools):
     assert result["error"]["retry"] is True
 
 
-async def test_backend_error_on_entities(mcp_with_tools):
-    mcp, backend = mcp_with_tools
+async def test_backend_error_on_entities(mcp_with_graph):
+    mcp, backend = mcp_with_graph
     _patch_raise(backend, "entities", 503)
     result = await mcp.call("memory_entities")
     assert result["error"]["code"] == "backend_error"
