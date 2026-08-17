@@ -30,15 +30,16 @@ Needs Docker and nothing else. It creates the stack, waits until it is healthy,
 prints a bearer token once, and prints the MCP client snippet containing it. The
 default backend is `sqlite`: durable, no account, no key.
 
-**Time to first memory: 18.4 seconds.** That is the wall clock from `memcp up`
+**Time to first memory: under 20 seconds.** That is the wall clock from `memcp up`
 starting to `add_memory` then `search_memory` both succeeding over MCP, on a clean
-GitHub-hosted runner with an empty image cache — 17s of it building and starting the
-container, 0.11s for the round trip itself. The `provision` job measures it on every
-pull request and publishes `TIME_TO_FIRST_MEMORY_SECONDS` to its summary, so the
-number above is one this repository ran rather than one it estimated.
+GitHub-hosted runner with an empty image cache: 18.4s and 19.2s across two runs,
+nearly all of it building and starting the container — the round trip itself is
+0.11s. The `provision` job measures it on every pull request and publishes
+`TIME_TO_FIRST_MEMORY_SECONDS` to its summary, so these are numbers this repository
+ran rather than ones it estimated.
 
-`memcp up --backend mem0` is the slower path: 55 seconds to healthy and 3.1s for the
-first memory, because it builds mem0 from source and starts pgvector beside it.
+`memcp up --backend mem0` is the slower path — 54s to healthy and 2.4s for the first
+memory — because it builds mem0 from source and starts pgvector beside it.
 
 Reproduce either on your own machine with:
 
