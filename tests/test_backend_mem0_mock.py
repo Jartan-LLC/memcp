@@ -268,14 +268,14 @@ async def test_timeout_raises_408(backend):
 
 @respx.mock
 async def test_health_healthy(backend):
-    respx.get(f"{BASE}/memories").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{BASE}/openapi.json").mock(return_value=httpx.Response(200, json={}))
     status = await backend.health()
     assert status.status == "healthy"
 
 
 @respx.mock
 async def test_health_unhealthy(backend):
-    respx.get(f"{BASE}/memories").mock(side_effect=httpx.ConnectError("down"))
+    respx.get(f"{BASE}/openapi.json").mock(side_effect=httpx.ConnectError("down"))
     status = await backend.health()
     assert status.status == "unhealthy"
 
