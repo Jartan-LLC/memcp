@@ -157,7 +157,7 @@ def _up(args: argparse.Namespace) -> int:
     directory = Path(args.dir)
     runner.require_docker()
 
-    deployment, source, values, minted = runner.prepare(
+    deployment, source, values, minted_names = runner.prepare(
         args.backend,
         directory,
         port=args.port,
@@ -194,8 +194,10 @@ def _up(args: argparse.Namespace) -> int:
         )
 
     print()
-    if minted:
-        print(f"Minted this run: {', '.join(minted)}. Printed once — it is not logged.")
+    if minted_names:
+        # Names, never values: the only credential this command prints is the memcp
+        # token, in the client snippet below, which is what C4 asks it to do.
+        print(f"Minted this run: {', '.join(minted_names)}. Shown once, nowhere else.")
     print("Add this to your MCP client configuration:")
     print()
     print(runner.client_snippet(token, args.bind, args.port))

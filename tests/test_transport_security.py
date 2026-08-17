@@ -44,28 +44,28 @@ INIT = {
 @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.10", "::", "memory.example.com", ""])
 def test_unauthenticated_on_a_reachable_interface_is_refused(host: str):
     with pytest.raises(ValidationError, match="Refusing to start"):
-        Config(memcp_backend="in_memory", host=host)
+        Config(MEMCP_BACKEND="in_memory", MEMCP_HOST=host)
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "127.0.0.5"])
 def test_unauthenticated_on_loopback_is_a_dev_server(host: str):
-    config = Config(memcp_backend="in_memory", host=host)
+    config = Config(MEMCP_BACKEND="in_memory", MEMCP_HOST=host)
     assert config.memcp_auth_tokens is None
 
 
 def test_a_token_permits_any_bind():
-    config = Config(memcp_backend="in_memory", host="0.0.0.0", memcp_auth_tokens="t:u")
+    config = Config(MEMCP_BACKEND="in_memory", MEMCP_HOST="0.0.0.0", MEMCP_AUTH_TOKENS="t:u")
     assert config.host == "0.0.0.0"
 
 
 def test_an_empty_token_string_counts_as_no_token():
     with pytest.raises(ValidationError, match="Refusing to start"):
-        Config(memcp_backend="in_memory", host="0.0.0.0", memcp_auth_tokens="")
+        Config(MEMCP_BACKEND="in_memory", MEMCP_HOST="0.0.0.0", MEMCP_AUTH_TOKENS="")
 
 
 def test_the_refusal_names_both_ways_out():
     with pytest.raises(ValidationError) as excinfo:
-        Config(memcp_backend="in_memory", host="0.0.0.0")
+        Config(MEMCP_BACKEND="in_memory", MEMCP_HOST="0.0.0.0")
     message = str(excinfo.value)
     assert "MEMCP_AUTH_TOKENS" in message
     assert "MEMCP_HOST=127.0.0.1" in message
@@ -109,28 +109,28 @@ async def _initialize(config: Config, host_header: str) -> int:
 
 
 async def test_sdk_leaves_host_validation_off_for_a_non_loopback_bind():
-    """mcp 2.0.0: `host="0.0.0.0"` means no Host or Origin header is checked at all.
+    """mcp 2.0.0: `MEMCP_HOST="0.0.0.0"` means no Host or Origin header is checked at all.
 
     This is memcp's default bind, so a default deployment validates nothing. That is
     the answer to G8, and the reason MEMCP_ALLOWED_HOSTS exists.
     """
-    config = Config(memcp_backend="in_memory", host="0.0.0.0", memcp_auth_tokens="tok:u")
+    config = Config(MEMCP_BACKEND="in_memory", MEMCP_HOST="0.0.0.0", MEMCP_AUTH_TOKENS="tok:u")
     assert config.allowed_hosts_list is None
     assert await _initialize(config, "anything.example.com") == 200
 
 
 async def test_sdk_turns_host_validation_on_for_a_loopback_bind():
-    config = Config(memcp_backend="in_memory", host="127.0.0.1", memcp_auth_tokens="tok:u")
+    config = Config(MEMCP_BACKEND="in_memory", MEMCP_HOST="127.0.0.1", MEMCP_AUTH_TOKENS="tok:u")
     assert await _initialize(config, "127.0.0.1:8080") == 200
     assert await _initialize(config, "evil.example.com") == 421
 
 
 async def test_an_explicit_allow_list_admits_only_what_it_names():
     config = Config(
-        memcp_backend="in_memory",
-        host="0.0.0.0",
-        memcp_auth_tokens="tok:u",
-        memcp_allowed_hosts="memory.example.com,127.0.0.1:*",
+        MEMCP_BACKEND="in_memory",
+        MEMCP_HOST="0.0.0.0",
+        MEMCP_AUTH_TOKENS="tok:u",
+        MEMCP_ALLOWED_HOSTS="memory.example.com,127.0.0.1:*",
     )
     assert config.allowed_hosts_list == ["memory.example.com", "127.0.0.1:*"]
     assert await _initialize(config, "memory.example.com") == 200
@@ -141,10 +141,10 @@ async def test_an_explicit_allow_list_admits_only_what_it_names():
 async def test_a_rejected_host_never_reaches_a_tool():
     """The gate is in front of dispatch, not beside it."""
     config = Config(
-        memcp_backend="in_memory",
-        host="0.0.0.0",
-        memcp_auth_tokens="tok:u",
-        memcp_allowed_hosts="memory.example.com",
+        MEMCP_BACKEND="in_memory",
+        MEMCP_HOST="0.0.0.0",
+        MEMCP_AUTH_TOKENS="tok:u",
+        MEMCP_ALLOWED_HOSTS="memory.example.com",
     )
     app, backend = create_app(config)
     async with (

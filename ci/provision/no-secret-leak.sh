@@ -11,9 +11,11 @@ if [ "$mode" != "600" ]; then
   exit 1
 fi
 
-if grep -rq -- "$token" --exclude-dir=.git --exclude=".env" .; then
+# Options before `--`, or grep reads them as filenames and reports the .env it was
+# told to skip. The token is base64url, so it needs -F to stay a literal.
+if grep -rqF --exclude-dir=.git --exclude=".env" -e "$token" .; then
   echo "FAIL: the minted token appears outside $dir/.env:"
-  grep -rl -- "$token" --exclude-dir=.git --exclude=".env" .
+  grep -rlF --exclude-dir=.git --exclude=".env" -e "$token" .
   exit 1
 fi
 

@@ -15,7 +15,7 @@ a new adapter inherits the check rather than needing its own.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from asgi_lifespan import LifespanManager
@@ -36,14 +36,14 @@ MCP_HEADERS = {
 SECRET = "alice's private note about the acquisition"
 
 
-def _config(tmp_path: Any, backend: str) -> Config:
+def _config(tmp_path: Any, backend: Literal["in_memory", "sqlite"]) -> Config:
     extra: dict[str, Any] = {}
     if backend == "sqlite":
         extra["memcp_sqlite_path"] = str(tmp_path / "isolation.sqlite3")
     return Config(
-        memcp_backend=backend,
-        memcp_auth_tokens=f"{ALICE_TOKEN}:alice,{MALLORY_TOKEN}:mallory",
-        host="127.0.0.1",
+        MEMCP_BACKEND=backend,
+        MEMCP_AUTH_TOKENS=f"{ALICE_TOKEN}:alice,{MALLORY_TOKEN}:mallory",
+        MEMCP_HOST="127.0.0.1",
         **extra,
     )
 
@@ -85,12 +85,12 @@ def _text(value: Any) -> str:
 
 
 @pytest.fixture(params=["in_memory", "sqlite"])
-def backend_name(request: pytest.FixtureRequest) -> str:
+def backend_name(request: pytest.FixtureRequest) -> Literal["in_memory", "sqlite"]:
     return request.param
 
 
 async def test_mallory_cannot_reach_alices_memory_through_any_tool(
-    tmp_path: Any, backend_name: str
+    tmp_path: Any, backend_name: Literal["in_memory", "sqlite"]
 ):
     app, backend = create_app(_config(tmp_path, backend_name))
 
@@ -149,7 +149,9 @@ async def test_mallory_cannot_reach_alices_memory_through_any_tool(
     await backend.close()
 
 
-async def test_an_unknown_token_reaches_no_tenant_at_all(tmp_path: Any, backend_name: str):
+async def test_an_unknown_token_reaches_no_tenant_at_all(
+    tmp_path: Any, backend_name: Literal["in_memory", "sqlite"]
+):
     app, backend = create_app(_config(tmp_path, backend_name))
 
     async with (
@@ -173,7 +175,7 @@ async def test_an_unknown_token_reaches_no_tenant_at_all(tmp_path: Any, backend_
 
 
 async def test_two_tenants_write_the_same_content_without_colliding(
-    tmp_path: Any, backend_name: str
+    tmp_path: Any, backend_name: Literal["in_memory", "sqlite"]
 ):
     """Identical content in two tenants stays two memories, one per owner."""
     app, backend = create_app(_config(tmp_path, backend_name))
