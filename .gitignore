@@ -37,6 +37,10 @@ htmlcov/
 # Docker
 data/
 
+# Conformance stack: the pinned mem0 checkout and the report it produces
+ci/mem0/.mem0/
+conformance-report.json
+
 # Logs
 *.log
 logs/

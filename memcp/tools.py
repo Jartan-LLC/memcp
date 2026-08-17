@@ -14,6 +14,7 @@ from typing import Any
 from memcp.auth import get_tenant
 from memcp.backend import MemoryBackend
 from memcp.config import Config
+from memcp.migrate import ON_CONFLICT_CHOICES, export_payload, import_payload
 from memcp.types import (
     MAX_EXPORT,
     MAX_IMPORT,
@@ -24,6 +25,7 @@ from memcp.types import (
     MemoryAPIError,
     canonical_error,
     reject_nested_filters,
+    serialize_memory,
     validate_content,
     validate_limit,
     validate_memory_id,
@@ -159,7 +161,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
         except MemoryAPIError as e:
             return _backend_error(e)
 
-        return {"results": [_serialize_memory(m) for m in results]}
+        return {"results": [serialize_memory(m) for m in results]}
 
     @mcp.tool(
         annotations=DESTRUCTIVE,
@@ -236,22 +238,21 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
         async def export_memories() -> Any:
             user_id = get_tenant()
             try:
-                result = await backend.list_memories(user_id, limit=MAX_EXPORT + 1)
+                payload = await export_payload(backend, user_id, limit=MAX_EXPORT)
             except MemoryAPIError as e:
                 return _backend_error(e)
-            truncated = len(result.memories) > MAX_EXPORT
-            memories = result.memories[:MAX_EXPORT]
             return {
-                "memories": [_serialize_memory(m) for m in memories],
-                "count": len(memories),
-                "truncated": truncated,
+                "memories": payload.memories,
+                "count": payload.count,
+                "truncated": payload.truncated,
             }
 
         @mcp.tool(
             description=(
                 "Batch-import from JSON array. Each entry needs 'content'; "
                 "optional 'scope'/'metadata'. Stored verbatim (no extraction). "
-                "Deduped by exact content match (scope-independent). "
+                "Deduped by content within the same scope — identical content in a "
+                "different scope is a distinct memory. "
                 "on_conflict: skip (default), overwrite, duplicate."
             ),
         )
@@ -266,7 +267,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                     "validation_error",
                     f"Too many memories to import (limit {MAX_IMPORT})",
                 )
-            if on_conflict not in ("skip", "overwrite", "duplicate"):
+            if on_conflict not in ON_CONFLICT_CHOICES:
                 return canonical_error(
                     "validation_error",
                     "on_conflict must be 'skip', 'overwrite', or 'duplicate'",
@@ -279,73 +280,32 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
 
             user_id = get_tenant()
 
-            # Build dedup index from existing memories (capped at MAX_EXPORT;
-            # users with >10k memories get best-effort dedup)
-            existing: dict[str, str] = {}
-            if on_conflict != "duplicate":
+            def validate_entry_scope(scope: Any) -> Any:
                 try:
-                    result = await backend.list_memories(user_id, limit=MAX_EXPORT + 1)
-                    existing = {m.content: m.id for m in result.memories}
-                except MemoryAPIError as e:
-                    return _backend_error(e)
+                    return _validate_scope(scope, allowed_scope_keys)
+                except _ScopeError as e:
+                    raise ValueError(e.error["error"]["message"]) from e
 
-            imported = []
-            skipped = []
-            errors = []
-
-            for i, entry in enumerate(memories):
-                content = entry.get("content")
-                if not isinstance(content, str):
-                    errors.append({"index": i, "error": "missing or invalid content"})
-                    continue
-                try:
-                    validate_content(content)
-                except ValueError as e:
-                    errors.append({"index": i, "error": str(e)})
-                    continue
-
-                scope = entry.get("scope")
-                if scope:
-                    try:
-                        scope = _validate_scope(scope, allowed_scope_keys)
-                    except _ScopeError as e:
-                        errors.append({"index": i, "error": e.error["error"]["message"]})
-                        continue
-                metadata = entry.get("metadata")
-                dup_id = existing.get(content)
-
-                if dup_id and on_conflict == "skip":
-                    skipped.append({"index": i, "existing_id": dup_id})
-                    continue
-
-                if dup_id and on_conflict == "overwrite":
-                    try:
-                        await backend.update(user_id, dup_id, content, metadata=metadata)
-                        imported.append({"id": dup_id, "index": i, "action": "updated"})
-                    except MemoryAPIError as e:
-                        errors.append({"index": i, "error": str(e)})
-                    continue
-
-                try:
-                    result = await backend.add(
-                        user_id, content, scope=scope, metadata=metadata, infer=False
-                    )
-                    if result:
-                        items = result if isinstance(result, list) else [result]
-                        for r in items:
-                            imported.append({"id": r.id, "index": i, "action": "created"})
-                            existing[content] = r.id
-                    else:
-                        errors.append({"index": i, "error": "stored nothing"})
-                except MemoryAPIError as e:
-                    errors.append({"index": i, "error": str(e)})
+            try:
+                outcome = await import_payload(
+                    backend,
+                    user_id,
+                    memories,
+                    on_conflict=on_conflict,
+                    scope_validator=validate_entry_scope,
+                    dedup_limit=MAX_EXPORT,
+                )
+            except MemoryAPIError as e:
+                # Only the dedup index read raises out here; per-entry failures are
+                # collected into outcome.errors.
+                return _backend_error(e)
 
             return {
-                "imported": len(imported),
-                "skipped": len(skipped),
-                "errors": errors,
-                "results": imported,
-                "skipped_details": skipped,
+                "imported": len(outcome.imported),
+                "skipped": len(outcome.skipped),
+                "errors": outcome.errors,
+                "results": outcome.imported,
+                "skipped_details": outcome.skipped,
             }
 
         @mcp.tool(
@@ -378,7 +338,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             except MemoryAPIError as e:
                 return _backend_error(e)
             return {
-                "memories": [_serialize_memory(m) for m in result.memories],
+                "memories": [serialize_memory(m) for m in result.memories],
                 "next_cursor": result.next_cursor,
             }
 
@@ -402,7 +362,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                 return _backend_error(e)
             if result is None:
                 return canonical_error("not_found", NOT_FOUND_MSG)
-            return _serialize_memory(result)
+            return serialize_memory(result)
 
     if "update_memory" in caps:
 
@@ -430,7 +390,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                 if e.status in (404, 410):
                     return canonical_error("not_found", NOT_FOUND_MSG)
                 return _backend_error(e)
-            return _serialize_memory(result)
+            return serialize_memory(result)
 
     if "memory_history" in caps:
 
@@ -553,18 +513,6 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
             )
         )
     return scope
-
-
-def _serialize_memory(m: Any) -> dict[str, Any]:
-    return {
-        "id": m.id,
-        "content": m.content,
-        "score": m.score,
-        "scope": m.scope,
-        "metadata": m.metadata,
-        "created_at": m.created_at,
-        "updated_at": m.updated_at,
-    }
 
 
 def _serialize_add_result(result: Any) -> Any:

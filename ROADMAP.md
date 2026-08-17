@@ -8,15 +8,22 @@
 
 Validate the Protocol against a fundamentally different backend. mem0 and in-memory already exist.
 
+**Ordering note:** the third-backend-first sequence below is superseded. Proving the
+seam comes before widening it — a third adapter bolted to an unverified seam produces
+three adapters and the same unverified seam. The conformance suite, the cross-backend
+round trip and the CI mem0 stack landed first, and Cognee inherits them as gates.
+
 **Goal:** All three adapters (mem0, in-memory, Cognee) pass identical conformance tests.
 
+- [x] Conformance test suite for backend adapters (`python -m memcp.conformance`)
+- [x] Cross-backend migration tooling (export from one → import to another)
+- [x] Self-contained CI docker-compose for mem0 (no API secrets needed)
+- [x] Scope-aware import dedup
 - [ ] Cognee backend adapter
 - [ ] Protocol refinements from friction (one breaking revision allowed)
 - [ ] Upstream shims for Cognee-specific limitations
 - [ ] memory_entities validation with a real graph backend
 - [ ] Batch operations (batch_add in Protocol, backends loop by default)
-- [ ] Cross-backend migration tooling (export from one → import to another)
-- [ ] Self-contained CI docker-compose for mem0 (no API secrets needed)
 
 **Done when:** Cognee adapter passes conformance suite. Protocol changes documented.
 
@@ -42,7 +49,7 @@ Production readiness for multi-tenant deployments.
 
 Make it trivial for community contributors to build backend adapters.
 
-- [ ] Conformance test package (pip-installable, run against any MemoryBackend)
+- [x] Conformance test package (pip-installable, run against any MemoryBackend) — landed early in v0.2; the suite ships inside `memcp` and takes out-of-tree adapters through `MEMCP_CONFORMANCE_EXTRA`
 - [ ] Backend adapter development guide
 - [ ] CI template for adapter projects
 - [ ] Published API reference (auto-generated or manual)
@@ -100,7 +107,7 @@ The public release. Protocol stabilization and semver guarantee.
 | `messages` param on add_memory | Unlikely | Multi-turn input is mem0-specific; breaks backend agnosticism |
 | In-memory backend vector search | v0.3+ | Lightweight semantic search (e.g. sentence-transformers) to replace keyword matching |
 | Idempotency key on add_memory | v0.3+ | Prevent duplicate storage from retry loops |
-| Scope-aware import dedup | v0.2+ | Currently content-only; same content in different scopes treated as duplicate |
+| Export truncation above a backend's list ceiling | v0.3 | `truncated` only trips above MAX_EXPORT (10k); mem0 caps a list at 1000, so a larger tenant exports silently short |
 | Strip backend error details from MCP responses | v0.3+ | Currently raw backend messages exposed; sanitize to status code + generic message |
 | Nested boolean filter support | Never unless mem0 fixes upstream | Rejected by design (502s) |
 | Server-side deduplication | Backend concern | mem0 does it, others may not |
