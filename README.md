@@ -25,12 +25,14 @@ pip install memcp-server
 MEMCP_BACKEND=in_memory python -m memcp
 ```
 
-Or from source:
+Or from source. This project installs with [uv](https://docs.astral.sh/uv/getting-started/installation/)
+rather than pip — in CI, in the devcontainer and in the Docker image:
 
 ```bash
 git clone https://github.com/Jartan-LLC/memcp.git
 cd memcp
-pip install -e ".[dev]"
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
 MEMCP_BACKEND=in_memory python -m memcp
 ```
 

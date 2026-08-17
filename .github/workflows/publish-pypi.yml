@@ -8,6 +8,10 @@ on:
 permissions:
   id-token: write
 
+# uv builds here too — see ci.yml for why this is set once.
+env:
+  UV_SYSTEM_PYTHON: 1
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -19,8 +23,24 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install -r ci/requirements.txt
+      # Caching off, stated rather than left to the action's "auto" default:
+      # this job publishes, so nothing a cache another workflow wrote should be
+      # able to reach the artifact it uploads. zizmor's cache-poisoning audit
+      # reads the explicit `false` and not the default, so this is also what
+      # keeps the workflow lint clean.
+      #
+      # There is no `uv pip install -r ci/requirements.txt` step after this one:
+      # uv is the only thing that file pins, and `version-file` below already
+      # installs it from that pin. Add the install step back if a gate tool ever
+      # joins the file.
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: false
 
-      - run: python -m build
+      # `uv build` replaces `python -m build` and does the same thing — resolve
+      # the declared build backend into an isolated env, build the sdist, then
+      # build the wheel from it.
+      - run: uv build
 
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

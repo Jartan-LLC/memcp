@@ -5,6 +5,12 @@
 #
 # Only the gate's own tools belong here. The project's toolchain (ruff, pytest,
 # pyright) stays in pyproject.toml's dev extras with a version bound, and CI
-# installs it with `pip install -e ".[dev]"`.
+# installs it with `uv pip install -e ".[dev]"`.
+#
+# uv is the installer everywhere -- CI, the devcontainer and the Dockerfile --
+# and the build frontend (`uv build`, which replaced `python -m build`, so
+# `build` left this file). Its pin lives on the line below and nowhere else:
+# every setup-uv step reads it via `version-file: ci/requirements.txt` and
+# setup.sh greps it, so one Dependabot PR moves every environment at once.
 
-build==1.5.0  # PEP 517 frontend for `python -m build`
+uv==0.12.5  # installer, resolver, venv manager and build frontend
