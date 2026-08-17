@@ -22,6 +22,14 @@ class MemoryBackend(ABC):
     Will be refined when Cognee adapter is added in v0.2.
     """
 
+    # Whether add(infer=True) actually extracts facts, or stores content verbatim.
+    # A backend with no model behind it accepts `infer` and cannot honour it, and a
+    # caller has no way to discover that from the argument shape — so this is
+    # reported by memory_status and stated in add_memory's description. It is a
+    # class attribute rather than a method on purpose: the conformance suite pairs
+    # every optional *method* with a capability, and this gates no tool.
+    extracts_facts: bool = False
+
     # --- required (universal tools) ---
 
     @abstractmethod

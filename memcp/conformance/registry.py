@@ -37,6 +37,20 @@ def _in_memory_spec() -> BackendSpec:
     return BackendSpec("in_memory", InMemoryBackend)
 
 
+def _sqlite_spec() -> BackendSpec:
+    """A throwaway file per run — the suite must not inherit a previous run's rows."""
+    import tempfile
+    from pathlib import Path
+
+    from memcp.backend.sqlite import SqliteBackend
+
+    def factory() -> MemoryBackend:
+        directory = tempfile.mkdtemp(prefix="memcp-conformance-sqlite-")
+        return SqliteBackend(Path(directory) / "memcp.sqlite3")
+
+    return BackendSpec("sqlite", factory)
+
+
 def _mem0_spec() -> BackendSpec:
     from memcp.backend.mem0 import Mem0Backend
 
@@ -53,7 +67,7 @@ def _mem0_spec() -> BackendSpec:
 
 
 def builtin_specs() -> list[BackendSpec]:
-    return [_in_memory_spec(), _mem0_spec()]
+    return [_in_memory_spec(), _sqlite_spec(), _mem0_spec()]
 
 
 def extra_specs() -> list[BackendSpec]:

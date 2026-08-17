@@ -6,23 +6,63 @@
 
 Backend-agnostic, multi-tenant MCP memory server. AI clients connect and get persistent long-term memory over streamable HTTP.
 
-Currently wraps [mem0](https://github.com/mem0ai/mem0) as the first backend. Designed for backend agnosticism — additional backends (Cognee, etc.) planned.
+One command provisions the memory backend too — you do not stand up a memory engine first and then wire memcp to it.
+
+**What you get with no account and no API key:** `memcp up` gives you durable,
+multi-tenant memory. Retrieval on that default backend is keyword matching, not
+semantic search, and nothing is extracted from what you store — the semantic and
+graph engines need a key.
 
 ## Features
 
-- Semantic search, list, add, update, delete memories
+- One-command deployment that provisions memcp **and** its memory backend
+- Durable, keyless local storage (`sqlite`), or mem0 on pgvector when you want semantic search and a knowledge graph
+- Add, search, list, update and delete memories over MCP
 - Flat scope-based filtering (agent_id, run_id)
-- Bearer token auth gate (ASGI middleware)
+- Per-tenant bearer token auth, minted per deployment, never defaulted
 - Stateless HTTP transport — safe behind reverse proxies
-- In-memory backend for dev/testing (no external deps)
 
 ## Getting Started
 
-### 1. Install and run
+### 1. One command
+
+```bash
+pipx install memcp-server
+memcp up
+```
+
+Needs Docker and nothing else. It creates the stack, waits until it is healthy,
+prints a bearer token once, and prints the MCP client snippet containing it. The
+backend `memcp up` provisions by default is `sqlite` — durable, no account, no key,
+keyword retrieval. `memory_status` reports which backend you are on and whether it
+extracts facts, so a client can find out without reading this file.
+
+**Time to first memory: under 20 seconds.** That is the wall clock from `memcp up`
+starting to `add_memory` then `search_memory` both succeeding over MCP, on a clean
+GitHub-hosted runner with an empty image cache — 18.4s, 18.5s and 19.2s across three
+runs on the default backend. Nearly all of it is building and starting the container;
+the round trip itself is 0.11s. The `provision` job measures it on every pull request
+and publishes `TIME_TO_FIRST_MEMORY_SECONDS` to its summary, so these are numbers
+this repository ran rather than ones it estimated.
+
+`memcp up --backend mem0` is the slower path — 54–56s to healthy, then 2.4–3.1s for
+the first memory — because it builds mem0 from source and starts pgvector beside it.
+
+Reproduce either on your own machine with:
+
+```bash
+memcp plan          # everything it will create, before it creates any of it
+memcp up --smoke    # create it, then store and retrieve one memory over MCP
+```
+
+`memcp down` stops it and keeps the memories. `docs/deployment.md` covers backends,
+the mem0 stack, credential handling and what each command does.
+
+### Running the server without provisioning
 
 ```bash
 pip install memcp-server
-MEMCP_BACKEND=in_memory python -m memcp
+MEMCP_BACKEND=sqlite MEMCP_HOST=127.0.0.1 python -m memcp
 ```
 
 Or from source. This project installs with [uv](https://docs.astral.sh/uv/getting-started/installation/)
@@ -33,10 +73,12 @@ git clone https://github.com/Jartan-LLC/memcp.git
 cd memcp
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-MEMCP_BACKEND=in_memory python -m memcp
+MEMCP_BACKEND=sqlite MEMCP_HOST=127.0.0.1 python -m memcp
 ```
 
-The server starts on `http://localhost:8080`. No external dependencies needed — the in-memory backend stores everything in-process (lost on restart).
+The server starts on `http://localhost:8080`. With no `MEMCP_AUTH_TOKENS` set it
+serves every request as one tenant, so it refuses to start on any interface another
+machine can reach — set a token, or keep it on loopback as above.
 
 ### 2. Connect from Claude Code
 
@@ -77,25 +119,31 @@ Ask Claude to remember something:
 In a new conversation, ask:
 > "What linter do I use?"
 
-Claude searches memory automatically and uses the stored context.
+Claude searches memory automatically and uses the stored context. On the default
+`sqlite` backend this works because `linter` and `linting` share a stem — matching is
+lexical, so a question phrased in words that do not appear in the memory will not
+find it. `mem0` is the backend that matches on meaning.
 
 ## Configuration
 
 ### Requirements
 
-- Python 3.12+
-- A running [mem0](https://github.com/mem0ai/mem0) self-hosted instance (not needed for `MEMCP_BACKEND=in_memory`)
+- Docker, for `memcp up`
+- Python 3.12+, to run the server directly
+- For `MEMCP_BACKEND=mem0`: a running [mem0](https://github.com/mem0ai/mem0) instance — or let `memcp up --backend mem0` provision one
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `MEMCP_BACKEND` | No | Backend: `mem0` (default) or `in_memory` |
+| `MEMCP_BACKEND` | No | Backend for the server itself: `mem0`, `sqlite` or `in_memory`. Defaults to `mem0` when you run the server directly; `memcp up` provisions `sqlite` unless you pass `--backend` |
+| `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
-| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob` (unset or empty = unauthenticated) |
+| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob`. Unset means unauthenticated, which is refused on any non-loopback bind |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
+| `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. Unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
 | `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
 | `MEMCP_LOG_FORMAT` | No | Log format: `json` or `plain` (default: `json`) |
 
@@ -105,11 +153,11 @@ Claude searches memory automatically and uses the stored context.
 
 | Tool | Description |
 |---|---|
-| `add_memory` | Store a fact/preference/decision. Extracts facts by default (may store nothing); `infer=false` for verbatim. Bulk: use `import_memories` |
-| `search_memory` | Semantic search, ranked by relevance. `threshold` filters by minimum similarity (0-1). For browsing: `list_memories` |
+| `add_memory` | Store a fact/preference/decision. On `mem0`, extracts facts by default (may store nothing) and `infer=false` stores verbatim. On `sqlite` and `in_memory` there is no model, so content is always stored verbatim and `infer` has no effect — the tool's own description says which, per deployment. Bulk: use `import_memories` |
+| `search_memory` | Ranked search — semantic on `mem0`, keyword on `sqlite` and `in_memory`. `threshold` filters by minimum score (0-1). For browsing: `list_memories` |
 | `delete_memory` | Delete one memory by ID. Confirm with user first |
 | `delete_all_memories` | Bulk-delete by scope (e.g. agent_id, run_id), not content. Requires at least one scope key. Confirm first |
-| `memory_status` | Returns server version, backend type, capabilities, valid scope keys. No memory content |
+| `memory_status` | Returns server version, backend type, capabilities, valid scope keys, whether the backend extracts facts, and whether retrieval is semantic or keyword. No memory content |
 
 ### Optional (backend-dependent)
 
@@ -121,12 +169,15 @@ Claude searches memory automatically and uses the stored context.
 | `export_memories` | Export memories as JSON (max 10k, truncates with flag). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
 | `import_memories` | Batch-import from JSON. Dedup via exact content match (scope-independent). `on_conflict`: skip, overwrite, duplicate (requires `list_memories`; overwrite requires `update_memory`) |
 | `memory_history` | Change log for a memory: timestamps and previous/current content per create/update event |
-| `memory_entities` | Knowledge graph: entities and relationships. Not a search tool — use `search_memory` for topics |
+| `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `mem0` does, `sqlite` and `in_memory` do not, so it is absent on a keyless install. Not a search tool — use `search_memory` for topics |
 
 ## Docker
 
+`memcp up` is the supported path — it provisions the backend too. For a
+hand-managed single-service stack:
+
 ```bash
-cp .env.example .env   # fill in MEM0_API_BASE + MEM0_API_KEY
+cp .env.example .env   # set MEMCP_AUTH_TOKENS, pick a backend
 docker compose up -d
 ```
 
@@ -173,9 +224,13 @@ Both run on every pull request against a real mem0, stood up locally with no API
 - Entities endpoint does not filter by user — post-filtered client-side
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 
-**In-memory backend:**
+**sqlite and in-memory backends (no model behind them):**
+- Retrieval is keyword matching, not vector similarity. Tokens match when they are equal or share a four-character prefix, so `linter` finds `linting` but a question phrased in different words finds nothing
+- `add_memory` stores content verbatim. There is no fact extraction, so `infer` is accepted and ignored; `memory_status` reports `extracts_facts: false`
+- No knowledge graph, so `memory_entities` is not registered at all
+
+**In-memory backend, additionally:**
 - Loses all data on restart
-- Search uses keyword matching, not semantic/vector similarity
 
 **General:**
 - No date/time-based filtering on search or list
@@ -184,7 +239,7 @@ Both run on every pull request against a real mem0, stood up locally with no API
 
 ## Status
 
-v0.1.0 — API may change before v1.0. Suitable for development and early adoption.
+v0.2.0 — API may change before v1.0. Suitable for development and early adoption.
 
 ## License
 

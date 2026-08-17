@@ -1,0 +1,403 @@
+"""The stacks `memcp up` can provision, one function per backend.
+
+Each returns a `Deployment` — a full declaration of what will be created, which is
+what `memcp plan` prints and what the compose file is rendered from. Nothing about
+a stack is expressed anywhere else.
+
+Two rules hold across all of them, and they are the ones the security gate turns on:
+
+- **memcp is the only service with a host port, and it binds loopback by default.**
+  Engine and datastore sit on the compose network with no published port, so the only
+  route to stored memories is through memcp's bearer gate. mem0's own compose file
+  publishes both its API and its Postgres; adopting it as written would stand an
+  unauthenticated store beside the gate rather than behind it (G2).
+- **Every credential is minted.** Including the memcp↔engine link, which is
+  authenticated even though it never leaves the compose network (G3).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+
+from memcp.deploy.images import MEM0_SOURCE_PIN, MEM0_SOURCE_REPO, PGVECTOR
+from memcp.deploy.model import (
+    BindMount,
+    Deployment,
+    EnvVar,
+    Port,
+    RequiredSecret,
+    Service,
+    VolumeMount,
+)
+
+BACKENDS = ("sqlite", "in_memory", "mem0")
+DEFAULT_BACKEND = "sqlite"
+DEFAULT_PROJECT = "memcp"
+DEFAULT_PORT = 8080
+LOOPBACK = "127.0.0.1"
+
+# The tenant the minted token resolves to. One deployment, one owner — a second
+# identity is a second token, added to MEMCP_AUTH_TOKENS by hand.
+DEFAULT_TENANT = "owner"
+
+SQLITE_DATA_PATH = "/data/memcp.sqlite3"
+
+MEMCP_TOKEN_VAR = "MEMCP_TOKEN"
+MEM0_ADMIN_KEY_VAR = "MEM0_ADMIN_API_KEY"
+MEM0_JWT_SECRET_VAR = "MEM0_JWT_SECRET"
+POSTGRES_PASSWORD_VAR = "POSTGRES_PASSWORD"
+OPENAI_API_KEY_VAR = "OPENAI_API_KEY"
+
+
+@dataclass(frozen=True)
+class StackOptions:
+    """Everything a stack needs that is not the backend's own shape."""
+
+    build_context: str
+    build_dockerfile: str | None = None
+    port: int = DEFAULT_PORT
+    bind: str = LOOPBACK
+    project: str = DEFAULT_PROJECT
+    directory: str = ""
+    generates_dockerfile: bool = False
+    # An OpenAI-compatible endpoint for mem0's LLM and embedder — Ollama, llama.cpp,
+    # LiteLLM, or anything else that speaks the API. Set it and the provider key
+    # stops being something the operator has to hold.
+    llm_base_url: str | None = None
+
+
+MEMCP_TOKEN_SECRET = RequiredSecret(
+    MEMCP_TOKEN_VAR,
+    minted=True,
+    description=(
+        "The bearer token MCP clients send to this deployment. Printed once at first "
+        "`up`; replace it with `memcp rotate-token`."
+    ),
+)
+
+
+def _memcp_healthcheck() -> dict[str, object]:
+    """memcp's own /health, which calls through to the backend.
+
+    This is the deployment's real readiness signal, not a liveness probe: for the
+    mem0 stack it performs an authenticated request against mem0, so memcp reporting
+    healthy means the whole chain — gate, adapter, credential, datastore — works.
+    `up --wait` gates on it (C1), which is also what closes GitHub #24: the engine's
+    own probe is allowed to be shallow because it is not what anything trusts.
+    """
+    return {
+        "test": [
+            "CMD",
+            "python",
+            "-c",
+            "import urllib.request,sys;"
+            "sys.exit(0 if urllib.request.urlopen("
+            "'http://localhost:8080/health',timeout=5).status==200 else 1)",
+        ],
+        "interval": "5s",
+        "timeout": "10s",
+        "retries": 20,
+        "start_period": "10s",
+    }
+
+
+def _llm_secret(options: StackOptions) -> RequiredSecret:
+    """Who supplies mem0's provider key — the operator, or nobody.
+
+    mem0 embeds and extracts through an OpenAI-compatible client, and that client
+    demands a key string whether or not the endpoint checks it. Pointed at a local
+    endpoint the operator named, memcp mints a placeholder: it is satisfying a client
+    library, not inventing access to a paid account. Pointed at OpenAI itself, the
+    key is real money and memcp refuses to guess (C3).
+    """
+    if options.llm_base_url:
+        return RequiredSecret(
+            OPENAI_API_KEY_VAR,
+            minted=True,
+            description=(
+                f"placeholder for the local endpoint at {options.llm_base_url}, which "
+                "does not check it — mem0's client library requires the variable to exist"
+            ),
+        )
+    return RequiredSecret(
+        OPENAI_API_KEY_VAR,
+        minted=False,
+        description=(
+            "mem0 embeds and extracts through an LLM provider and cannot start "
+            "without one. memcp will not invent it."
+        ),
+        how_to_obtain=(
+            "Create a key at https://platform.openai.com/api-keys, then "
+            f"export {OPENAI_API_KEY_VAR}=sk-... — it is a metered account, so this "
+            "deployment costs money per memory written. To keep the money out of it, "
+            "point --llm-base-url at a local OpenAI-compatible endpoint, or use "
+            "--backend sqlite, which needs no LLM at all."
+        ),
+    )
+
+
+def _allowed_hosts(bind: str, port: int) -> str:
+    """Host header values this deployment answers to.
+
+    A client reaches it at whatever `--bind` says, so that name is admitted along
+    with the loopback spellings. A deployment behind a reverse proxy under its own
+    hostname adds that name to MEMCP_ALLOWED_HOSTS.
+    """
+    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    if bind not in ("127.0.0.1", "0.0.0.0", "localhost"):
+        hosts.append(f"{bind}:*")
+    return ",".join(hosts)
+
+
+def _memcp_service(
+    *,
+    env: tuple[EnvVar, ...],
+    build_context: str,
+    build_dockerfile: str | None,
+    port: int,
+    bind: str,
+    volumes: tuple[VolumeMount, ...] = (),
+    depends_on: tuple[str, ...] = (),
+) -> Service:
+    base_env = (
+        EnvVar("MEMCP_AUTH_TOKENS", f"${{{MEMCP_TOKEN_VAR}}}:{DEFAULT_TENANT}", secret=True),
+        # Inside the container memcp must listen on all interfaces or the published
+        # port reaches nothing. What keeps it off the network is the host-side bind
+        # below, plus a token that is always set.
+        EnvVar("MEMCP_HOST", "0.0.0.0"),
+        EnvVar("MEMCP_PORT", "8080"),
+        # DNS-rebinding protection, on explicitly. The SDK enables it on its own only
+        # when the bind address is loopback, and inside a container the bind must be
+        # 0.0.0.0 — so a provisioned deployment would otherwise validate no Host
+        # header at all. The bearer token is what actually stops a rebinding attack;
+        # this is the layer above it.
+        EnvVar("MEMCP_ALLOWED_HOSTS", _allowed_hosts(bind, port)),
+        EnvVar("MEMCP_LOG_FORMAT", "json"),
+    )
+    return Service(
+        name="memcp",
+        build_context=build_context,
+        build_dockerfile=build_dockerfile,
+        env=base_env + env,
+        ports=(Port(bind, port, 8080),),
+        volumes=volumes,
+        depends_on=depends_on,
+        healthcheck=_memcp_healthcheck(),
+        description="the MCP server your client connects to — the only way in",
+    )
+
+
+def in_memory_stack(options: StackOptions) -> Deployment:
+    service = _memcp_service(
+        env=(EnvVar("MEMCP_BACKEND", "in_memory"),),
+        build_context=options.build_context,
+        build_dockerfile=options.build_dockerfile,
+        port=options.port,
+        bind=options.bind,
+    )
+    return Deployment(
+        backend="in_memory",
+        project_name=options.project,
+        services=[service],
+        volumes=[],
+        secrets=[MEMCP_TOKEN_SECRET],
+        durable=False,
+        notes=[
+            "in_memory holds everything in the container's process memory. `memcp down` "
+            "and any restart lose all of it. It is here for a smoke test, not for use.",
+        ],
+    )
+
+
+def sqlite_stack(options: StackOptions) -> Deployment:
+    data = VolumeMount(
+        "memcp_data", "/data", "the SQLite file every memory is stored in — survives `down`"
+    )
+    service = _memcp_service(
+        env=(
+            EnvVar("MEMCP_BACKEND", "sqlite"),
+            EnvVar("MEMCP_SQLITE_PATH", SQLITE_DATA_PATH),
+        ),
+        build_context=options.build_context,
+        build_dockerfile=options.build_dockerfile,
+        port=options.port,
+        bind=options.bind,
+        volumes=(data,),
+    )
+    return Deployment(
+        backend="sqlite",
+        project_name=options.project,
+        services=[service],
+        volumes=[data],
+        secrets=[MEMCP_TOKEN_SECRET],
+        durable=True,
+        notes=[
+            "No API key and no account: one container, one file, memories that survive "
+            "a restart. Retrieval is word overlap, not embedding similarity, and "
+            "add_memory stores text verbatim rather than extracting facts from it.",
+        ],
+    )
+
+
+def mem0_stack(options: StackOptions) -> Deployment:
+    pg_data = VolumeMount(
+        "postgres_data",
+        "/var/lib/postgresql/data",
+        "pgvector's data directory — every mem0 memory and its embedding",
+    )
+    mem0_history = VolumeMount(
+        "mem0_history", "/app/history", "mem0's per-memory change log (SQLite)"
+    )
+
+    postgres = Service(
+        name="postgres",
+        image=PGVECTOR.reference,
+        env=(
+            EnvVar("POSTGRES_USER", "mem0"),
+            EnvVar("POSTGRES_PASSWORD", f"${{{POSTGRES_PASSWORD_VAR}}}", secret=True),
+            EnvVar("POSTGRES_DB", "postgres"),
+        ),
+        volumes=(pg_data,),
+        binds=(BindMount("./init-db.sh", "/docker-entrypoint-initdb.d/init-db.sh"),),
+        shm_size="128mb",
+        healthcheck={
+            "test": ["CMD-SHELL", "pg_isready -q -U mem0 -d postgres"],
+            "interval": "3s",
+            "timeout": "5s",
+            "retries": 20,
+        },
+        description="pgvector — mem0's vector store and application database",
+    )
+
+    mem0 = Service(
+        name="mem0",
+        build_context="./mem0-src/server",
+        build_dockerfile="Dockerfile",
+        command=[
+            "sh",
+            "-c",
+            "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000",
+        ],
+        env=(
+            EnvVar(
+                OPENAI_API_KEY_VAR,
+                f"${{{OPENAI_API_KEY_VAR}}}",
+                secret=True,
+                description="mem0's LLM and embedder provider",
+            ),
+            *((EnvVar("OPENAI_BASE_URL", options.llm_base_url),) if options.llm_base_url else ()),
+            EnvVar("POSTGRES_HOST", "postgres"),
+            EnvVar("POSTGRES_PORT", "5432"),
+            EnvVar("POSTGRES_DB", "postgres"),
+            EnvVar("POSTGRES_USER", "mem0"),
+            EnvVar("POSTGRES_PASSWORD", f"${{{POSTGRES_PASSWORD_VAR}}}", secret=True),
+            EnvVar("POSTGRES_COLLECTION_NAME", "memories"),
+            EnvVar("APP_DB_NAME", "mem0_app"),
+            # Authenticated even though nothing outside the compose network can reach
+            # it. A private network is not an authentication mechanism (G3).
+            EnvVar("ADMIN_API_KEY", f"${{{MEM0_ADMIN_KEY_VAR}}}", secret=True),
+            EnvVar("JWT_SECRET", f"${{{MEM0_JWT_SECRET_VAR}}}", secret=True),
+            EnvVar("AUTH_DISABLED", "false"),
+            EnvVar("MEM0_TELEMETRY", "false"),
+            EnvVar("HISTORY_DB_PATH", "/app/history/history.db"),
+            EnvVar("PYTHONUNBUFFERED", "1"),
+        ),
+        volumes=(mem0_history,),
+        depends_on=("postgres",),
+        healthcheck={
+            # Liveness only: /openapi.json needs no credential, so this says the HTTP
+            # layer is up and nothing more. What proves the credential works is
+            # memcp's own /health, which calls mem0 authenticated (GitHub #24).
+            "test": [
+                "CMD",
+                "python",
+                "-c",
+                "import urllib.request;"
+                "urllib.request.urlopen('http://localhost:8000/openapi.json')",
+            ],
+            "interval": "5s",
+            "timeout": "10s",
+            "retries": 60,
+            "start_period": "20s",
+        },
+        description=(
+            f"mem0's REST server, built from {MEM0_SOURCE_REPO} at {MEM0_SOURCE_PIN[:7]}"
+        ),
+    )
+
+    memcp = _memcp_service(
+        env=(
+            EnvVar("MEMCP_BACKEND", "mem0"),
+            EnvVar("MEM0_API_BASE", "http://mem0:8000"),
+            EnvVar("MEM0_API_KEY", f"${{{MEM0_ADMIN_KEY_VAR}}}", secret=True),
+        ),
+        build_context=options.build_context,
+        build_dockerfile=options.build_dockerfile,
+        port=options.port,
+        bind=options.bind,
+        depends_on=("mem0",),
+    )
+
+    return Deployment(
+        backend="mem0",
+        project_name=options.project,
+        services=[postgres, mem0, memcp],
+        volumes=[pg_data, mem0_history],
+        secrets=[
+            MEMCP_TOKEN_SECRET,
+            RequiredSecret(
+                POSTGRES_PASSWORD_VAR,
+                minted=True,
+                description="pgvector's superuser password, used only inside the stack",
+            ),
+            RequiredSecret(
+                MEM0_ADMIN_KEY_VAR,
+                minted=True,
+                description="the credential memcp authenticates to mem0 with",
+            ),
+            RequiredSecret(
+                MEM0_JWT_SECRET_VAR,
+                minted=True,
+                description="mem0's JWT signing secret; memcp does not use this path",
+            ),
+            _llm_secret(options),
+        ],
+        durable=True,
+        notes=[
+            "Neither postgres nor mem0 publishes a host port. The only route to stored "
+            "memories is memcp's bearer gate, which is what makes tenant isolation mean "
+            "anything.",
+            f"The mem0 source is cloned to ./mem0-src at {MEM0_SOURCE_PIN} and built "
+            "locally. First `up` builds it and is the slow one.",
+        ],
+    )
+
+
+_BUILDERS = {
+    "in_memory": in_memory_stack,
+    "sqlite": sqlite_stack,
+    "mem0": mem0_stack,
+}
+
+
+def build(backend: str, options: StackOptions) -> Deployment:
+    """Construct the declaration for a named backend."""
+    try:
+        builder = _BUILDERS[backend]
+    except KeyError:
+        raise ValueError(
+            f"Unknown backend {backend!r}. Available: {', '.join(BACKENDS)}"
+        ) from None
+    deployment = builder(options)
+    files = [
+        "docker-compose.yml",
+        ".env  (0600 — holds every credential)",
+        ".gitignore  (makes this directory uncommittable)",
+    ]
+    if options.generates_dockerfile:
+        files.append("memcp-image/Dockerfile")
+    if backend == "mem0":
+        files.append("init-db.sh")
+        files.append("mem0-src/  (git clone of the pinned mem0 fork)")
+    prefix = f"{options.directory}/" if options.directory else ""
+    return replace(deployment, generated_files=[f"{prefix}{f}" for f in files])

@@ -13,6 +13,7 @@ async def test_health_endpoint_unhealthy():
         MEMCP_BACKEND="mem0",
         mem0_api_base="http://localhost:9999",
         mem0_api_key="fake",
+        MEMCP_HOST="127.0.0.1",
     )
     app, backend = create_app(mem0_config)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

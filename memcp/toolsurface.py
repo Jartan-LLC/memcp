@@ -31,15 +31,23 @@ async def _collect() -> dict[str, Any]:
 
     from memcp.backend.in_memory import InMemoryBackend
     from memcp.config import Config
+    from memcp.conformance.capabilities import ALL_CAPABILITIES
     from memcp.tools import register_tools
 
-    # in_memory declares every capability, so every conditionally registered tool
-    # is present. A backend with fewer capabilities exposes a subset of this.
-    backend = InMemoryBackend()
+    # The snapshot is the full surface any backend can expose, not the surface of
+    # whichever backend is convenient. It used to be generated from in_memory on the
+    # grounds that in_memory declared everything — which quietly made the frozen
+    # contract a function of a dev backend's capability set, so honestly undeclaring
+    # one there would have looked like the contract shrinking.
+    class _EveryCapability(InMemoryBackend):
+        def capabilities(self) -> set[str]:
+            return set(ALL_CAPABILITIES)
+
+    backend = _EveryCapability()
     server = MCPServer("memcp")
     # model_validate rather than the constructor: the surface must not depend on
     # whatever MEMCP_/MEM0_ variables happen to be set in the caller's environment.
-    config = Config.model_validate({"MEMCP_BACKEND": "in_memory"})
+    config = Config.model_validate({"MEMCP_BACKEND": "in_memory", "MEMCP_HOST": "127.0.0.1"})
     register_tools(server, backend, config)
     tools = await server.list_tools()
     return {

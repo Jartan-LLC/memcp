@@ -11,9 +11,15 @@ from memcp.config import Config
 
 @pytest.fixture
 def config() -> Config:
-    """Minimal config for testing — no real backend needed."""
+    """Minimal config for testing — no real backend needed.
+
+    Loopback because it carries no auth tokens: Config refuses that combination on
+    any interface another machine can reach (SEC-2026-0059), and a test fixture
+    should be a shape a deployment is allowed to have.
+    """
     return Config(
         MEMCP_BACKEND="in_memory",
+        MEMCP_HOST="127.0.0.1",
     )
 
 
