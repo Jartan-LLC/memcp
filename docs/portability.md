@@ -39,6 +39,21 @@ Notes, not asserted:
 
 - mem0 stores a content hash and may deduplicate server-side. Import writes with infer=false, so nothing is re-extracted, but a target that already holds the same content in the same scope can collapse the write.
 
+### `in_memory` → `sqlite`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- The two backends score identically, so this pair is a durability change rather than a retrieval change: the same query returns the same order.
+
 ### `mem0` → `in_memory`
 
 | Does not survive | Why |
@@ -55,6 +70,62 @@ Notes, not asserted:
 - in_memory search is word-overlap, not vector similarity. Content and scope survive, but ranking does not — a query's result order after migration is not the source's order.
 
 ### `mem0` → `mem0`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+### `mem0` → `sqlite`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- sqlite search is word-overlap, not vector similarity — the same scoring in_memory uses. Content and scope survive; result order does not.
+
+### `sqlite` → `in_memory`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- The reverse of the same pair, and the way to read a deployment's SQLite file into a throwaway process. Everything but identity survives.
+
+### `sqlite` → `mem0`
+
+| Does not survive | Why |
+| --- | --- |
+| `created_at` | The target stamps its own creation time on import. The original timestamp is in the export payload but no backend accepts it on write. |
+| `history` | export_memories carries current content only. The per-memory change log that memory_history returns is not exported and cannot be replayed. |
+| `memory_id` | Import calls add() on the target, which mints its own id. Nothing carries a caller-supplied id, so ids never survive a migration — hold references by content and scope, not by id. |
+| `updated_at` | An imported memory is newly created on the target, so its edit time resets to unset regardless of the source's. |
+
+Survives: `content`, `scope`, `metadata`.
+
+Notes, not asserted:
+
+- mem0 stores a content hash and may deduplicate server-side. Import writes with infer=false, so nothing is re-extracted, but a target that already holds the same content in the same scope can collapse the write.
+
+### `sqlite` → `sqlite`
 
 | Does not survive | Why |
 | --- | --- |

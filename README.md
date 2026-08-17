@@ -6,23 +6,49 @@
 
 Backend-agnostic, multi-tenant MCP memory server. AI clients connect and get persistent long-term memory over streamable HTTP.
 
-Currently wraps [mem0](https://github.com/mem0ai/mem0) as the first backend. Designed for backend agnosticism — additional backends (Cognee, etc.) planned.
+One command provisions the memory backend too — you do not stand up a memory engine first and then wire memcp to it.
 
 ## Features
 
+- One-command deployment that provisions memcp **and** its memory backend
+- Durable local storage with no API key and no account (`sqlite`), or mem0 on pgvector for semantic search and a knowledge graph
 - Semantic search, list, add, update, delete memories
 - Flat scope-based filtering (agent_id, run_id)
-- Bearer token auth gate (ASGI middleware)
+- Per-tenant bearer token auth, minted per deployment, never defaulted
 - Stateless HTTP transport — safe behind reverse proxies
-- In-memory backend for dev/testing (no external deps)
 
 ## Getting Started
 
-### 1. Install and run
+### 1. One command
+
+```bash
+pipx install memcp-server
+memcp up
+```
+
+Needs Docker and nothing else. It creates the stack, waits until it is healthy,
+prints a bearer token once, and prints the MCP client snippet containing it. The
+default backend is `sqlite`: durable, no account, no key.
+
+**Time to first memory: see the `provision` job's summary.** It runs `memcp up
+--smoke` on a fresh runner on every pull request and publishes
+`TIME_TO_FIRST_MEMORY_SECONDS` — the wall clock from the command starting to
+`add_memory` then `search_memory` succeeding over MCP, with a cold image cache.
+Reproduce it on your own machine with:
+
+```bash
+memcp plan          # everything it will create, before it creates any of it
+memcp up --smoke    # create it, then store and retrieve one memory over MCP
+```
+
+`memcp down` stops it and keeps the memories. `docs/deployment.md` covers backends,
+the mem0 stack, credential handling and what each command does.
+
+### Running the server without provisioning
 
 ```bash
 pip install memcp-server
-MEMCP_BACKEND=in_memory python -m memcp
+MEMCP_BACKEND=sqlite MEMCP_HOST=127.0.0.1 python -m memcp
 ```
 
 Or from source. This project installs with [uv](https://docs.astral.sh/uv/getting-started/installation/)
@@ -33,10 +59,12 @@ git clone https://github.com/Jartan-LLC/memcp.git
 cd memcp
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-MEMCP_BACKEND=in_memory python -m memcp
+MEMCP_BACKEND=sqlite MEMCP_HOST=127.0.0.1 python -m memcp
 ```
 
-The server starts on `http://localhost:8080`. No external dependencies needed — the in-memory backend stores everything in-process (lost on restart).
+The server starts on `http://localhost:8080`. With no `MEMCP_AUTH_TOKENS` set it
+serves every request as one tenant, so it refuses to start on any interface another
+machine can reach — set a token, or keep it on loopback as above.
 
 ### 2. Connect from Claude Code
 
@@ -83,19 +111,22 @@ Claude searches memory automatically and uses the stored context.
 
 ### Requirements
 
-- Python 3.12+
-- A running [mem0](https://github.com/mem0ai/mem0) self-hosted instance (not needed for `MEMCP_BACKEND=in_memory`)
+- Docker, for `memcp up`
+- Python 3.12+, to run the server directly
+- For `MEMCP_BACKEND=mem0`: a running [mem0](https://github.com/mem0ai/mem0) instance — or let `memcp up --backend mem0` provision one
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `MEMCP_BACKEND` | No | Backend: `mem0` (default) or `in_memory` |
+| `MEMCP_BACKEND` | No | Backend: `mem0` (default), `sqlite` or `in_memory` |
+| `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
-| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob` (unset or empty = unauthenticated) |
+| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob`. Unset means unauthenticated, which is refused on any non-loopback bind |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
+| `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. Unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
 | `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
 | `MEMCP_LOG_FORMAT` | No | Log format: `json` or `plain` (default: `json`) |
 
@@ -125,8 +156,11 @@ Claude searches memory automatically and uses the stored context.
 
 ## Docker
 
+`memcp up` is the supported path — it provisions the backend too. For a
+hand-managed single-service stack:
+
 ```bash
-cp .env.example .env   # fill in MEM0_API_BASE + MEM0_API_KEY
+cp .env.example .env   # set MEMCP_AUTH_TOKENS, pick a backend
 docker compose up -d
 ```
 
@@ -173,6 +207,10 @@ Both run on every pull request against a real mem0, stood up locally with no API
 - Entities endpoint does not filter by user — post-filtered client-side
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 
+**sqlite backend:**
+- Search is word overlap on content, not vector similarity
+- `add_memory` stores content verbatim — no fact extraction, because extraction needs an LLM and this backend exists to need none
+
 **In-memory backend:**
 - Loses all data on restart
 - Search uses keyword matching, not semantic/vector similarity
@@ -184,7 +222,7 @@ Both run on every pull request against a real mem0, stood up locally with no API
 
 ## Status
 
-v0.1.0 — API may change before v1.0. Suitable for development and early adoption.
+v0.2.0 — API may change before v1.0. Suitable for development and early adoption.
 
 ## License
 

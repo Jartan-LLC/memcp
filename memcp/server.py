@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -16,6 +17,7 @@ from memcp.auth import BearerGate, StaticResolver
 from memcp.backend import MemoryBackend
 from memcp.backend.in_memory import InMemoryBackend
 from memcp.backend.mem0 import Mem0Backend
+from memcp.backend.sqlite import SqliteBackend
 from memcp.config import Config
 from memcp.tools import register_tools
 
@@ -42,6 +44,8 @@ def _create_backend(config: Config) -> MemoryBackend:
     """Instantiate the configured backend."""
     if config.memcp_backend == "in_memory":
         return InMemoryBackend()
+    if config.memcp_backend == "sqlite":
+        return SqliteBackend(config.memcp_sqlite_path)
     if config.memcp_backend == "mem0":
         if not config.mem0_api_base or not config.mem0_api_key:
             raise ValueError("MEM0_API_BASE and MEM0_API_KEY required for mem0 backend")
@@ -62,7 +66,23 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
 
     # Initialize the MCP app (creates session manager). `host` only selects the
     # DNS-rebinding defaults; the bind address is uvicorn's, in __main__.
-    mcp_starlette = mcp.streamable_http_app(stateless_http=True, host=config.host)
+    #
+    # With MEMCP_ALLOWED_HOSTS set we hand the SDK explicit settings, because its own
+    # rule turns protection on only for a loopback `host` and leaves it off for every
+    # other value — including `0.0.0.0`, which is memcp's default. Origins are derived
+    # from the same list over http and https; a browser Origin memcp does not
+    # recognise is refused rather than served.
+    security = None
+    allowed = config.allowed_hosts_list
+    if allowed:
+        security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=allowed,
+            allowed_origins=[f"{scheme}://{h}" for h in allowed for scheme in ("http", "https")],
+        )
+    mcp_starlette = mcp.streamable_http_app(
+        stateless_http=True, host=config.host, transport_security=security
+    )
     session_manager = mcp.session_manager
 
     # Ensure Accept header includes what the streamable HTTP transport requires — some MCP clients
