@@ -34,6 +34,27 @@ updates:
       default-days: 3
       semver-major-days: 7
 
+  # The gate's own tools (ci/requirements.txt), exact-pinned. Separate from the
+  # "/" entry above so a CI-tool bump lands as its own reviewable PR rather than
+  # riding along with a project dependency.
+  - package-ecosystem: "pip"
+    directory: "/ci"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

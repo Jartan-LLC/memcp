@@ -1,0 +1,10 @@
+# Third-party tools that CI installs by name, pinned to an exact version so a
+# run's result depends on this commit and not on what PyPI served that morning.
+# Dependabot watches this file (the "/ci" pip entry in .github/dependabot.yml),
+# so an upgrade arrives as a PR someone reads.
+#
+# Only the gate's own tools belong here. The project's toolchain (ruff, pytest,
+# pyright) stays in pyproject.toml's dev extras with a version bound, and CI
+# installs it with `pip install -e ".[dev]"`.
+
+build==1.5.0  # PEP 517 frontend for `python -m build`
