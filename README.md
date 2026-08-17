@@ -146,6 +146,7 @@ one that also builds a graph out of what you store.
 | `COGNEE_TENANT_SECRET` | cognee | Derives one cognee account per memcp tenant. Same secret means same accounts; a different one addresses different accounts, so every tenant reads empty |
 | `COGNEE_DATASET` | No | Dataset each tenant's memories are written into (default: `memcp`) |
 | `COGNEE_EMAIL_DOMAIN` | No | Domain the derived tenant logins are built from. Nothing is ever sent to it |
+| `COGNEE_TIMEOUT` | No | Seconds to allow one cognee call (default: `120`). A write runs extraction and embedding inside the request, so a small local model on CPU needs far more — see `docs/local-models.md` |
 | `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob`. Unset means unauthenticated, which is refused on any non-loopback bind |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
@@ -236,7 +237,8 @@ locally with no API key (`ci/mem0/up.sh`, `ci/cognee/up.sh`).
 - No `memory_history`. Cognee keeps a pipeline run log, not a per-memory change log
 - `update_memory` is a delete and a rewrite under the same id, not an in-place edit. It is not atomic, and `created_at` moves
 - Every write runs extraction and embedding inside the request. That is what makes the memory findable when `add_memory` returns, and it is why writes are slow and metered
-- How well cognee works against a small local model is not something this repository has measured
+- Cognee's API has no bulk read and no server-side scope filter, so `search_memory` lists the tenant's data once and then fetches each hit's text — one request per result. Scope narrowing happens after cognee has ranked, not inside it
+- How well cognee works against a small local model is measured in `docs/local-models.md`, on one corpus and one model. Read the number there rather than assuming either way
 
 **sqlite and in-memory backends (no model behind them):**
 - Retrieval is keyword matching, not vector similarity. Tokens match when they are equal or share a four-character prefix, so `linter` finds `linting` but a question phrased in different words finds nothing

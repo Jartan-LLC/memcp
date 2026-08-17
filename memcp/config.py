@@ -51,6 +51,11 @@ class Config(BaseSettings):
     cognee_email_domain: str = Field(
         default=COGNEE_DEFAULT_EMAIL_DOMAIN, alias="COGNEE_EMAIL_DOMAIN"
     )
+    # Seconds to allow one cognee call. A write runs extraction and embedding inside the
+    # request, so this bounds the slowest thing memcp does. 120 is comfortable against a
+    # hosted model and too low against a small one on CPU — measured, see
+    # docs/local-models.md.
+    cognee_timeout: float = Field(default=120.0, alias="COGNEE_TIMEOUT")
 
     memcp_auth_tokens: str | None = Field(default=None, alias="MEMCP_AUTH_TOKENS")
 

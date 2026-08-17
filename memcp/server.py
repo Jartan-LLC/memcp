@@ -61,6 +61,7 @@ def _create_backend(config: Config) -> MemoryBackend:
             config.cognee_tenant_secret,
             dataset=config.cognee_dataset,
             email_domain=config.cognee_email_domain,
+            timeout=config.cognee_timeout,
         )
     raise ValueError(f"Unknown backend: {config.memcp_backend}")
 
