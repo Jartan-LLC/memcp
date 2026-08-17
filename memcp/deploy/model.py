@@ -50,6 +50,19 @@ class Port:
 
 
 @dataclass(frozen=True)
+class Network:
+    """A Docker network the deployment attaches to.
+
+    `external` names one that already exists and that memcp must neither create nor
+    delete — the network a platform's own router lives on, which is how a deployment
+    publishing no host port is still reachable.
+    """
+
+    name: str
+    external: bool = False
+
+
+@dataclass(frozen=True)
 class VolumeMount:
     name: str
     path: str
@@ -75,6 +88,7 @@ class Service:
     ports: tuple[Port, ...] = ()
     volumes: tuple[VolumeMount, ...] = ()
     binds: tuple[BindMount, ...] = ()
+    networks: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     healthcheck: dict[str, Any] | None = None
     shm_size: str | None = None
@@ -115,10 +129,26 @@ class Deployment:
     generated_files: list[str] = field(default_factory=list)
     durable: bool = True
     notes: list[str] = field(default_factory=list)
+    networks: list[Network] = field(default_factory=list)
+    # Whether memcp publishes a host port at all. False is something the operator
+    # typed, and the plan says so in those words — an unpublished port that reads
+    # like an omission is the one thing this must never look like.
+    publish_host_port: bool = True
+    # The URL a client puts in its MCP configuration. With no published port that is
+    # the platform's own hostname, which only the operator knows.
+    client_url: str = ""
 
     @property
     def memcp_service(self) -> Service:
         return next(s for s in self.services if s.name == "memcp")
+
+    @property
+    def container_port(self) -> int:
+        """The port memcp listens on inside its container, published or not."""
+        for env in self.memcp_service.env:
+            if env.name == "MEMCP_PORT":
+                return int(env.value)
+        return 8080
 
     @property
     def operator_secrets(self) -> list[RequiredSecret]:
@@ -152,6 +182,8 @@ class Deployment:
             mounts += [f"{b.source}:{b.path}:ro" for b in svc.binds]
             if mounts:
                 entry["volumes"] = mounts
+            if svc.networks:
+                entry["networks"] = list(svc.networks)
             if svc.depends_on:
                 entry["depends_on"] = {
                     dep: {"condition": "service_healthy"} for dep in svc.depends_on
@@ -166,7 +198,21 @@ class Deployment:
         doc: dict[str, Any] = {"name": self.project_name, "services": services}
         if self.volumes:
             doc["volumes"] = {v.name: None for v in self.volumes}
+        if self.networks:
+            # `null` leaves compose's own defaults in place, which is what the project
+            # network wants; `external: true` says join it, do not create it.
+            doc["networks"] = {
+                n.name: ({"external": True} if n.external else None) for n in self.networks
+            }
         return doc
+
+    def _network_phrase(self) -> str:
+        """How the plan names the networks memcp can be reached over."""
+        if not self.networks:
+            return "this deployment's default compose network"
+        return "Docker network(s) " + ", ".join(
+            f"{n.name} (external)" if n.external else n.name for n in self.networks
+        )
 
     # -- plan (C6) -------------------------------------------------------------
 
@@ -191,14 +237,51 @@ class Deployment:
 
         out.append("PUBLISHED PORTS")
         published = [(s, p) for s in self.services for p in s.ports]
-        if not published:
+        if not self.publish_host_port:
+            # Said in the words the operator typed, because the difference between a
+            # port deliberately unpublished and a plan that forgot to mention one is
+            # the whole of what this section is read for.
+            out.append("  (none — publishing is off, because you asked for it: --no-publish)")
+            out.append(
+                f"  memcp listens on container port {self.container_port}, reachable only "
+                "from inside Docker,"
+            )
+            out.append(f"  over {self._network_phrase()}.")
+            out.append("  Whatever routes to this deployment has to be on one of those networks.")
+        elif not published:
             out.append("  (none)")
         for svc, port in published:
             out.append(f"  {port.host_ip}:{port.host_port} -> {svc.name}:{port.container_port}")
-        internal = [s.name for s in self.services if not s.ports]
+        # memcp's own absence is stated above, in the words that say it was chosen.
+        internal = [
+            s.name
+            for s in self.services
+            if not s.ports and not (s.name == "memcp" and not self.publish_host_port)
+        ]
         if internal:
             out.append(f"  no host port, internal network only: {', '.join(sorted(internal))}")
         out.append("")
+
+        if self.networks:
+            out.append("NETWORKS")
+            for network in self.networks:
+                if network.external:
+                    out.append(
+                        f"  {network.name}  existing network, joined not created — memcp "
+                        "attaches to it"
+                    )
+                else:
+                    out.append(f"  {network.name}  created by compose for this deployment")
+            out.append("")
+
+        if self.client_url:
+            out.append("CLIENTS REACH IT AT")
+            out.append(f"  {self.client_url}")
+            if not self.publish_host_port:
+                out.append(
+                    "  Routing that URL to this container is the platform's job, not memcp's."
+                )
+            out.append("")
 
         out.append("VOLUMES")
         if not self.volumes:
@@ -262,6 +345,9 @@ class Deployment:
                 "backend": self.backend,
                 "project_name": self.project_name,
                 "durable": self.durable,
+                "publish_host_port": self.publish_host_port,
+                "container_port": self.container_port,
+                "client_url": self.client_url,
                 "containers": [
                     {"name": s.name, "source": s.source, "role": s.description}
                     for s in self.services
@@ -276,6 +362,7 @@ class Deployment:
                     for s in self.services
                     for p in s.ports
                 ],
+                "networks": [{"name": n.name, "external": n.external} for n in self.networks],
                 "volumes": [{"name": v.name, "purpose": v.description} for v in self.volumes],
                 "environment": {
                     s.name: {e.name: (SECRET_PLACEHOLDER if e.secret else e.value) for e in s.env}

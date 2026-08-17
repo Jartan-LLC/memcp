@@ -71,6 +71,20 @@ SHAPING_FLAGS = [
     pytest.param(["--port", "9999", "--bind", "0.0.0.0"], id="port-and-bind"),
     pytest.param(["--memcp-source", "pypi"], id="pypi-source"),
     pytest.param(
+        ["--no-publish", "--external-url", "https://memory.example.com"], id="unpublished"
+    ),
+    pytest.param(
+        [
+            "--no-publish",
+            "--network",
+            "dokploy-network",
+            "--external-url",
+            "https://memory.example.com",
+        ],
+        id="unpublished-external-network",
+    ),
+    pytest.param(["--external-url", "https://memory.example.com"], id="published-behind-a-proxy"),
+    pytest.param(
         [
             "--backend",
             "mem0",
@@ -218,8 +232,8 @@ def test_rotate_on_nothing_says_so(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "Run `memcp up` first" in capsys.readouterr().err
 
 
-def test_client_snippet_carries_the_token_and_the_published_port():
-    snippet = runner.client_snippet("tok-123", "127.0.0.1", 9001)
+def test_client_snippet_carries_the_token_and_the_url_the_deployment_answers_on():
+    snippet = runner.client_snippet("tok-123", "http://localhost:9001/mcp")
     assert '"Authorization": "Bearer tok-123"' in snippet
     assert "http://localhost:9001/mcp" in snippet
     assert '"type": "streamable-http"' in snippet

@@ -173,8 +173,11 @@ find it. `mem0` is the backend that matches on meaning.
 
 ## Docker
 
-`memcp up` is the supported path — it provisions the backend too. For a
-hand-managed single-service stack:
+`memcp up` is the supported path — it provisions the backend too. Under a platform
+that routes into the container itself (Dokploy, Coolify, Kubernetes, your own
+Traefik), add `--no-publish --external-url https://your.host` and it publishes no
+host port at all — see [docs/deployment.md](docs/deployment.md). For a hand-managed
+single-service stack:
 
 ```bash
 cp .env.example .env   # set MEMCP_AUTH_TOKENS, pick a backend
