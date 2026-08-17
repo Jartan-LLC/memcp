@@ -11,13 +11,16 @@ registered tool** that Mallory can neither read, change, delete nor enumerate
 Alice's memory. It runs against every backend the conformance registry can build, so
 a new adapter inherits the check rather than needing its own.
 
-`mem0` is included when `MEM0_API_BASE`/`MEM0_API_KEY` are set (skipped otherwise —
-see `tests/test_backend_mem0.py` for the same gate). It is the one backend where
+`mem0` is included when `MEM0_API_BASE`/`MEM0_API_KEY` are set (skipped otherwise,
+unless `MEMCP_REQUIRE_MEM0=1` makes the absence a failure — see
+`tests/test_backend_mem0.py` for the same gate). It is the one backend where
 isolation is not structural: `in_memory` and `sqlite` scope every query by `user_id`
-in the query itself, but mem0's single-ID endpoints (GET/PUT/DELETE/history) and
-`GET /entities` are global on the wire, so the adapter does fetch-then-verify and
-post-filtering instead (`memcp/backend/mem0.py`). That is a correct design and also
-the kind that fails silently when one call site forgets the check — JAR-452.
+in the query itself, but mem0's single-ID endpoints (GET/PUT/DELETE/history) are
+global on the wire, so the adapter does fetch-then-verify instead
+(`memcp/backend/mem0.py`). That is a correct design and also the kind that fails
+silently when one call site forgets the check — JAR-452. `entities()` used to
+compensate the same way over a global `GET /entities`; it no longer calls that
+endpoint at all, because the response carries no owner to check — SEC-2026-0065.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import uuid
 from typing import Any, Literal
 
 import pytest
@@ -38,6 +42,14 @@ ALICE_TOKEN = "alice-token-not-a-real-credential"
 MALLORY_TOKEN = "mallory-token-not-a-real-credential"
 BASE_URL = "http://127.0.0.1:8080"
 
+# The two tenant identities, uuid-suffixed for the same reason tests/test_backend_mem0.py
+# suffixes its own: `_cleanup_mem0` deletes every memory under these ids in whatever
+# store MEM0_API_BASE names, and that variable can be pointed at a shared one. They are
+# only names in MEMCP_AUTH_TOKENS, so nothing is lost by making them unique per run.
+_RUN = uuid.uuid4().hex[:8]
+ALICE = f"alice-{_RUN}"
+MALLORY = f"mallory-{_RUN}"
+
 MCP_HEADERS = {
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
@@ -47,6 +59,13 @@ SECRET = "alice's private note about the acquisition"
 
 MEM0_API_BASE = os.environ.get("MEM0_API_BASE")
 MEM0_API_KEY = os.environ.get("MEM0_API_KEY")
+MEM0_UNCONFIGURED = not MEM0_API_BASE or not MEM0_API_KEY
+
+# Where the mem0 case is the assurance rather than a bonus — the CI job that stands a
+# real mem0 up — set MEMCP_REQUIRE_MEM0=1 and a missing configuration is a red build.
+# Without it the skip is silent, so renaming or moving that step would drop the only
+# live coverage of a backend whose isolation is not structural, with nothing failing.
+REQUIRE_MEM0 = os.environ.get("MEMCP_REQUIRE_MEM0") == "1"
 
 BACKEND_PARAMS = [
     "in_memory",
@@ -54,7 +73,7 @@ BACKEND_PARAMS = [
     pytest.param(
         "mem0",
         marks=pytest.mark.skipif(
-            not MEM0_API_BASE or not MEM0_API_KEY,
+            MEM0_UNCONFIGURED and not REQUIRE_MEM0,
             reason="MEM0_API_BASE and MEM0_API_KEY not set",
         ),
     ),
@@ -70,7 +89,7 @@ def _config(tmp_path: Any, backend: Literal["in_memory", "sqlite", "mem0"]) -> C
         extra["mem0_api_key"] = MEM0_API_KEY
     return Config(
         MEMCP_BACKEND=backend,
-        MEMCP_AUTH_TOKENS=f"{ALICE_TOKEN}:alice,{MALLORY_TOKEN}:mallory",
+        MEMCP_AUTH_TOKENS=f"{ALICE_TOKEN}:{ALICE},{MALLORY_TOKEN}:{MALLORY}",
         MEMCP_HOST="127.0.0.1",
         **extra,
     )
@@ -124,6 +143,11 @@ def _text(value: Any) -> str:
 
 @pytest.fixture(params=BACKEND_PARAMS)
 def backend_name(request: pytest.FixtureRequest) -> Literal["in_memory", "sqlite", "mem0"]:
+    if request.param == "mem0" and MEM0_UNCONFIGURED:
+        pytest.fail(
+            "MEMCP_REQUIRE_MEM0=1 but MEM0_API_BASE/MEM0_API_KEY are unset — the mem0 "
+            "case would have skipped silently and taken this file's live coverage with it"
+        )
     return request.param
 
 
@@ -137,7 +161,7 @@ async def _cleanup_mem0(backend: Any, backend_name: str) -> None:
     """
     if backend_name != "mem0":
         return
-    for uid in ("alice", "mallory"):
+    for uid in (ALICE, MALLORY):
         with contextlib.suppress(Exception):
             listing = await backend.list_memories(uid)
             for m in listing.memories:
@@ -332,5 +356,115 @@ async def test_import_cannot_target_another_tenants_memory(
         assert len(mallory_list["memories"]) == 1
 
         await _cleanup_mem0(backend, backend_name)
+
+    await backend.close()
+
+
+async def test_mallory_cannot_write_into_alices_entity_enumeration(
+    tmp_path: Any, backend_name: Literal["in_memory", "sqlite", "mem0"]
+):
+    """The read direction (Mallory cannot enumerate Alice's entities) is covered
+    above; this is the write direction. Nothing Mallory writes may appear in
+    Alice's `memory_entities`, whatever scope values he chooses.
+
+    `agent_id`/`run_id` are caller-controlled free-form scope values —
+    `memcp/tools.py` strips only `user_id` from a caller's scope — so Mallory
+    can write under `scope={"agent_id": "<alice's user_id>"}`. Before the fix,
+    `entities()` post-filtered mem0's global entity list on `id == user_id`
+    alone, never checking the entity's `type` or who wrote it, and that row
+    passed because its id equalled Alice's user_id (JAR-457, SEC-2026-0065).
+
+    Live on mem0 (2026-08-17, run 32020284327): Alice's baseline `{"entities":
+    [], "relationships": []}` became `{"entities": [{"id": "alice", "type":
+    "agent", "total_memories": 1, ...}], "relationships": []}` — Mallory's row,
+    timed to Mallory's write, inside Alice's response."""
+    app, backend = create_app(_config(tmp_path, backend_name))
+
+    async with (
+        LifespanManager(app) as manager,
+        AsyncClient(transport=ASGITransport(app=manager.app), base_url=BASE_URL) as client,
+    ):
+        try:
+            if "memory_entities" not in await _tool_names(client, ALICE_TOKEN):
+                pytest.skip(f"{backend_name} does not register memory_entities")
+
+            baseline = await _call(client, ALICE_TOKEN, "memory_entities", {})
+
+            await _call(
+                client,
+                MALLORY_TOKEN,
+                "add_memory",
+                {"content": "mallory's own note", "scope": {"agent_id": ALICE}, "infer": False},
+            )
+
+            polluted = await _call(client, ALICE_TOKEN, "memory_entities", {})
+            assert polluted == baseline, (
+                "Mallory's write under scope agent_id=<alice's user_id> changed what "
+                f"Alice's memory_entities returns: baseline={baseline} polluted={polluted}"
+            )
+        finally:
+            # try/finally, not the fall-through the other tests in this file use:
+            # a failed assertion above must not leave Mallory's injected write in
+            # the live store to confuse the next test or the next CI run.
+            await _cleanup_mem0(backend, backend_name)
+
+    await backend.close()
+
+
+async def test_entity_totals_do_not_cross_tenants_on_a_shared_scope_value(
+    tmp_path: Any, backend_name: Literal["in_memory", "sqlite", "mem0"]
+):
+    """An entity row's `total_memories` counts the caller's own memories and no
+    one else's, even where two tenants use the same `agent_id` value.
+
+    Two tenants can converge on one value without either being an attacker —
+    using your own name as your agent scope is an ordinary convention, and here
+    Alice does exactly that while Mallory reuses it. Before the fix the count
+    came from mem0's global bucket for that value, which totals every tenant's
+    rows in it; live on mem0 (2026-08-17, run 32020284327) Alice's own row read
+    `total_memories: 2` where 1 is correct, with `updated_at` moved to Mallory's
+    later write (JAR-457, SEC-2026-0065)."""
+    app, backend = create_app(_config(tmp_path, backend_name))
+
+    async with (
+        LifespanManager(app) as manager,
+        AsyncClient(transport=ASGITransport(app=manager.app), base_url=BASE_URL) as client,
+    ):
+        try:
+            if "memory_entities" not in await _tool_names(client, ALICE_TOKEN):
+                pytest.skip(f"{backend_name} does not register memory_entities")
+
+            await _call(
+                client,
+                ALICE_TOKEN,
+                "add_memory",
+                {"content": "alice's own note", "scope": {"agent_id": ALICE}, "infer": False},
+            )
+            await _call(
+                client,
+                MALLORY_TOKEN,
+                "add_memory",
+                {
+                    "content": "mallory's note, same scope value",
+                    "scope": {"agent_id": ALICE},
+                    "infer": False,
+                },
+            )
+
+            alice_entities = await _call(client, ALICE_TOKEN, "memory_entities", {})
+            agent_rows = [
+                e
+                for e in alice_entities["entities"]
+                if e.get("id") == ALICE and e.get("type") == "agent"
+            ]
+            assert agent_rows, (
+                f"expected Alice's own agent_id={ALICE} entity row: {alice_entities}"
+            )
+            assert agent_rows[0].get("total_memories") == 1, (
+                f"Alice's own agent_id={ALICE} entity counted Mallory's memory too, "
+                f"not just her own: {agent_rows[0]}"
+            )
+        finally:
+            await _cleanup_mem0(backend, backend_name)
 
     await backend.close()

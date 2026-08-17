@@ -1,11 +1,13 @@
 """Mem0Backend mock tests — covers all mem0-specific logic without a live server.
 
 Uses respx to mock httpx requests. Tests the adapter's quirk handling:
-fetch-then-verify ownership, GET-after-PUT, tenant post-filtering,
+fetch-then-verify ownership, GET-after-PUT, tenant-scoped queries,
 error mapping, network error wrapping.
 """
 
 from __future__ import annotations
+
+import json
 
 import httpx
 import pytest
@@ -165,38 +167,108 @@ async def test_update_wrong_user_raises(backend):
 
 
 # ---------------------------------------------------------------------------
-# entities — tenant post-filter
+# entities — derived from the caller's own memories, not GET /entities
 # ---------------------------------------------------------------------------
 
 
-@respx.mock
-async def test_entities_filters_by_user(backend):
-    respx.get(f"{BASE}/entities").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {"id": "alice", "type": "user", "total_memories": 3},
-                {"id": "bob", "type": "user", "total_memories": 5},
-            ],
-        )
-    )
-    result = await backend.entities(USER)
-    assert len(result.entities) == 1
-    assert result.entities[0]["id"] == "alice"
+def _memories_route(rows: list[dict]) -> respx.Route:
+    return respx.get(f"{BASE}/memories").mock(return_value=httpx.Response(200, json=rows))
 
 
 @respx.mock
-async def test_entities_no_match_returns_empty(backend):
-    respx.get(f"{BASE}/entities").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {"id": "bob", "type": "user", "total_memories": 5},
-            ],
-        )
+async def test_entities_buckets_the_callers_own_memories(backend):
+    route = _memories_route(
+        [
+            {
+                "id": "m1",
+                "memory": "one",
+                "user_id": "alice",
+                "agent_id": "writer",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": None,
+            },
+            {
+                "id": "m2",
+                "memory": "two",
+                "user_id": "alice",
+                "agent_id": "writer",
+                "run_id": "r1",
+                "created_at": "2026-01-02T00:00:00Z",
+                "updated_at": "2026-01-03T00:00:00Z",
+            },
+        ]
     )
     result = await backend.entities(USER)
-    assert len(result.entities) == 0
+
+    assert route.calls[0].request.url.params["user_id"] == "alice"
+    assert result.entities == [
+        {
+            "id": "writer",
+            "type": "agent",
+            "total_memories": 2,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-03T00:00:00Z",
+        },
+        {
+            "id": "r1",
+            "type": "run",
+            "total_memories": 1,
+            "created_at": "2026-01-02T00:00:00Z",
+            "updated_at": "2026-01-03T00:00:00Z",
+        },
+        {
+            "id": "alice",
+            "type": "user",
+            "total_memories": 2,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-03T00:00:00Z",
+        },
+    ]
+
+
+@respx.mock
+async def test_entities_never_reads_the_global_endpoint(backend):
+    """SEC-2026-0065: another tenant's rows are not in the response to filter out,
+    because the global endpoint is not the source any more."""
+    global_route = respx.get(f"{BASE}/entities").mock(
+        return_value=httpx.Response(
+            200, json=[{"id": "alice", "type": "agent", "total_memories": 99}]
+        )
+    )
+    _memories_route([])
+
+    result = await backend.entities(USER)
+
+    assert result.entities == []
+    assert not global_route.called
+
+
+@respx.mock
+async def test_entities_scope_narrows_within_the_tenant(backend):
+    route = _memories_route([])
+    await backend.entities(USER, scope={"agent_id": "writer"})
+    params = route.calls[0].request.url.params
+    assert params["user_id"] == "alice"
+    assert params["agent_id"] == "writer"
+
+
+@respx.mock
+async def test_entities_no_memories_returns_empty(backend):
+    _memories_route([])
+    result = await backend.entities(USER)
+    assert result.entities == []
+
+
+@respx.mock
+async def test_entities_honors_limit(backend):
+    _memories_route(
+        [
+            {"id": f"m{i}", "user_id": "alice", "agent_id": f"a{i}", "created_at": None}
+            for i in range(5)
+        ]
+    )
+    result = await backend.entities(USER, limit=2)
+    assert len(result.entities) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -367,3 +439,44 @@ async def test_history_wrong_user_raises(backend):
     with pytest.raises(MemoryAPIError, match="Not found"):
         await backend.history(OTHER, "mem-1")
     assert history_route.call_count == 0, "History endpoint should not be called for wrong user"
+
+
+# ---------------------------------------------------------------------------
+# scope cannot carry user_id into a query
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_search_scope_cannot_overwrite_the_tenant(backend):
+    """Every builder writes scope keys over a dict that already holds the
+    token-derived user_id. tools.py strips user_id before a backend sees a scope;
+    these assert the backend does not rely on that one check (SEC-2026-0065)."""
+    route = respx.post(f"{BASE}/search").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    await backend.search(USER, "q", scope={"user_id": OTHER, "agent_id": "writer"})
+    filters = json.loads(route.calls[0].request.content)["filters"]
+    assert filters == {"user_id": USER, "agent_id": "writer"}
+
+
+@respx.mock
+async def test_list_scope_cannot_overwrite_the_tenant(backend):
+    route = respx.get(f"{BASE}/memories").mock(return_value=httpx.Response(200, json=[]))
+    await backend.list_memories(USER, scope={"user_id": OTHER})
+    assert route.calls[0].request.url.params["user_id"] == USER
+
+
+@respx.mock
+async def test_delete_all_scope_cannot_overwrite_the_tenant(backend):
+    route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    await backend.delete_all(USER, {"user_id": OTHER})
+    assert route.calls[0].request.url.params["user_id"] == USER
+
+
+@respx.mock
+async def test_add_scope_cannot_overwrite_the_tenant(backend):
+    route = respx.post(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    await backend.add(USER, "content", scope={"user_id": OTHER}, infer=False)
+    assert json.loads(route.calls[0].request.content)["user_id"] == USER
