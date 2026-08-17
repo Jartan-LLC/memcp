@@ -13,7 +13,7 @@ from memcp.config import Config
 def config() -> Config:
     """Minimal config for testing — no real backend needed."""
     return Config(
-        memcp_backend="in_memory",
+        MEMCP_BACKEND="in_memory",
     )
 
 

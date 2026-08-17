@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     try:
-        config = Config()  # type: ignore[call-arg]
+        config = Config()
     except ValidationError as e:
         print(f"Configuration error:\n{e}", file=sys.stderr)
         raise SystemExit(1) from None

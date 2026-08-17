@@ -58,5 +58,6 @@ testpaths = ["tests", "memcp/conformance/suite"]
 markers = ["slow: spawns a subprocess pytest run (out-of-tree conformance)"]
 
 [tool.pyright]
+include = ["memcp", "tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"

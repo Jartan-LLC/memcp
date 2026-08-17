@@ -10,7 +10,7 @@ from memcp.server import create_app
 
 async def test_health_endpoint_unhealthy():
     mem0_config = Config(
-        memcp_backend="mem0",
+        MEMCP_BACKEND="mem0",
         mem0_api_base="http://localhost:9999",
         mem0_api_key="fake",
     )

@@ -13,26 +13,26 @@ class Config(BaseSettings):
 
     model_config = {"env_prefix": "", "populate_by_name": True}
 
-    memcp_backend: Literal["mem0", "in_memory"] = Field("mem0", alias="MEMCP_BACKEND")
+    memcp_backend: Literal["mem0", "in_memory"] = Field(default="mem0", alias="MEMCP_BACKEND")
 
     # mem0 backend config (required when MEMCP_BACKEND=mem0)
     mem0_api_base: str | None = None
     mem0_api_key: str | None = None
 
-    memcp_auth_tokens: str | None = Field(None, alias="MEMCP_AUTH_TOKENS")
+    memcp_auth_tokens: str | None = Field(default=None, alias="MEMCP_AUTH_TOKENS")
 
     @field_validator("memcp_auth_tokens", mode="before")
     @classmethod
     def _empty_tokens_is_none(cls, v: str | None) -> str | None:
         return v if v else None
 
-    host: str = Field("0.0.0.0", alias="MEMCP_HOST")
-    port: int = Field(8080, alias="MEMCP_PORT")
+    host: str = Field(default="0.0.0.0", alias="MEMCP_HOST")
+    port: int = Field(default=8080, alias="MEMCP_PORT")
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
-        "INFO", alias="MEMCP_LOG_LEVEL"
+        default="INFO", alias="MEMCP_LOG_LEVEL"
     )
-    log_format: Literal["json", "plain"] = Field("json", alias="MEMCP_LOG_FORMAT")
+    log_format: Literal["json", "plain"] = Field(default="json", alias="MEMCP_LOG_FORMAT")
 
     @model_validator(mode="after")
     def _validate_backend_config(self) -> Config:
