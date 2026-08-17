@@ -346,32 +346,42 @@ async def test_mallory_cannot_write_into_alices_entity_enumeration(
     caller-controlled free-form scope values — `memcp/tools.py:470-515` strips
     only `user_id` from a caller's scope — so Mallory can set
     `scope={"agent_id": "<alice's user_id>"}` and inject a row that passes
-    Alice's filter because its `id` happens to equal her user_id (JAR-457)."""
+    Alice's filter because its `id` happens to equal her user_id (JAR-457).
+
+    Live on mem0 (2026-08-17): baseline is `{"entities": [], "relationships":
+    []}`; after Mallory's write it is `{"entities": [{"id": "alice", "type":
+    "agent", "total_memories": 1, "created_at": ..., "updated_at": ...}],
+    "relationships": []}` — Mallory's row, timed to Mallory's write, inside
+    Alice's response."""
     app, backend = create_app(_config(tmp_path, backend_name))
 
     async with (
         LifespanManager(app) as manager,
         AsyncClient(transport=ASGITransport(app=manager.app), base_url=BASE_URL) as client,
     ):
-        if "memory_entities" not in await _tool_names(client, ALICE_TOKEN):
-            pytest.skip(f"{backend_name} does not register memory_entities")
+        try:
+            if "memory_entities" not in await _tool_names(client, ALICE_TOKEN):
+                pytest.skip(f"{backend_name} does not register memory_entities")
 
-        baseline = await _call(client, ALICE_TOKEN, "memory_entities", {})
+            baseline = await _call(client, ALICE_TOKEN, "memory_entities", {})
 
-        await _call(
-            client,
-            MALLORY_TOKEN,
-            "add_memory",
-            {"content": "mallory's own note", "scope": {"agent_id": "alice"}, "infer": False},
-        )
+            await _call(
+                client,
+                MALLORY_TOKEN,
+                "add_memory",
+                {"content": "mallory's own note", "scope": {"agent_id": "alice"}, "infer": False},
+            )
 
-        polluted = await _call(client, ALICE_TOKEN, "memory_entities", {})
-        assert polluted == baseline, (
-            "Mallory's write under scope agent_id=<alice's user_id> changed what "
-            f"Alice's memory_entities returns: baseline={baseline} polluted={polluted}"
-        )
-
-        await _cleanup_mem0(backend, backend_name)
+            polluted = await _call(client, ALICE_TOKEN, "memory_entities", {})
+            assert polluted == baseline, (
+                "Mallory's write under scope agent_id=<alice's user_id> changed what "
+                f"Alice's memory_entities returns: baseline={baseline} polluted={polluted}"
+            )
+        finally:
+            # try/finally, not the fall-through the other tests in this file use:
+            # a failed assertion above must not leave Mallory's injected write in
+            # the live store to confuse the next test or the next CI run.
+            await _cleanup_mem0(backend, backend_name)
 
     await backend.close()
 
@@ -379,35 +389,53 @@ async def test_mallory_cannot_write_into_alices_entity_enumeration(
 async def test_entity_totals_do_not_cross_tenants_on_a_shared_scope_value(
     tmp_path: Any, backend_name: Literal["in_memory", "sqlite", "mem0"]
 ):
-    """Where two tenants use the same `agent_id`/`run_id` value — a generic one
-    such as "shared-agent" is the realistic case, not an attacker — the backend's
-    entity list buckets by that value globally, so a single row's
-    `total_memories` and timestamps can span both tenants unless memcp's
-    post-filter separates them by owner, which it does not (JAR-457)."""
+    """`entities()`'s post-filter is `id == user_id` — it only ever lets through a
+    row whose id equals the caller's own user_id. So the count/timestamp
+    disclosure in the finding needs the shared value to BE a tenant's own user_id,
+    not an arbitrary label: two tenants can converge on the same `agent_id` value
+    without either being an attacker (using your own name as your agent scope is
+    an ordinary convention), and here Alice does exactly that. Mallory then reuses
+    the same value. The row `entities()` returns to Alice for her own `agent_id`
+    should total only what she wrote (JAR-457)."""
     app, backend = create_app(_config(tmp_path, backend_name))
 
     async with (
         LifespanManager(app) as manager,
         AsyncClient(transport=ASGITransport(app=manager.app), base_url=BASE_URL) as client,
     ):
-        if "memory_entities" not in await _tool_names(client, ALICE_TOKEN):
-            pytest.skip(f"{backend_name} does not register memory_entities")
+        try:
+            if "memory_entities" not in await _tool_names(client, ALICE_TOKEN):
+                pytest.skip(f"{backend_name} does not register memory_entities")
 
-        for token, content in ((ALICE_TOKEN, "alice's note"), (MALLORY_TOKEN, "mallory's note")):
             await _call(
                 client,
-                token,
+                ALICE_TOKEN,
                 "add_memory",
-                {"content": content, "scope": {"agent_id": "shared-agent"}, "infer": False},
+                {"content": "alice's own note", "scope": {"agent_id": "alice"}, "infer": False},
+            )
+            await _call(
+                client,
+                MALLORY_TOKEN,
+                "add_memory",
+                {
+                    "content": "mallory's note, same scope value",
+                    "scope": {"agent_id": "alice"},
+                    "infer": False,
+                },
             )
 
-        alice_entities = await _call(client, ALICE_TOKEN, "memory_entities", {})
-        shared = [e for e in alice_entities["entities"] if e.get("id") == "shared-agent"]
-        assert shared, f"expected an entity row for the shared agent_id: {alice_entities}"
-        assert shared[0].get("total_memories") == 1, (
-            f"shared agent_id bucket counted another tenant's memories: {shared[0]}"
-        )
-
-        await _cleanup_mem0(backend, backend_name)
+            alice_entities = await _call(client, ALICE_TOKEN, "memory_entities", {})
+            agent_rows = [
+                e
+                for e in alice_entities["entities"]
+                if e.get("id") == "alice" and e.get("type") == "agent"
+            ]
+            assert agent_rows, f"expected Alice's own agent_id=alice entity row: {alice_entities}"
+            assert agent_rows[0].get("total_memories") == 1, (
+                "Alice's own agent_id=alice entity counted Mallory's memory too, "
+                f"not just her own: {agent_rows[0]}"
+            )
+        finally:
+            await _cleanup_mem0(backend, backend_name)
 
     await backend.close()
