@@ -28,6 +28,10 @@ in_memory  round_trip          PASS    1 passed
 get round to testing it": a backend that declares a capability and fails its tests
 reports `FAIL`.
 
+The suite is self-sufficient: it carries its own asyncio configuration, so it behaves
+the same under your pytest settings as under this repository's. `pytest --pyargs
+memcp.conformance.suite` is the same run with pytest arguments of your choosing.
+
 ## Choosing backends
 
 | Variable | Effect |
@@ -42,22 +46,56 @@ key; see `ci/mem0/README.md`.
 ## Testing your own adapter
 
 The suite ships inside the installed package, so an adapter in its own repository
-needs memcp as a dependency and nothing else:
+needs memcp as a dependency and nothing else. Write the backend and declare its
+portability pairs in the same module:
+
+```python
+# my_adapter/backend.py
+from memcp.backend.base import MemoryBackend
+from memcp.conformance.portability import IDENTITY_LOSSES, declare_pair
+
+
+class MyBackend(MemoryBackend):
+    ...
+
+
+# Registered at import time, which is before the suite collects. Every pair you want
+# the round trip to run needs one — including MyBackend to itself.
+for _pair in (("mystore", "mystore"), ("mystore", "in_memory"), ("in_memory", "mystore")):
+    declare_pair(*_pair, IDENTITY_LOSSES)
+```
 
 ```bash
 pip install "memcp-server[dev]"
 MEMCP_CONFORMANCE_EXTRA=mystore=my_adapter.backend:MyBackend \
-MEMCP_CONFORMANCE_BACKENDS=mystore \
+MEMCP_CONFORMANCE_BACKENDS=mystore,in_memory \
   python -m memcp.conformance
 ```
 
 The factory takes no arguments and returns a fresh `MemoryBackend`. Read
 configuration from the environment inside it.
 
-To take part in the cross-backend round trip, the adapter also needs a row in
-`memcp/conformance/portability.py` — see `docs/portability.md`. Until it has one, the
-round trip for that pair fails with `UndocumentedPairError` rather than passing
-silently.
+Notes on getting this right:
+
+- **Declaring the pair is not optional.** Without it the round trip fails with
+  `UndocumentedPairError`. It never skips — an undeclared pair is a missing record,
+  not an absent feature.
+- **`IDENTITY_LOSSES` is the usual answer.** Ids, `created_at`, `updated_at` and
+  `history` do not survive any migration, because import calls `add()` on the target.
+  If your backend loses something else, add a `Loss(aspect, reason)` — except
+  `content` and `scope`, which cannot be declared lost at all.
+- **A declared loss the pair cannot measure is reported, not failed.** `history` is
+  only comparable when both backends declare `memory_history`; the report lists it as
+  `unverified here` so the gap is visible.
+- **Narrowing capabilities by omission is not enough.** If you subclass another
+  backend and return a smaller `capabilities()` set, override the methods you dropped
+  to raise `NotImplementedError`. The suite checks that an undeclared method refuses.
+- **Publishing the loss set is your job.** Generate your own document with
+  `render_markdown(registered_pairs())` from `memcp.conformance.portability`; this
+  repository's `docs/portability.md` covers only the backends it ships.
+
+`tests/test_conformance_out_of_tree.py` drives exactly this recipe in a subprocess
+from a scratch directory, so it stays true.
 
 ## What the suite covers
 

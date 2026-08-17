@@ -4,9 +4,10 @@ Memories move between backends by exporting from one and importing into the
 other (`memcp.migrate`). This document records what that trip does not carry,
 for every pair the conformance round trip covers.
 
-The conformance round trip asserts against this list: a loss that happens but
-is not named here fails CI. That is the point of writing it down — the
-portability claim is only worth something if its limits are enforced.
+The conformance round trip asserts against this list, exactly: a loss that
+happens but is not named here fails CI, and so does a loss named here that no
+longer happens. That is the point of writing it down — the portability claim is
+only worth something if its limits are enforced in both directions.
 
 Aspects compared per memory: `content`, `scope`, `metadata`, `memory_id`, `created_at`, `updated_at`, `history`.
 
@@ -67,7 +68,9 @@ Survives: `content`, `scope`, `metadata`.
 ## Adding a backend
 
 A round trip for a pair with no entry above fails with
-`UndocumentedPairError`. Add the pair to
-`memcp/conformance/portability.py`, regenerate this file with
-`python -m memcp.conformance.portability --write`, and the suite will hold the new pair to it.
+`UndocumentedPairError`. For a backend shipped with memcp, add the pair to
+`DECLARED_LOSSES` in `memcp/conformance/portability.py` and regenerate this
+file with `python -m memcp.conformance.portability --write`. For an adapter outside memcp, call
+`declare_pair()` at import time — `docs/conformance.md` has the recipe.
+Either way the suite then holds the new pair to what was declared.
 

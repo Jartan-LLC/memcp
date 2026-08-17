@@ -62,6 +62,7 @@ class RoundTrip:
     observed_losses: list[str]
     declared_losses: list[str]
     stale_losses: list[str]
+    unverified_losses: list[str] = field(default_factory=list)
     ran: bool = True
     skip_reason: str | None = None
 
@@ -181,7 +182,8 @@ class Recorder:
                 lines.append(
                     f"{t.source} -> {t.target}: {t.exported} exported, {t.imported} imported; "
                     f"documented losses {t.declared_losses}"
-                    + (f"; stale {t.stale_losses}" if t.stale_losses else "")
+                    + (f"; unverified here {t.unverified_losses}" if t.unverified_losses else "")
+                    + (f"; STALE {t.stale_losses}" if t.stale_losses else "")
                     + (f"; UNDOCUMENTED {t.observed_losses}" if t.observed_losses else "")
                 )
         return lines
@@ -218,6 +220,7 @@ class Recorder:
                     "documented_losses": t.declared_losses,
                     "undocumented_losses": t.observed_losses,
                     "stale_declarations": t.stale_losses,
+                    "unverified_declarations": t.unverified_losses,
                 }
                 for t in self.round_trips
             ],

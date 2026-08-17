@@ -49,7 +49,7 @@ Production readiness for multi-tenant deployments.
 
 Make it trivial for community contributors to build backend adapters.
 
-- [x] Conformance test package (pip-installable, run against any MemoryBackend) — landed early in v0.2; the suite ships inside `memcp` and takes out-of-tree adapters through `MEMCP_CONFORMANCE_EXTRA`
+- [x] Conformance test package (pip-installable, run against any MemoryBackend) — landed early in v0.2. Adapters register through `MEMCP_CONFORMANCE_EXTRA` and `declare_pair()`; `tests/test_conformance_out_of_tree.py` runs that recipe from a scratch directory, because the first version of this only worked from inside a memcp checkout and the checkbox was ticked before anyone had tried it from outside
 - [ ] Backend adapter development guide
 - [ ] CI template for adapter projects
 - [ ] Published API reference (auto-generated or manual)

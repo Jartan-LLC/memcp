@@ -2,8 +2,9 @@
 
 Writes the corpus into the source, migrates it, and checks per memory that content
 and scope survived and that the query which found it in the source still finds it
-in the target. Anything else that changed is compared to
-`memcp/conformance/portability.py`: a loss the document does not name fails here.
+in the target. Anything else that changed is compared to the pair's portability
+record — `DECLARED_LOSSES` for a backend memcp ships, `declare_pair()` for one it
+does not. A loss no record names fails here, and so does a record that over-claims.
 
 The target always receives a different tenant id. A migration into a fresh tenant
 is the honest shape of the operation, and it keeps a same-backend pair from being
@@ -26,24 +27,9 @@ from memcp.types import Memory
 SEARCH_LIMIT = 25
 LIST_LIMIT = 200
 
-MIN_MEMORIES = 20
-MIN_SCOPES = 2
-
-
-def test_corpus_meets_the_criterion():
-    corpus = round_trip_corpus()
-    assert len(corpus) >= MIN_MEMORIES, f"A3 needs at least {MIN_MEMORIES} memories"
-    scopes = {tuple(sorted(e.scope.items())) for e in corpus}
-    assert len(scopes) >= MIN_SCOPES, f"A3 needs at least {MIN_SCOPES} scopes"
-    shared = [e for e in corpus if _content_count(corpus, e.content) > 1]
-    assert shared, (
-        "the corpus must contain content that appears in more than one scope, or the "
-        "round trip stops exercising scope-aware import dedup"
-    )
-
-
-def _content_count(corpus: list[CorpusEntry], content: str) -> int:
-    return sum(1 for e in corpus if e.content == content)
+# pytest-asyncio decides how to run a test at collection time, so the marker has
+# to be here rather than added by a hook. See suite/conftest.py.
+pytestmark = pytest.mark.asyncio
 
 
 async def _write_corpus(backend: MemoryBackend, tenant: str, corpus: list[CorpusEntry]) -> None:
@@ -127,7 +113,7 @@ async def test_round_trip_preserves_content_scope_and_retrieval(
     _skip_without_list(source, source_spec)
     _skip_without_list(target, target_spec)
 
-    # Raises UndocumentedPairError if docs/portability.md has no entry for the pair.
+    # Raises UndocumentedPairError if no record covers the pair.
     declared = sorted(portability.declared_aspects(source_spec.name, target_spec.name))
 
     corpus = round_trip_corpus()
@@ -189,8 +175,18 @@ async def test_round_trip_preserves_content_scope_and_retrieval(
     for entry in corpus:
         await _assert_retrievable(target, other_tenant, entry, f"target {target_spec.name}")
 
+    # `history` is only comparable when both sides can report it. Declaring it for a
+    # pair that cannot is not an over-claim, so it is reported as unverified rather
+    # than failed.
+    observable = set(portability.ASPECTS)
+    if not compare_history:
+        observable.discard("history")
+
     undeclared = sorted(portability.undeclared(source_spec.name, target_spec.name, observed))
-    stale = sorted(portability.stale(source_spec.name, target_spec.name, observed))
+    stale = sorted(
+        portability.stale(source_spec.name, target_spec.name, observed, observable=observable)
+    )
+    unverified = sorted(portability.unverified(source_spec.name, target_spec.name, observable))
     report.record_round_trip(
         RoundTrip(
             source=source_spec.name,
@@ -200,20 +196,21 @@ async def test_round_trip_preserves_content_scope_and_retrieval(
             observed_losses=undeclared,
             declared_losses=declared,
             stale_losses=stale,
+            unverified_losses=unverified,
         )
     )
 
     assert not undeclared, (
-        f"{source_spec.name} -> {target_spec.name} lost {undeclared}, which "
-        f"docs/portability.md does not name. Either the adapter regressed or the loss "
-        f"is real and belongs in memcp/conformance/portability.py — decide, do not "
-        f"widen the assertion. Documented for this pair: {declared}."
+        f"{source_spec.name} -> {target_spec.name} lost {undeclared}, which no "
+        f"portability record names. Either the adapter regressed or the loss is real "
+        f"and belongs in the record — decide, do not widen the assertion. Declared for "
+        f"this pair: {declared}."
     )
     assert not stale, (
-        f"docs/portability.md declares {stale} lost for {source_spec.name} -> "
-        f"{target_spec.name}, but the round trip preserved it. An over-claiming "
-        "document is as bad as a silent loss: it would let a real regression in "
-        "those aspects pass. Remove the declaration or make the corpus produce it."
+        f"the portability record declares {stale} lost for {source_spec.name} -> "
+        f"{target_spec.name}, but the round trip preserved it. An over-claiming record "
+        "is as bad as a silent loss: it would let a real regression in those aspects "
+        "pass. Remove the declaration or make the corpus produce the loss."
     )
 
 

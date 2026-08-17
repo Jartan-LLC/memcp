@@ -1,18 +1,30 @@
 """Fixtures for the conformance suite.
 
-Self-contained on purpose: the suite is collectable from an installed memcp
-(`pytest --pyargs memcp.conformance.suite`) and must not depend on this
-repository's own tests/conftest.py or on asyncio_mode being set to auto.
+Self-contained on purpose: the suite runs from an installed memcp against an
+adapter in someone else's repository, so it must not depend on this repository's
+tests/conftest.py or on the caller's pytest configuration.
+
+That independence is why nothing here relies on `asyncio_mode = "auto"`, which lives
+in *this* repository's pyproject.toml and is absent from anyone else's:
+
+- fixtures use `@pytest_asyncio.fixture` with an explicit loop scope, because a bare
+  async fixture in strict mode fails with "requested an async fixture 'backend', with
+  no plugin or hook that handled it";
+- every suite module carries `pytestmark = pytest.mark.asyncio`, because pytest-asyncio
+  decides how to run a test while collecting it. An earlier version added that marker
+  from `pytest_collection_modifyitems`, which is too late to have any effect — out of
+  tree it left every async test reported as "async def functions are not natively
+  supported".
 """
 
 from __future__ import annotations
 
 import contextlib
-import inspect
 import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
+import pytest_asyncio
 
 from memcp.backend.base import MemoryBackend
 from memcp.conformance.plugin import recorder
@@ -20,14 +32,6 @@ from memcp.conformance.registry import BackendSpec, selected_specs
 from memcp.conformance.report import Recorder
 
 PairSpec = tuple[BackendSpec, BackendSpec]
-
-
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Mark async tests for pytest-asyncio so strict mode collects them too."""
-    for item in items:
-        func = getattr(item, "function", None)
-        if inspect.iscoroutinefunction(func) and not item.get_closest_marker("asyncio"):
-            item.add_marker(pytest.mark.asyncio)
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
@@ -74,7 +78,7 @@ async def _wipe(backend: MemoryBackend, *tenants: str) -> None:
             await backend.delete_all(tenant_id, {})
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def backend(
     backend_spec: BackendSpec, tenant: str, other_tenant: str, request: pytest.FixtureRequest
 ) -> AsyncGenerator[MemoryBackend]:
@@ -86,7 +90,7 @@ async def backend(
         await instance.close()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def pair(
     pair_spec: PairSpec, tenant: str, other_tenant: str, request: pytest.FixtureRequest
 ) -> AsyncGenerator[tuple[MemoryBackend, MemoryBackend]]:

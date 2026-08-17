@@ -15,6 +15,12 @@ from memcp.conformance.capabilities import (
 )
 from memcp.conformance.registry import BackendSpec, all_specs, selected_specs
 
+# Portability symbols are deliberately NOT re-exported here. Importing
+# memcp.conformance.portability from this __init__ makes
+# `python -m memcp.conformance.portability` — a documented command — emit a runpy
+# "found in sys.modules after import of package" warning. Import them from
+# memcp.conformance.portability directly, which is what docs/conformance.md says.
+
 __all__ = [
     "ALL_CAPABILITIES",
     "OPTIONAL_CAPABILITIES",

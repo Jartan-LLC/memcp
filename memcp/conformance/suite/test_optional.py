@@ -14,6 +14,10 @@ from memcp.types import AddResult, EntitiesResult, ListResult, MemoryAPIError
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
 
+# pytest-asyncio decides how to run a test at collection time, so the marker has
+# to be here rather than added by a hook. See suite/conftest.py.
+pytestmark = pytest.mark.asyncio
+
 
 def _first_id(result: AddResult | list[AddResult]) -> str:
     items = result if isinstance(result, list) else [result]

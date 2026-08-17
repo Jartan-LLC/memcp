@@ -55,6 +55,7 @@ asyncio_default_fixture_loop_scope = "function"
 # The conformance suite ships inside the package so out-of-tree adapters can run
 # it; it is collected here too, so `pytest` covers every backend this repo can reach.
 testpaths = ["tests", "memcp/conformance/suite"]
+markers = ["slow: spawns a subprocess pytest run (out-of-tree conformance)"]
 
 [tool.pyright]
 pythonVersion = "3.12"
