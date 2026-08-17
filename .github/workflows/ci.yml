@@ -68,6 +68,52 @@ jobs:
         env:
           MEM0_API_BASE: ${{ inputs.mem0_api_base || secrets.MEM0_API_BASE }}
           MEM0_API_KEY: ${{ inputs.mem0_api_key || secrets.MEM0_API_KEY }}
+          # The mem0 half of the conformance suite belongs to the `conformance` job,
+          # which stands its own mem0 up. Keeping it out of here means this job's
+          # result does not depend on whether a repository secret happens to be set.
+          MEMCP_CONFORMANCE_BACKENDS: in_memory
+
+  # A5: the conformance suite and the cross-backend round trip run against a real
+  # mem0 on every pull request, with no external API secret. ci/mem0 explains how.
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+
+      - run: uv pip install -e ".[dev]"
+
+      - name: Stand up a self-contained mem0
+        run: ci/mem0/up.sh
+
+      - name: Conformance suite — in_memory and mem0
+        env:
+          MEM0_API_BASE: http://127.0.0.1:8888
+          MEM0_API_KEY: memcp-conformance-admin-key
+          MEMCP_CONFORMANCE_BACKENDS: in_memory,mem0
+        run: python -m memcp.conformance -q --conformance-report=conformance-report.json
+
+      - name: mem0 stack logs
+        if: failure()
+        run: docker compose -f ci/mem0/docker-compose.yml logs --tail=300
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: conformance-report
+          path: conformance-report.json
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        run: ci/mem0/down.sh
 
   build:
     needs: [lint, test]
@@ -103,11 +149,11 @@ jobs:
 
   check:
     if: always()
-    needs: [lint, test, build]
+    needs: [lint, test, conformance, build]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.build.result }}")
+          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.conformance.result }}" "${{ needs.build.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then
               echo "Check failed: $r"

@@ -28,6 +28,11 @@ from .base import MemoryBackend
 
 logger = logging.getLogger(__name__)
 
+# mem0's GET /memories takes top_k, defaults it to 20, and refuses anything above
+# 1000 (ALL_MEMORIES_LIMIT in its server). This is the most memories one call can
+# see, and therefore the most an export of a mem0 tenant can contain.
+LIST_CEILING = 1000
+
 
 def _norm(value: Any) -> Any:
     """Return None for wildcard/empty sentinels; pass through otherwise."""
@@ -245,12 +250,18 @@ class Mem0Backend(MemoryBackend):
         cursor: str | None = None,
     ) -> ListResult:
         params = _build_identifier_params(user_id, scope)
+        # Without an explicit top_k, mem0 returns its default of 20 — so list,
+        # export and the import dedup index all silently saw only the first 20
+        # memories. LIST_CEILING is the server's own maximum; it rejects more.
+        params["top_k"] = LIST_CEILING
         result = await self._request("GET", "/memories", params=params)
         raw = result if isinstance(result, list) else (result or {}).get("results", [])
-        if len(raw) > 5000:
+        if len(raw) >= LIST_CEILING:
             logger.warning(
-                "Large result set from mem0 list endpoint: %d memories loaded into memory",
-                len(raw),
+                "mem0 returned its ceiling of %d memories for user %s; anything beyond "
+                "it is not listed, so an export of this tenant is incomplete",
+                LIST_CEILING,
+                user_id,
             )
         memories = [_parse_memory(r) for r in raw]
         return paginate(memories, cursor, limit)

@@ -1,0 +1,100 @@
+# Self-contained mem0 for conformance runs — no external API secret (GitHub #28).
+#
+#   ci/mem0/up.sh          bring it up and print the adapter's environment
+#   ci/mem0/down.sh        tear it down, volumes included
+#
+# The mem0 service builds from a checkout of Jartan-LLC/mem0 at the SHA in
+# ci/mem0/mem0.pin, cloned to ci/mem0/.mem0. up.sh does the clone.
+#
+# Credentials below are fixed literals on purpose: this stack is disposable, listens
+# on localhost only, and holds nothing but test corpora. Nothing here is a secret and
+# nothing here is reused by any deployment.
+
+name: memcp-conformance
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    shm_size: "128mb"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: conformance
+      POSTGRES_DB: postgres
+    volumes:
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -U postgres -d postgres"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  fake-openai:
+    image: memcp-ci/fake-openai:local
+    build:
+      context: ./fake-openai
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  mem0:
+    image: memcp-ci/mem0-server:local
+    build:
+      context: ./.mem0/server
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fake-openai:
+        condition: service_healthy
+    environment:
+      # Points mem0's OpenAI client at the stand-in. The key is required by the
+      # client library and is never sent anywhere real.
+      OPENAI_API_KEY: not-a-real-key
+      OPENAI_BASE_URL: http://fake-openai:8000/v1
+      MEM0_DEFAULT_LLM_MODEL: fake-chat
+      MEM0_DEFAULT_EMBEDDER_MODEL: fake-embed
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: conformance
+      POSTGRES_COLLECTION_NAME: memories
+      APP_DB_NAME: mem0_app
+
+      # The adapter authenticates with X-API-Key, which mem0 accepts as its admin
+      # key. Auth stays on, so CI exercises the authenticated path.
+      ADMIN_API_KEY: memcp-conformance-admin-key
+      JWT_SECRET: memcp-conformance-jwt-secret-not-used-by-the-adapter
+      AUTH_DISABLED: "false"
+
+      MEM0_TELEMETRY: "false"
+      HISTORY_DB_PATH: /app/history/history.db
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - mem0_history:/app/history
+    ports:
+      - "127.0.0.1:8888:8000"
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json')
+      interval: 5s
+      timeout: 10s
+      retries: 40
+      start_period: 20s
+
+volumes:
+  mem0_history:
