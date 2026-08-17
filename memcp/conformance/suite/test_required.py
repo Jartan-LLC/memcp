@@ -20,6 +20,10 @@ from memcp.types import AddResult, MemoryAPIError
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
 
+# pytest-asyncio decides how to run a test at collection time, so the marker has
+# to be here rather than added by a hook. See suite/conftest.py.
+pytestmark = pytest.mark.asyncio
+
 
 def _ids(result: AddResult | list[AddResult]) -> list[str]:
     items = result if isinstance(result, list) else [result]
@@ -166,23 +170,44 @@ async def test_delete_all_isolates_tenants(backend: MemoryBackend, tenant: str, 
     )
 
 
+async def _call_optional(backend: MemoryBackend, method_name: str, tenant: str) -> object:
+    method = getattr(backend, method_name)
+    match method_name:
+        case "get" | "history":
+            return await method(tenant, MISSING_ID)
+        case "update":
+            return await method(tenant, MISSING_ID, "replacement")
+        case _:
+            return await method(tenant)
+
+
 async def test_undeclared_capabilities_raise_not_implemented(backend: MemoryBackend, tenant: str):
     """A2's other half: what a backend does not claim, it must refuse outright.
 
     A backend that silently half-answers a method it did not declare is worse than
-    one that raises, because the tool layer never registers the tool and the
-    behaviour is unreachable but untested.
+    one that raises. The tool layer never registers that tool, so the behaviour is
+    unreachable in production and unverified by this suite — and callers inside memcp
+    do reach backend methods directly, `memcp.migrate` among them.
     """
     declared = backend.capabilities()
     for capability, method_name in OPTIONAL_CAPABILITIES.items():
         if capability in declared:
             continue
-        method = getattr(backend, method_name)
-        with pytest.raises(NotImplementedError):
-            match method_name:
-                case "get" | "history":
-                    await method(tenant, MISSING_ID)
-                case "update":
-                    await method(tenant, MISSING_ID, "replacement")
-                case _:
-                    await method(tenant)
+        try:
+            await _call_optional(backend, method_name, tenant)
+        except NotImplementedError:
+            continue
+        except Exception as e:  # any other error is still not a refusal
+            pytest.fail(
+                f"capabilities() omits {capability!r} but {method_name}() raised "
+                f"{type(e).__name__} instead of NotImplementedError: {e}. An undeclared "
+                "method must refuse, not fail some other way."
+            )
+        pytest.fail(
+            f"capabilities() omits {capability!r} but {method_name}() answered instead "
+            "of raising NotImplementedError. If the backend genuinely supports it, "
+            f"declare {capability!r}. If it inherits the implementation from another "
+            f"backend and means not to expose it, override {method_name}() to raise "
+            "NotImplementedError — narrowing by omission alone leaves working code no "
+            "caller can reach and this suite cannot check."
+        )

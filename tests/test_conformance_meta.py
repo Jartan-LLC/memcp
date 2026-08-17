@@ -9,6 +9,7 @@ as whoever remembers to extend them.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -110,10 +111,26 @@ def test_unknown_pair_is_a_loud_failure():
 
 
 def test_corpus_covers_the_criterion():
+    """A3's floor: at least 20 memories across at least 2 scopes, each with a query."""
     corpus = round_trip_corpus()
     assert len(corpus) >= 20
     assert len({tuple(sorted(e.scope.items())) for e in corpus}) >= 2
     assert all(e.query and e.content for e in corpus)
+
+
+def test_corpus_repeats_content_across_scopes():
+    """Without this, the round trip stops exercising scope-aware import dedup."""
+    counts = Counter(e.content for e in round_trip_corpus())
+    repeated = [content for content, n in counts.items() if n > 1]
+    assert repeated, (
+        "the corpus must hold content that appears in more than one scope — that is "
+        "what a content-only dedup index collapses (GitHub #30)"
+    )
+    for content in repeated:
+        scopes = {
+            tuple(sorted(e.scope.items())) for e in round_trip_corpus() if e.content == content
+        }
+        assert len(scopes) > 1, f"{content!r} is repeated within one scope, not across scopes"
 
 
 # ---------------------------------------------------------------------------
