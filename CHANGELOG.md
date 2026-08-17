@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- uv replaces pip as the installer everywhere — CI, the devcontainer and the Dockerfile — and `uv build` replaces `python -m build` on the publish path. One pin, `uv==0.12.5` in `ci/requirements.txt`, read by every `setup-uv` step via `version-file` and grepped by `.devcontainer/setup.sh`, so Dependabot's `/ci` entry moves every environment at once. No `uv.lock`, no `uv sync`: uv is the installer, not the project manager.
 - Migrated to MCP Python SDK 2.0: `mcp.server.fastmcp.FastMCP` → `mcp.server.mcpserver.MCPServer`. The SDK removed the `fastmcp` module in 2.0, which broke `main` with no change to it. `host`/`stateless_http` moved from the constructor to `streamable_http_app()`; `port` was never used (uvicorn binds, in `__main__`).
 - Every dependency now carries an upper bound, runtime and dev. CI installs unpinned on each run, so an unbounded floor let an upstream major redden CI on its release day.
 

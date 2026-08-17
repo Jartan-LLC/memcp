@@ -1,13 +1,27 @@
 ARG PYTHON_VERSION=3.12
 
+# uv installs the package here, same as in CI and the devcontainer. It arrives
+# as a build stage rather than the shorter `COPY --from=ghcr.io/astral-sh/uv`
+# because Dependabot's Dockerfile parser only reads `FROM` lines — an inline
+# COPY reference is a pin nobody bumps. Named `uv-bin` so it does not collide
+# with the `uv` binary in a later RUN. Keep this version in step with
+# ci/requirements.txt; Dependabot's docker and "/ci" entries move them
+# separately.
+FROM ghcr.io/astral-sh/uv:0.12.5 AS uv-bin
+
 FROM python:${PYTHON_VERSION}-slim AS build
+
+COPY --from=uv-bin /uv /uvx /bin/
 
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY memcp/ memcp/
 
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+# `--system` because the container is the isolation; no venv needed inside it.
+# Nothing upgrades pip first any more — uv is not pip and does not bootstrap
+# itself from the image's copy.
+RUN uv pip install --system --no-cache .
 
 FROM python:${PYTHON_VERSION}-slim
 

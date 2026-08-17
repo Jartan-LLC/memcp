@@ -22,6 +22,13 @@ on:
 permissions:
   contents: read
 
+# uv installs everything here, in place of pip. `--system` on every call would
+# say the same thing at every call site, so it is set once: uv targets the
+# interpreter actions/setup-python put on PATH rather than demanding a
+# virtualenv.
+env:
+  UV_SYSTEM_PYTHON: 1
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -34,8 +41,21 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-      - run: pip install -e ".[dev]"
+
+      # uv's own version is read from ci/requirements.txt, the file that pins
+      # the gate's tools — so Dependabot's "/ci" entry bumps uv too, and the
+      # runner, the devcontainer and the Dockerfile never drift apart. Without
+      # `version-file` this action installs uv `latest`, which is the
+      # unpinned-CI-tool failure JAR-278 closed. setup-uv's cache replaces
+      # setup-python's `cache: pip`: it keys off pyproject.toml and
+      # ci/requirements.txt, and it caches uv's own wheel store, which is what
+      # the install actually reads.
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+
+      - run: uv pip install -e ".[dev]"
       - run: ruff check memcp/ tests/
       - run: ruff format --check memcp/ tests/
       - run: pyright memcp/
@@ -47,8 +67,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-      - run: pip install -e ".[dev]"
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+
+      - run: uv pip install -e ".[dev]"
       - run: pytest -x
         env:
           MEM0_API_BASE: ${{ inputs.mem0_api_base || secrets.MEM0_API_BASE }}
