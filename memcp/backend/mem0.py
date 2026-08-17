@@ -182,9 +182,13 @@ class Mem0Backend(MemoryBackend):
         return None  # mem0 doesn't return a count
 
     async def health(self) -> HealthStatus:
+        # Liveness only: confirms the mem0 process is up and serving HTTP, not that
+        # its store is reachable. Polled every 30s, so a data-plane check here would
+        # cost a real query on every tick; real backend failures surface on real
+        # requests instead.
         start = time.monotonic()
         try:
-            await self._request("GET", "/memories", params={"user_id": "__health_check__"})
+            await self._request("GET", "/openapi.json")
             latency = (time.monotonic() - start) * 1000
             return HealthStatus(status="healthy", backend="mem0", latency_ms=round(latency, 1))
         except Exception:
