@@ -974,8 +974,8 @@ async def test_import_memories_overwrite_creates_new(mcp_with_tools):
     assert result["results"][0]["action"] == "created"
 
 
-async def test_import_memories_dedup_ignores_scope(mcp_with_tools):
-    """Same content in different scope is treated as duplicate (content-only dedup)."""
+async def test_import_memories_dedup_is_scope_aware(mcp_with_tools):
+    """Same content in a different scope is a distinct memory (GitHub #30)."""
     mcp, _ = mcp_with_tools
     await mcp.call("add_memory", content="shared fact", scope={"agent_id": "a1"}, infer=False)
     result = await mcp.call(
@@ -983,7 +983,52 @@ async def test_import_memories_dedup_ignores_scope(mcp_with_tools):
         memories=[{"content": "shared fact", "scope": {"agent_id": "a2"}}],
         on_conflict="skip",
     )
+    assert result["imported"] == 1
+    assert result["skipped"] == 0
+
+
+async def test_import_memories_dedup_matches_same_scope(mcp_with_tools):
+    """Same content in the same scope is still a duplicate."""
+    mcp, _ = mcp_with_tools
+    await mcp.call("add_memory", content="shared fact", scope={"agent_id": "a1"}, infer=False)
+    result = await mcp.call(
+        "import_memories",
+        memories=[{"content": "shared fact", "scope": {"agent_id": "a1"}}],
+        on_conflict="skip",
+    )
     assert result["imported"] == 0
+    assert result["skipped"] == 1
+
+
+async def test_import_memories_dedup_scopeless_matches_scopeless(mcp_with_tools):
+    """A memory stored with no scope dedups against an entry with no scope."""
+    mcp, _ = mcp_with_tools
+    await mcp.call("add_memory", content="unscoped fact", infer=False)
+    result = await mcp.call(
+        "import_memories",
+        memories=[
+            {"content": "unscoped fact"},
+            {"content": "unscoped fact", "scope": {"agent_id": "a1"}},
+        ],
+        on_conflict="skip",
+    )
+    assert result["imported"] == 1
+    assert result["skipped"] == 1
+
+
+async def test_import_memories_within_batch_dedup_is_scope_aware(mcp_with_tools):
+    """Two batch entries with the same content in different scopes both land."""
+    mcp, _ = mcp_with_tools
+    result = await mcp.call(
+        "import_memories",
+        memories=[
+            {"content": "batch fact", "scope": {"agent_id": "a1"}},
+            {"content": "batch fact", "scope": {"agent_id": "a2"}},
+            {"content": "batch fact", "scope": {"agent_id": "a1"}},
+        ],
+        on_conflict="skip",
+    )
+    assert result["imported"] == 2
     assert result["skipped"] == 1
 
 

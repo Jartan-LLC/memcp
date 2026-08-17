@@ -24,6 +24,11 @@ dependencies = [
 [project.scripts]
 memcp = "memcp.__main__:main"
 
+# Auto-loads the conformance reporter wherever memcp is installed, so
+# `pytest --pyargs memcp.conformance.suite` works from an adapter's own repository.
+[project.entry-points.pytest11]
+memcp_conformance = "memcp.conformance.plugin"
+
 [project.optional-dependencies]
 dev = [
     "asgi-lifespan>=2.1,<3",
@@ -47,7 +52,10 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
+# The conformance suite ships inside the package so out-of-tree adapters can run
+# it; it is collected here too, so `pytest` covers every backend this repo can reach.
+testpaths = ["tests", "memcp/conformance/suite"]
+markers = ["slow: spawns a subprocess pytest run (out-of-tree conformance)"]
 
 [tool.pyright]
 pythonVersion = "3.12"
