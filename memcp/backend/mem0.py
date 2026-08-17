@@ -118,7 +118,7 @@ class Mem0Backend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
-    ) -> AddResult | list[AddResult]:
+    ) -> list[AddResult]:
         payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": content}],
             "user_id": user_id,

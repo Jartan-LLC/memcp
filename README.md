@@ -135,7 +135,7 @@ docker compose up -d
 ```bash
 ruff check memcp/ tests/
 ruff format --check memcp/ tests/
-pyright memcp/
+pyright
 python -c "import memcp"
 pytest -x
 ```
