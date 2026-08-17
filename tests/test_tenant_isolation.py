@@ -206,7 +206,10 @@ async def test_mallory_cannot_reach_alices_memory_through_any_tool(
         alice_list = await _call(client, ALICE_TOKEN, "list_memories", {})
         assert len(alice_list["memories"]) == 1
 
-    await _cleanup_mem0(backend, backend_name)
+        # Cleanup runs inside the lifespan: `create_app`'s shutdown handler closes
+        # `backend` when this block exits, and mem0's http client is unusable after.
+        await _cleanup_mem0(backend, backend_name)
+
     await backend.close()
 
 
@@ -232,7 +235,8 @@ async def test_an_unknown_token_reaches_no_tenant_at_all(
         )
         assert resp.status_code == 401
 
-    await _cleanup_mem0(backend, backend_name)
+        await _cleanup_mem0(backend, backend_name)
+
     await backend.close()
 
 
@@ -255,7 +259,8 @@ async def test_two_tenants_write_the_same_content_without_colliding(
             listed = await _call(client, token, "list_memories", {})
             assert len(listed["memories"]) == 1
 
-    await _cleanup_mem0(backend, backend_name)
+        await _cleanup_mem0(backend, backend_name)
+
     await backend.close()
 
 
@@ -280,7 +285,8 @@ async def test_memory_status_carries_no_tenant_data(
         assert alice_status == mallory_status, "memory_status differs by tenant"
         assert SECRET not in _text(alice_status), "memory_status carried memory content"
 
-    await _cleanup_mem0(backend, backend_name)
+        await _cleanup_mem0(backend, backend_name)
+
     await backend.close()
 
 
@@ -325,5 +331,6 @@ async def test_import_cannot_target_another_tenants_memory(
         mallory_list = await _call(client, MALLORY_TOKEN, "list_memories", {})
         assert len(mallory_list["memories"]) == 1
 
-    await _cleanup_mem0(backend, backend_name)
+        await _cleanup_mem0(backend, backend_name)
+
     await backend.close()
