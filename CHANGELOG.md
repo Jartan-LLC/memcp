@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Migrated to MCP Python SDK 2.0: `mcp.server.fastmcp.FastMCP` → `mcp.server.mcpserver.MCPServer`. The SDK removed the `fastmcp` module in 2.0, which broke `main` with no change to it. `host`/`stateless_http` moved from the constructor to `streamable_http_app()`; `port` was never used (uvicorn binds, in `__main__`).
+- Every dependency now carries an upper bound, runtime and dev. CI installs unpinned on each run, so an unbounded floor let an upstream major redden CI on its release day.
+
+### Added
+- CI runs on push to `main` and weekly on a schedule, not on pull requests alone. Dependency drift is now found by CI rather than by the next unrelated PR.
+
 ## [0.1.1] — 2026-06-14
 
 ### Fixed
