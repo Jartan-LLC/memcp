@@ -17,9 +17,15 @@ from memcp.backend.mem0 import Mem0Backend
 
 MEM0_API_BASE = os.environ.get("MEM0_API_BASE")
 MEM0_API_KEY = os.environ.get("MEM0_API_KEY")
+MEM0_UNCONFIGURED = not MEM0_API_BASE or not MEM0_API_KEY
+
+# Set MEMCP_REQUIRE_MEM0=1 where these tests are the assurance rather than a bonus —
+# the CI job that stands a real mem0 up — and a missing configuration reddens the
+# build instead of skipping the file out of existence.
+REQUIRE_MEM0 = os.environ.get("MEMCP_REQUIRE_MEM0") == "1"
 
 pytestmark = pytest.mark.skipif(
-    not MEM0_API_BASE or not MEM0_API_KEY,
+    MEM0_UNCONFIGURED and not REQUIRE_MEM0,
     reason="MEM0_API_BASE and MEM0_API_KEY not set",
 )
 
@@ -29,6 +35,11 @@ SECOND_USER = f"memcp_test2_{uuid.uuid4().hex[:8]}"
 
 @pytest.fixture
 async def mem0() -> AsyncGenerator[Mem0Backend]:
+    if MEM0_UNCONFIGURED:
+        pytest.fail(
+            "MEMCP_REQUIRE_MEM0=1 but MEM0_API_BASE/MEM0_API_KEY are unset — this "
+            "file would have skipped silently and taken its live coverage with it"
+        )
     assert MEM0_API_BASE and MEM0_API_KEY
     backend = Mem0Backend(MEM0_API_BASE, MEM0_API_KEY)
     yield backend

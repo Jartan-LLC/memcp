@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -33,6 +34,11 @@ logger = logging.getLogger(__name__)
 # see, and therefore the most an export of a mem0 tenant can contain.
 LIST_CEILING = 1000
 
+# The entity types mem0's GET /entities buckets by, and the payload field each one
+# reads. Same mapping as its TYPE_TO_FIELD, because entities() reproduces that
+# bucketing over the caller's own memories.
+ENTITY_FIELDS = (("user", "user_id"), ("agent", "agent_id"), ("run", "run_id"))
+
 
 def _norm(value: Any) -> Any:
     """Return None for wildcard/empty sentinels; pass through otherwise."""
@@ -41,18 +47,35 @@ def _norm(value: Any) -> Any:
     return value
 
 
+def _caller_scope(scope: dict[str, Any] | None) -> dict[str, Any]:
+    """Validate a caller's scope and drop user_id from it.
+
+    Every builder below writes scope keys over a dict that already holds the
+    token-derived user_id, so a scope carrying user_id would overwrite the tenant.
+    Nothing reaches them that way today — tools.py strips it — but that is one
+    check at the far end from the query, and tenant isolation on this backend is
+    post-hoc rather than structural. Dropping it here removes the class
+    (SEC-2026-0065).
+    """
+    if not scope:
+        return {}
+    reject_nested_filters(scope)
+    if "user_id" in scope:
+        logger.warning("Dropped user_id from a backend scope dict; it comes from the token")
+        return {k: v for k, v in scope.items() if k != "user_id"}
+    return scope
+
+
 def _build_search_filters(
     user_id: str,
     scope: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Flat filter dict for POST /search."""
     filters: dict[str, Any] = {"user_id": user_id}
-    if scope:
-        reject_nested_filters(scope)
-        for key, val in scope.items():
-            val = _norm(val) if isinstance(val, str) else val
-            if val is not None:
-                filters[key] = val
+    for key, val in _caller_scope(scope).items():
+        val = _norm(val) if isinstance(val, str) else val
+        if val is not None:
+            filters[key] = val
     return filters
 
 
@@ -62,13 +85,59 @@ def _build_identifier_params(
 ) -> dict[str, Any]:
     """Query params for GET /memories and DELETE /memories."""
     params: dict[str, Any] = {"user_id": user_id}
-    if scope:
-        reject_nested_filters(scope)
-        for key, val in scope.items():
-            val = _norm(val)
-            if val is not None:
-                params[key] = val
+    for key, val in _caller_scope(scope).items():
+        val = _norm(val)
+        if val is not None:
+            params[key] = val
     return params
+
+
+def _parse_ts(value: Any) -> datetime | None:
+    """Parse a mem0 timestamp; naive values are read as UTC so any two compare."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _bucket_entities(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Bucket memory rows into entity rows, the way mem0's GET /entities does.
+
+    Same shape and same aggregation — count per bucket, earliest created_at,
+    latest updated_at — over whichever rows it is given. Timestamps are echoed
+    back as the strings the memories carry, so an entity row's dates match the
+    dates the same memories report through get/list.
+    """
+    buckets: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        created = _parse_ts(row.get("created_at"))
+        updated = _parse_ts(row.get("updated_at")) or created
+        for entity_type, field in ENTITY_FIELDS:
+            value = row.get(field)
+            if not value:
+                continue
+            bucket = buckets.setdefault(
+                (entity_type, str(value)),
+                {"total_memories": 0, "created_at": None, "updated_at": None},
+            )
+            bucket["total_memories"] += 1
+            if created and (bucket["created_at"] is None or created < bucket["created_at"][0]):
+                bucket["created_at"] = (created, row.get("created_at"))
+            if updated and (bucket["updated_at"] is None or updated > bucket["updated_at"][0]):
+                bucket["updated_at"] = (updated, row.get("updated_at") or row.get("created_at"))
+    return [
+        {
+            "id": entity_id,
+            "type": entity_type,
+            "total_memories": data["total_memories"],
+            "created_at": data["created_at"][1] if data["created_at"] else None,
+            "updated_at": data["updated_at"][1] if data["updated_at"] else None,
+        }
+        for (entity_type, entity_id), data in sorted(buckets.items())
+    ]
 
 
 def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
@@ -132,12 +201,10 @@ class Mem0Backend(MemoryBackend):
             "user_id": user_id,
             "infer": infer,
         }
-        if scope:
-            reject_nested_filters(scope)
-            for key, val in scope.items():
-                normed = _norm(val)
-                if normed is not None:
-                    payload[key] = normed
+        for key, val in _caller_scope(scope).items():
+            normed = _norm(val)
+            if normed is not None:
+                payload[key] = normed
         if metadata:
             payload["metadata"] = metadata
 
@@ -294,17 +361,32 @@ class Mem0Backend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        result = await self._request("GET", "/entities")
-        raw = result if isinstance(result, list) else []
-        # mem0 /entities ignores user_id param — post-filter for tenant isolation
-        filtered = [e for e in raw if e.get("id") == user_id]
-        if raw and not filtered:
+        """Entity buckets over this tenant's own memories.
+
+        Not GET /entities. That endpoint is global: it scans every payload in the
+        store and buckets each one by user_id, agent_id and run_id, so a bucket
+        exists for every value any tenant ever wrote and carries that bucket's
+        count and timestamps. Nothing in a row says who owns it — the id is the
+        only identifier, and agent_id/run_id are caller-controlled — so filtering
+        the response on `id == user_id` let one tenant put a row into another's
+        output, and let a value two tenants share count both their memories
+        (SEC-2026-0065). No refinement of that filter can fix it, because the
+        ownership is not in the response. Bucketing the caller's own memory
+        listing gives the same rows from data that is already tenant-scoped on the
+        wire, so isolation here is the query rather than a filter over the answer.
+        """
+        params = _build_identifier_params(user_id, scope)
+        params["top_k"] = LIST_CEILING
+        result = await self._request("GET", "/memories", params=params)
+        raw = result if isinstance(result, list) else (result or {}).get("results", [])
+        if len(raw) >= LIST_CEILING:
             logger.warning(
-                "Entities post-filter returned empty for user %s (%d raw entities)",
+                "mem0 returned its ceiling of %d memories for user %s; entity counts "
+                "for this tenant are undercounts",
+                LIST_CEILING,
                 user_id,
-                len(raw),
             )
-        return EntitiesResult(entities=filtered[:limit])
+        return EntitiesResult(entities=_bucket_entities(raw)[:limit])
 
     # --- lifecycle ---
 

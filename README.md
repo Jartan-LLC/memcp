@@ -221,7 +221,9 @@ Both run on every pull request against a real mem0, stood up locally with no API
 - List returns at most 1000 memories per call (mem0's own ceiling), so an export of a
   tenant above that is incomplete and does not say so
 - List endpoint does not filter by metadata
-- Entities endpoint does not filter by user — post-filtered client-side
+- Entities endpoint is global and carries no owner, so it is not used at all —
+  `memory_entities` buckets the caller's own memories instead, which also caps its
+  counts at the 1000-memory list ceiling above
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 
 **sqlite and in-memory backends (no model behind them):**
