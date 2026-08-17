@@ -18,6 +18,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from memcp.deploy import runner
 from memcp.deploy.runner import DeployError
@@ -132,16 +133,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _shape_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    """Every flag that changes what the deployment *is*, read in one place.
+
+    `plan` and `up` have to build the same `Deployment` from the same flags, or the
+    plan describes something other than what gets created — and C6 is the criterion
+    that makes provisioning auditable, so that is the criterion failing rather than a
+    cosmetic mismatch.
+
+    It was a real bug: `_plan` passed five of the six and dropped `llm_base_url`, so
+    `plan --backend mem0 --llm-base-url ...` reported `OPENAI_API_KEY` as the
+    operator's to supply and never mentioned `OPENAI_BASE_URL`, while `up` with the
+    identical flags minted a placeholder and pointed mem0's LLM at that endpoint. The
+    plan omitted an egress destination the deployment would configure.
+
+    One function rather than two call sites is what makes the next flag structural
+    instead of something to remember; `tests/test_deploy_cli.py` asserts both that the
+    two commands accept the same flags and that they produce identical deployments.
+    """
+    return {
+        "port": args.port,
+        "bind": args.bind,
+        "project": args.project,
+        "source_spec": args.memcp_source,
+        "llm_base_url": args.llm_base_url,
+    }
+
+
 def _plan(args: argparse.Namespace) -> int:
     directory = Path(args.dir)
-    deployment, source = runner.plan_for(
-        args.backend,
-        directory,
-        port=args.port,
-        bind=args.bind,
-        project=args.project,
-        source_spec=args.memcp_source,
-    )
+    deployment, source = runner.plan_for(args.backend, directory, **_shape_kwargs(args))
     if args.json:
         print(deployment.to_json())
         return 0
@@ -158,13 +179,7 @@ def _up(args: argparse.Namespace) -> int:
     runner.require_docker()
 
     deployment, source, values, minted_names = runner.prepare(
-        args.backend,
-        directory,
-        port=args.port,
-        bind=args.bind,
-        project=args.project,
-        source_spec=args.memcp_source,
-        llm_base_url=args.llm_base_url,
+        args.backend, directory, **_shape_kwargs(args)
     )
 
     existing = runner.read_token(directory) is not None
