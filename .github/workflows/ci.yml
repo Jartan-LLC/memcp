@@ -3,6 +3,13 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  # Dependencies install unpinned on every run, so `main` can go red with no
+  # change to it. Without a build that runs on `main`, the next unrelated PR is
+  # what discovers the drift.
+  schedule:
+    - cron: "17 6 * * 1"
   workflow_dispatch:
     inputs:
       mem0_api_base:
