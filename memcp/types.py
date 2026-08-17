@@ -108,6 +108,19 @@ class AddResult:
     created_at: str = ""
 
 
+def serialize_memory(m: Memory) -> dict[str, Any]:
+    """Wire shape for a Memory — the export/import payload and MCP tool results."""
+    return {
+        "id": m.id,
+        "content": m.content,
+        "score": m.score,
+        "scope": m.scope,
+        "metadata": m.metadata,
+        "created_at": m.created_at,
+        "updated_at": m.updated_at,
+    }
+
+
 @dataclass
 class ListResult:
     memories: list[Memory] = field(default_factory=list)

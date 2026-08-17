@@ -11,7 +11,7 @@ import httpx
 import pytest
 import respx
 
-from memcp.backend.mem0 import Mem0Backend
+from memcp.backend.mem0 import LIST_CEILING, Mem0Backend
 from memcp.types import MemoryAPIError
 
 BASE = "https://mem0.test"
@@ -301,6 +301,24 @@ async def test_list_memories_paginates(backend):
     page1 = await backend.list_memories(USER, limit=2)
     assert len(page1.memories) == 2
     assert page1.next_cursor is not None
+
+
+@respx.mock
+async def test_list_memories_requests_the_server_ceiling(backend):
+    """Canary: mem0's GET /memories defaults top_k to 20, so it must be explicit.
+
+    Without it, list, export and the import dedup index all see the first 20
+    memories and nothing tells the caller the rest exist.
+    """
+    route = respx.get(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    await backend.list_memories(USER, limit=100)
+    assert route.calls.last.request.url.params["top_k"] == str(LIST_CEILING)
+    assert LIST_CEILING == 1000, (
+        "mem0 rejects top_k above ALL_MEMORIES_LIMIT (1000) in its server; raising "
+        "this constant needs an upstream change first"
+    )
 
 
 # ---------------------------------------------------------------------------

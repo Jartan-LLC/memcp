@@ -28,6 +28,11 @@ from .base import MemoryBackend
 
 logger = logging.getLogger(__name__)
 
+# mem0's GET /memories takes top_k, defaults it to 20, and refuses anything above
+# 1000 (ALL_MEMORIES_LIMIT in its server). This is the most memories one call can
+# see, and therefore the most an export of a mem0 tenant can contain.
+LIST_CEILING = 1000
+
 
 def _norm(value: Any) -> Any:
     """Return None for wildcard/empty sentinels; pass through otherwise."""
@@ -183,9 +188,11 @@ class Mem0Backend(MemoryBackend):
 
     async def health(self) -> HealthStatus:
         # Liveness only: confirms the mem0 process is up and serving HTTP, not that
-        # its store is reachable. Polled every 30s, so a data-plane check here would
-        # cost a real query on every tick; real backend failures surface on real
-        # requests instead.
+        # its store is reachable or that MEM0_API_KEY is still valid — /openapi.json
+        # carries no auth dependency, so a wrong or expired key still answers 200.
+        # Polled every 30s, so a data-plane check here would cost a real query on
+        # every tick; real backend and credential failures surface on real requests
+        # instead.
         start = time.monotonic()
         try:
             await self._request("GET", "/openapi.json")
@@ -249,12 +256,18 @@ class Mem0Backend(MemoryBackend):
         cursor: str | None = None,
     ) -> ListResult:
         params = _build_identifier_params(user_id, scope)
+        # Without an explicit top_k, mem0 returns its default of 20 — so list,
+        # export and the import dedup index all silently saw only the first 20
+        # memories. LIST_CEILING is the server's own maximum; it rejects more.
+        params["top_k"] = LIST_CEILING
         result = await self._request("GET", "/memories", params=params)
         raw = result if isinstance(result, list) else (result or {}).get("results", [])
-        if len(raw) > 5000:
+        if len(raw) >= LIST_CEILING:
             logger.warning(
-                "Large result set from mem0 list endpoint: %d memories loaded into memory",
-                len(raw),
+                "mem0 returned its ceiling of %d memories for user %s; anything beyond "
+                "it is not listed, so an export of this tenant is incomplete",
+                LIST_CEILING,
+                user_id,
             )
         memories = [_parse_memory(r) for r in raw]
         return paginate(memories, cursor, limit)
