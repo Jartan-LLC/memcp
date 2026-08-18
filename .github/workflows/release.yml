@@ -1,0 +1,35 @@
+name: Create GitHub Release
+
+# Ported from Jartan-LLC/scaffold unchanged. memcp had no such workflow: a v* tag
+# published to PyPI and ghcr, and the GitHub release was a separate step somebody
+# remembered by hand. v0.1.0 and v0.1.1 were created that way; v0.1.2 was not, and
+# nothing noticed.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # No checkout needed: gh talks to the API and resolves the repo from
+      # GH_REPO. The view-or-create guard keeps re-runs on the same tag
+      # idempotent instead of failing with "release already exists".
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag

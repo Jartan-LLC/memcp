@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A `v*` tag now creates the GitHub release itself** (`release.yml`, ported unchanged from `Jartan-LLC/scaffold`). memcp had no such workflow: a tag published to PyPI and ghcr, and the release page was a separate `gh release create` somebody ran by hand. v0.1.0 and v0.1.1 were created that way, v0.1.2 was not, and nothing noticed. The `view || create` guard makes a re-run on the same tag idempotent. (JAR-623)
+
 ### Changed
+- **Image tags come from `docker/metadata-action`**, converging with scaffold: `{{version}}` and `{{major}}.{{minor}}` instead of one hardcoded pair. `{{major}}` is deliberately absent — pre-1.0 it is an alias for "any version at all", and across minor lines it carries the same ordering defect `latest` had. `flavor: latest=false` turns off metadata-action's own `latest=auto`, which excludes pre-releases but does **not** check whether the tag is the highest version; the explicit guard added earlier makes that decision instead.
+- The README's time-to-first-memory figures are a table, one row per backend, so a new backend is a new row. Same numbers, same statement of what CI measures.
 - **The README is 115 lines instead of 249, and points at documents rather than restating them.** It answers what memcp is, how one command gets you a running one, how a client connects, and where everything else lives. The environment-variable table, the 12-tool surface and the per-backend limitations moved to `docs/reference.md`; the check loop and the conformance run moved to `docs/development.md`; running the server without provisioning moved into `docs/deployment.md`, which already had a stub for it. Links out of the README are absolute, because PyPI renders it as the package page and does not resolve relative paths.
 - **`:latest` follows the highest released version, not the most recently pushed tag.** `release/0.1.x` is maintained beside `main`, so a v0.1.3 cut after v0.2.0 would have moved `:latest` backwards and silently downgraded anyone pulling it.
 - `docker-compose.yml` says why it builds the checkout rather than pulling a published image: `main` is where the code is developed, so its compose file runs the code in the checkout. The release branches are the ones that deploy a released artifact, and their compose files name `ghcr.io/jartan-llc/memcp` at an exact version (JAR-623).

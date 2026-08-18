@@ -20,20 +20,26 @@ memcp up
 Needs Docker and nothing else. It creates the stack, waits until it is healthy,
 prints a bearer token once, and prints the MCP client snippet containing it.
 
-**Time to first memory: under 20 seconds** — 18.4s, 18.5s and 19.2s across three runs
-on a clean GitHub-hosted runner with an empty image cache, measured from `memcp up`
-starting to `add_memory` then `search_memory` both succeeding over MCP. Nearly all of
-it is building and starting the container; the round trip itself is 0.11s. CI
-measures it on every pull request, so these are numbers this repository ran rather
-than ones it estimated. `--backend mem0` is the slower path — 54–56s to healthy, then
-2.4–3.1s for the first memory, because it builds mem0 from source and starts pgvector
-beside it.
+### Time to first memory
 
-**What you get with no account and no API key:** durable, multi-tenant memory on the
-default `sqlite` backend. Retrieval there is keyword matching, not semantic search,
-and nothing is extracted from what you store — the semantic and graph engines need a
-key. `memory_status` reports which case a deployment is in, so a client can find out
-without reading this file.
+| Backend | Up and healthy | Then store + retrieve one memory | Total |
+|---|---|---|---|
+| `sqlite` (default) | 18.3–19.1s | 0.11s | **18.4s, 18.5s, 19.2s** across three runs |
+| `mem0` | 54–56s | 2.4–3.1s | 56–59s |
+
+Measured from `memcp up` starting to `add_memory` then `search_memory` both
+succeeding over MCP, on a clean GitHub-hosted runner with an empty image cache.
+Nearly all of it is building and starting containers: `mem0` is slower because it
+builds mem0 from source and starts pgvector beside it. The `provision` job runs this
+on every pull request and publishes `TIME_TO_FIRST_MEMORY_SECONDS` to its summary, so
+these are numbers this repository ran rather than ones it estimated.
+
+**No account, no API key.** The default backend is `sqlite`. Memories go to a file on
+disk and survive a restart. Search is keyword matching, so it finds a memory when your
+question reuses its words and misses one phrased differently, and it stores what you
+give it word for word instead of pulling facts out of it. Semantic search and the
+knowledge graph need mem0 and a key. A client does not have to guess which it is
+talking to: `memory_status` says.
 
 ```bash
 memcp plan          # everything it will create, before it creates any of it
