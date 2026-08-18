@@ -36,6 +36,10 @@ Backend-agnostic, multi-tenant MCP memory server. Python, MCP Python SDK 2.0, de
 - mem0 PUT /memories/{id} returns `{"message": "..."}`, not the memory — must GET after PUT
 - mem0 GET /entities does NOT filter by user_id — server post-filters for tenant isolation
 - mem0 single-ID endpoints (GET/PUT/DELETE/history) are global — adapter does fetch-then-verify for ownership
+- The MCP SDK enables DNS-rebinding protection only when the `host` passed to `streamable_http_app` is `127.0.0.1`, `localhost` or `::1`. Every other value, including `0.0.0.0`, leaves Host and Origin unvalidated — set `MEMCP_ALLOWED_HOSTS` to turn it on
+- `memcp up` is an operator command, never something the running server does. Nothing it generates may mount the Docker socket
+- Only `mem0` declares `memory_entities`. `sqlite` and `in_memory` have no graph and must not claim one — `memory_status` is what agents read, so a capability list has to match the prose
+- `docs/tool-surface.json` is generated from the full capability set (`ALL_CAPABILITIES`), not from whichever backend declares the most. A backend honestly dropping a capability must not look like the frozen contract shrinking
 
 ## Skills
 
@@ -57,7 +61,7 @@ When adding a new skill, add an entry here.
 ```bash
 ruff check memcp/ tests/
 ruff format --check memcp/ tests/
-pyright memcp/
+pyright
 python -c "import memcp"
 pytest -x
 ```

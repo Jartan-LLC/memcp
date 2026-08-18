@@ -5,15 +5,27 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: read
-  packages: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      IMAGE_NAME: "" # set (lowercased) by the "Compute lowercase image name" step
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Tags, not just this commit — the `latest` decision below reads them.
+          fetch-depth: 0
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
@@ -23,18 +35,51 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version and repo
-        id: meta
+      # ghcr requires a lowercase image path, but github.repository keeps the
+      # owner/repo casing.
+      - name: Compute lowercase image name
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      # `latest` follows the highest released version, not the most recently pushed
+      # tag. This repository maintains release/0.1.x beside main, so a v0.1.3 cut
+      # after v0.2.0 would otherwise republish `latest` as the older code and anyone
+      # pulling it would silently downgrade. metadata-action's own `latest=auto`
+      # does not check this — it only excludes pre-releases — so the flavor is
+      # turned off and the decision made here instead.
+      # Pre-releases are dropped before taking the highest: GNU sort -V orders
+      # 1.0.0 ahead of 1.0.0-rc1 (the suffix sorts as "greater"), so an rc tag
+      # would otherwise outrank the release it precedes.
+      - name: Decide whether this tag takes `latest`
+        id: latest
         run: |
-          echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-          echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          version="${GITHUB_REF#refs/tags/v}"
+          highest="$(git tag -l 'v*' | sed 's/^v//' | grep -v -- '-' | sort -V | tail -1)"
+          if [ "$version" = "$highest" ]; then
+            echo "take=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "take=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$version is not the highest tag (v$highest); leaving :latest alone"
+          fi
+
+      # `{{major}}` is deliberately absent. Pre-1.0 it is an alias for "any version
+      # at all", and across minor lines it carries the same ordering defect the
+      # guard above exists to prevent. `{{major}}.{{minor}}` is safe: patches within
+      # one line are cut in order.
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ steps.latest.outputs.take }}
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}
-            ghcr.io/${{ steps.meta.outputs.repo }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

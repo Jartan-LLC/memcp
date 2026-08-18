@@ -1,7 +1,8 @@
 """In-memory backend adapter — for conformance tests, dev mode, and demos.
 
 Stores memories in plain dicts. No persistence, no extraction, no vector search.
-Search uses substring matching on content as a trivial approximation.
+Search is the keyword scorer in `memcp.backend.keyword`, shared with the sqlite
+backend so the two rank identically.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from memcp.types import (
+    AUTHOR_METADATA_KEY,
     AddResult,
     EntitiesResult,
     HealthStatus,
@@ -20,9 +22,26 @@ from memcp.types import (
     MemoryAPIError,
     paginate,
     reject_nested_filters,
+    split_author,
+    strip_reserved_metadata,
 )
 
 from .base import MemoryBackend
+from .keyword import score as _score
+
+
+def _entry_to_memory(mid: str, entry: dict[str, Any], *, score: float | None = None) -> Memory:
+    author, metadata = split_author(entry.get("metadata", {}))
+    return Memory(
+        id=mid,
+        content=entry["content"],
+        score=score,
+        scope=entry.get("scope", {}),
+        metadata=metadata,
+        author=author,
+        created_at=entry["created_at"],
+        updated_at=entry.get("updated_at"),
+    )
 
 
 class InMemoryBackend(MemoryBackend):
@@ -44,16 +63,25 @@ class InMemoryBackend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
+        author: str | None = None,
     ) -> list[AddResult]:
         if scope:
             reject_nested_filters(scope)
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
+        # Reserved keys are stripped here, not just by the tool layer: a caller-
+        # supplied `_memcp_author` (or any future `_memcp_` key) must never reach
+        # storage regardless of who calls this method (Thorne, JAR-723 finding 1
+        # — metadata was entirely unvalidated pre-patch, so any bearer-token
+        # holder could plant one, and the read path trusts whatever it finds).
+        stored_metadata = strip_reserved_metadata(metadata) or {}
+        if author is not None:
+            stored_metadata[AUTHOR_METADATA_KEY] = author
         self._store[memory_id] = {
             "user_id": user_id,
             "content": content,
             "scope": scope or {},
-            "metadata": metadata or {},
+            "metadata": stored_metadata,
             "created_at": now,
             "updated_at": None,
         }
@@ -63,6 +91,7 @@ class InMemoryBackend(MemoryBackend):
                 "timestamp": now,
                 "content_before": None,
                 "content_after": content,
+                "author": author,
             }
         ]
         return [AddResult(id=memory_id, status="ready", created_at=now)]
@@ -79,7 +108,6 @@ class InMemoryBackend(MemoryBackend):
         if scope:
             reject_nested_filters(scope)
         results = []
-        query_lower = query.lower()
         for mid, entry in self._store.items():
             if entry["user_id"] != user_id:
                 continue
@@ -87,27 +115,12 @@ class InMemoryBackend(MemoryBackend):
                 entry_scope = entry.get("scope", {})
                 if not all(entry_scope.get(k) == v for k, v in scope.items()):
                     continue
-            content_lower = entry["content"].lower()
-            # Trivial relevance: count query word matches
-            words = query_lower.split()
-            matches = sum(1 for w in words if w in content_lower)
-            if matches == 0 and query_lower not in content_lower:
+            relevance = _score(query, entry["content"])
+            if relevance is None:
                 continue
-            score = matches / max(len(words), 1)
-            results.append((score, mid, entry))
+            results.append((relevance, mid, entry))
         results.sort(key=lambda x: x[0], reverse=True)
-        return [
-            Memory(
-                id=mid,
-                content=entry["content"],
-                score=score,
-                scope=entry.get("scope", {}),
-                metadata=entry.get("metadata", {}),
-                created_at=entry["created_at"],
-                updated_at=entry.get("updated_at"),
-            )
-            for score, mid, entry in results[:limit]
-        ]
+        return [_entry_to_memory(mid, entry, score=score) for score, mid, entry in results[:limit]]
 
     async def delete(self, user_id: str, memory_id: str) -> bool:
         entry = self._store.get(memory_id)
@@ -137,12 +150,12 @@ class InMemoryBackend(MemoryBackend):
         return HealthStatus(status="healthy", backend="in_memory", latency_ms=0.0)
 
     def capabilities(self) -> set[str]:
+        # No memory_entities: see entities() below.
         return {
             "get_memory",
             "update_memory",
             "list_memories",
             "memory_history",
-            "memory_entities",
         }
 
     def scope_keys(self) -> list[str]:
@@ -154,14 +167,7 @@ class InMemoryBackend(MemoryBackend):
         entry = self._store.get(memory_id)
         if entry is None or entry["user_id"] != user_id:
             return None
-        return Memory(
-            id=memory_id,
-            content=entry["content"],
-            scope=entry.get("scope", {}),
-            metadata=entry.get("metadata", {}),
-            created_at=entry["created_at"],
-            updated_at=entry.get("updated_at"),
-        )
+        return _entry_to_memory(memory_id, entry)
 
     async def update(
         self,
@@ -170,6 +176,7 @@ class InMemoryBackend(MemoryBackend):
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
+        author: str | None = None,
     ) -> Memory:
         entry = self._store.get(memory_id)
         if entry is None or entry["user_id"] != user_id:
@@ -178,8 +185,12 @@ class InMemoryBackend(MemoryBackend):
         old_content = entry["content"]
         entry["content"] = content
         entry["updated_at"] = now
-        if metadata is not None:
-            entry["metadata"] = metadata
+        if metadata is not None or author is not None:
+            base = metadata if metadata is not None else entry["metadata"]
+            new_metadata = strip_reserved_metadata(base) or {}
+            if author is not None:
+                new_metadata[AUTHOR_METADATA_KEY] = author
+            entry["metadata"] = new_metadata
         if memory_id in self._history:
             self._history[memory_id].append(
                 {
@@ -187,16 +198,10 @@ class InMemoryBackend(MemoryBackend):
                     "timestamp": now,
                     "content_before": old_content,
                     "content_after": content,
+                    "author": author,
                 }
             )
-        return Memory(
-            id=memory_id,
-            content=content,
-            scope=entry.get("scope", {}),
-            metadata=entry.get("metadata", {}),
-            created_at=entry["created_at"],
-            updated_at=now,
-        )
+        return _entry_to_memory(memory_id, entry)
 
     async def list_memories(
         self,
@@ -214,16 +219,7 @@ class InMemoryBackend(MemoryBackend):
                 entry_scope = entry.get("scope", {})
                 if not all(entry_scope.get(k) == v for k, v in scope.items()):
                     continue
-            memories.append(
-                Memory(
-                    id=mid,
-                    content=entry["content"],
-                    scope=entry.get("scope", {}),
-                    metadata=entry.get("metadata", {}),
-                    created_at=entry["created_at"],
-                    updated_at=entry.get("updated_at"),
-                )
-            )
+            memories.append(_entry_to_memory(mid, entry))
         return paginate(memories, cursor, limit)
 
     async def history(self, user_id: str, memory_id: str) -> list[HistoryEntry]:
@@ -237,6 +233,7 @@ class InMemoryBackend(MemoryBackend):
                 timestamp=h["timestamp"],
                 content_before=h.get("content_before"),
                 content_after=h.get("content_after"),
+                author=h.get("author"),
             )
             for h in raw
         ]
@@ -248,13 +245,15 @@ class InMemoryBackend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        count = sum(1 for e in self._store.values() if e["user_id"] == user_id)
-        if count == 0:
-            return EntitiesResult(entities=[], relationships=[])
-        return EntitiesResult(
-            entities=[{"id": user_id, "type": "user", "total_memories": count}],
-            relationships=[],
-        )
+        """Not implemented: there is no graph here to return.
+
+        This backend used to answer with one synthetic node carrying a memory count
+        and no relationships. That made `memory_status` advertise the knowledge-graph
+        capability on the default install while the documentation said the graph
+        needs a key — and an agent reads `memory_status`, not the README. Declaring
+        nothing is the honest answer; `memory_entities` is simply not registered.
+        """
+        raise NotImplementedError
 
     async def close(self) -> None:
         self._store.clear()

@@ -67,6 +67,8 @@ async def test_export_returns_wire_shapes(backend: InMemoryBackend):
         "metadata",
         "created_at",
         "updated_at",
+        "author",
+        "attributed",
     }
 
 
@@ -152,6 +154,27 @@ async def test_import_reports_per_entry_errors(backend: InMemoryBackend):
     )
     assert len(outcome.imported) == 1
     assert [e["index"] for e in outcome.errors] == [1, 2]
+
+
+async def test_import_non_dict_metadata_is_a_per_entry_error_not_an_exception(
+    backend: InMemoryBackend,
+):
+    """Thorne, JAR-723 pre-merge gate finding 2: an entry's metadata reaching
+    strip_reserved_metadata() as a non-dict used to raise AttributeError
+    straight out of import_payload, which the tool handler does not catch —
+    a partial import that told the caller nothing, and a regression against
+    pre-patch (which passed metadata through unvalidated)."""
+    outcome = await import_payload(
+        backend,
+        TENANT,
+        [
+            {"content": "good one"},
+            {"content": "bad", "metadata": "not-a-dict"},
+            {"content": "good two"},
+        ],
+    )
+    assert len(outcome.imported) == 2
+    assert outcome.errors == [{"index": 1, "error": "metadata must be an object"}]
 
 
 async def test_import_scope_validator_rejects_one_entry(backend: InMemoryBackend):

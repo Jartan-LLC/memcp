@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import os
 import uuid
+from collections.abc import AsyncGenerator
 
 import pytest
 
@@ -27,7 +28,7 @@ SECOND_USER = f"memcp_test2_{uuid.uuid4().hex[:8]}"
 
 
 @pytest.fixture
-async def mem0() -> Mem0Backend:
+async def mem0() -> AsyncGenerator[Mem0Backend]:
     assert MEM0_API_BASE and MEM0_API_KEY
     backend = Mem0Backend(MEM0_API_BASE, MEM0_API_KEY)
     yield backend

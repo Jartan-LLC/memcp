@@ -12,7 +12,7 @@ import re
 import time
 from typing import Any
 
-from memcp.auth import get_tenant
+from memcp.auth import Principal, get_principal, get_tenant, is_unattributed
 from memcp.backend import MemoryBackend
 from memcp.config import Config
 from memcp.migrate import ON_CONFLICT_CHOICES, export_payload, import_payload
@@ -27,6 +27,7 @@ from memcp.types import (
     canonical_error,
     reject_nested_filters,
     serialize_memory,
+    strip_reserved_metadata,
     validate_content,
     validate_limit,
     validate_memory_id,
@@ -100,6 +101,12 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             "default (may store nothing); infer=false for verbatim. "
             "Bulk: use import_memories."
         )
+        if backend.extracts_facts
+        else (
+            "Store a fact/preference/decision. This backend has no model behind it, "
+            "so content is stored verbatim and the infer argument is accepted but "
+            "has no effect. Bulk: use import_memories."
+        )
     )
     async def add_memory(
         content: str,
@@ -111,14 +118,20 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             validate_content(content)
         except ValueError as e:
             return canonical_error("validation_error", str(e))
-        user_id = get_tenant()
+        principal = get_principal()
         try:
             scope = _validate_scope(scope, allowed_scope_keys)
         except _ScopeError as e:
             return e.error
+        metadata = _strip_reserved_metadata(metadata)
         try:
             result = await backend.add(
-                user_id, content, scope=scope, metadata=metadata, infer=infer
+                principal.tenant,
+                content,
+                scope=scope,
+                metadata=metadata,
+                infer=infer,
+                author=_author_for(principal),
             )
         except MemoryAPIError as e:
             return _backend_error(e)
@@ -220,6 +233,11 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             "version": config.version,
             "capabilities": sorted(backend.capabilities()),
             "scope_keys": backend.scope_keys(),
+            # False means add_memory stores content verbatim and ignores `infer`.
+            # The argument shape is the same either way, so this is the only way a
+            # caller can find out.
+            "extracts_facts": backend.extracts_facts,
+            "retrieval": "semantic" if backend.extracts_facts else "keyword",
         }
 
     # --- optional tools (registered if backend declares capability) ---
@@ -279,7 +297,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                     "on_conflict='overwrite' requires update_memory capability",
                 )
 
-            user_id = get_tenant()
+            principal = get_principal()
 
             def validate_entry_scope(scope: Any) -> Any:
                 try:
@@ -290,11 +308,12 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             try:
                 outcome = await import_payload(
                     backend,
-                    user_id,
+                    principal.tenant,
                     memories,
                     on_conflict=on_conflict,
                     scope_validator=validate_entry_scope,
                     dedup_limit=MAX_EXPORT,
+                    author=_author_for(principal),
                 )
             except MemoryAPIError as e:
                 # Only the dedup index read raises out here; per-entry failures are
@@ -379,14 +398,21 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             content: str,
             metadata: dict[str, Any] | None = None,
         ) -> Any:
-            user_id = get_tenant()
+            principal = get_principal()
             try:
                 validate_memory_id(memory_id)
                 validate_content(content)
             except ValueError as e:
                 return canonical_error("validation_error", str(e))
+            metadata = _strip_reserved_metadata(metadata)
             try:
-                result = await backend.update(user_id, memory_id, content, metadata=metadata)
+                result = await backend.update(
+                    principal.tenant,
+                    memory_id,
+                    content,
+                    metadata=metadata,
+                    author=_author_for(principal),
+                )
             except MemoryAPIError as e:
                 if e.status in (404, 410):
                     return canonical_error("not_found", NOT_FOUND_MSG)
@@ -421,6 +447,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                         "timestamp": e.timestamp,
                         "content_before": e.content_before,
                         "content_after": e.content_after,
+                        "author": e.author,
                     }
                     for e in entries
                 ]
@@ -544,6 +571,27 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
             )
         )
     return cleaned
+
+
+def _strip_reserved_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Strip caller-supplied keys in memcp's reserved metadata namespace — the
+    author stamp lives there and the caller cannot set it (SEC-2026-0094)."""
+    cleaned = strip_reserved_metadata(metadata)
+    if cleaned is not None and metadata is not None and len(cleaned) != len(metadata):
+        logger.warning(
+            "Stripped reserved metadata keys from metadata dict; remaining keys: %s",
+            list(cleaned.keys()),
+        )
+    return cleaned
+
+
+def _author_for(principal: Principal) -> str | None:
+    """The seat to stamp, or None when nothing was actually resolved.
+
+    The dev-mode fallback principal (no MEMCP_AUTH_TOKENS) is not an
+    attribution — nothing authenticated it — so a write made under it must
+    not claim `attributed: true` (Corin, JAR-723 finding 2)."""
+    return None if is_unattributed(principal) else principal.seat
 
 
 def _serialize_add_result(result: Any) -> Any:

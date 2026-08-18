@@ -22,6 +22,13 @@ MAX_LIMIT = 1_000
 MAX_EXPORT = 10_000
 MAX_IMPORT = 1_000
 
+# Metadata keys in this namespace are server-only: a caller cannot set them, and
+# they never appear in a Memory's public `metadata`. `AUTHOR_METADATA_KEY` is where
+# a resolved seat is stamped so it survives in storage that has no dedicated column
+# for it (SEC-2026-0094 conjunct 2).
+RESERVED_METADATA_PREFIX = "_memcp_"
+AUTHOR_METADATA_KEY = f"{RESERVED_METADATA_PREFIX}author"
+
 
 def validate_memory_id(memory_id: str) -> str:
     if not _MEMORY_ID_RE.match(memory_id):
@@ -62,6 +69,32 @@ def reject_nested_filters(d: dict[str, Any]) -> None:
         )
 
 
+def strip_reserved_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Drop caller-supplied keys in memcp's reserved metadata namespace.
+
+    None means "caller did not supply metadata" and passes through unchanged —
+    turning it into `{}` would make an update_memory call with no metadata
+    argument wipe an existing memory's metadata instead of leaving it alone.
+    """
+    if metadata is None:
+        return None
+    return {k: v for k, v in metadata.items() if not k.startswith(RESERVED_METADATA_PREFIX)}
+
+
+def split_author(metadata: dict[str, Any] | None) -> tuple[str | None, dict[str, Any]]:
+    """Pull the server-stamped author out of a stored metadata blob.
+
+    Returns (author, metadata-without-the-reserved-key) so a backend's read path
+    can populate `Memory.author` without leaking the reserved key into the public
+    `metadata` a caller sees. A row stored before this field existed, or by a
+    caller that bypassed attribution, has no reserved key and comes back as
+    (None, metadata) — never inferred, never back-filled.
+    """
+    metadata = dict(metadata or {})
+    author = metadata.pop(AUTHOR_METADATA_KEY, None)
+    return (author if isinstance(author, str) else None), metadata
+
+
 # ---------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------
@@ -99,6 +132,10 @@ class Memory:
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     updated_at: str | None = None
+    # The seat the server resolved at write time, or None where it was not
+    # attributed (written before this field existed, or by a caller that
+    # bypassed the auth layer directly). Never inferred, never back-filled.
+    author: str | None = None
 
 
 @dataclass
@@ -109,7 +146,12 @@ class AddResult:
 
 
 def serialize_memory(m: Memory) -> dict[str, Any]:
-    """Wire shape for a Memory — the export/import payload and MCP tool results."""
+    """Wire shape for a Memory — the export/import payload and MCP tool results.
+
+    `author` is a record of what some client stored, not a verified fact — see
+    `memcp.server.INSTRUCTIONS`. `attributed` is False whenever `author` is null,
+    so a caller does not have to special-case the string "null".
+    """
     return {
         "id": m.id,
         "content": m.content,
@@ -118,6 +160,8 @@ def serialize_memory(m: Memory) -> dict[str, Any]:
         "metadata": m.metadata,
         "created_at": m.created_at,
         "updated_at": m.updated_at,
+        "author": m.author,
+        "attributed": m.author is not None,
     }
 
 
@@ -147,6 +191,11 @@ class HistoryEntry:
     timestamp: str
     content_before: str | None = None
     content_after: str | None = None
+    # The principal that performed this event, where the backend can record one
+    # per event. None on a backend whose own history log has no room for it
+    # (mem0's `/memories/{id}/history` is entirely upstream-managed) or on an
+    # event recorded before this field existed.
+    author: str | None = None
 
 
 @dataclass

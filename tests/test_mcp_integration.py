@@ -16,6 +16,11 @@ MCP_HEADERS = {
     "Accept": "application/json, text/event-stream",
 }
 
+# A Host the SDK's DNS-rebinding protection admits. The `config` fixture binds
+# loopback, which is exactly the case where the MCP SDK turns that protection on by
+# itself — `http://test` gets a 421 (tests/test_transport_security.py pins the rule).
+BASE_URL = "http://127.0.0.1:8080"
+
 
 async def test_mcp_endpoint_responds(config: Config):
     """POST to /mcp with a valid MCP initialize request succeeds."""
@@ -25,7 +30,7 @@ async def test_mcp_endpoint_responds(config: Config):
 
     async with (
         LifespanManager(app) as manager,
-        AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as client,
+        AsyncClient(transport=ASGITransport(app=manager.app), base_url=BASE_URL) as client,
     ):
         resp = await client.post(
             "/mcp",
@@ -52,14 +57,14 @@ async def test_mcp_endpoint_with_auth():
     from memcp.server import create_app
 
     auth_config = Config(
-        memcp_backend="in_memory",
-        memcp_auth_tokens="testtoken:testuser",
+        MEMCP_BACKEND="in_memory",
+        MEMCP_AUTH_TOKENS="testtoken:testuser",
     )
     app, _backend = create_app(auth_config)
 
     async with (
         LifespanManager(app) as manager,
-        AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as client,
+        AsyncClient(transport=ASGITransport(app=manager.app), base_url=BASE_URL) as client,
     ):
         # No auth — 401
         resp = await client.post(

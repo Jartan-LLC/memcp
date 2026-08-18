@@ -1,6 +1,14 @@
 # memcp Roadmap: v0.1 → v1.0
 
-**Current state (2026-06-14):** v0.1.0 shipped. 12 MCP tools, 2 backends (mem0 + in-memory), multi-tenant auth, export/import with dedup.
+**Current state (2026-08-17):** v0.1.0 shipped; `main` is ahead of it. 12 MCP tools, 3
+backends (mem0, sqlite, in-memory), multi-tenant auth, export/import with dedup, a
+conformance suite every backend passes, and one-command provisioning.
+
+**The direction this document was written under has changed.** memcp's position is
+now that it provisions the memory backend it wraps, rather than being the thing you
+install after you already have one (JAR-143, JAR-359). The engineering sequence below
+still holds and the v0.1 record is still accurate; what moved is that widening the
+backend set is no longer the first thing that matters.
 
 ---
 
@@ -19,6 +27,8 @@ round trip and the CI mem0 stack landed first, and Cognee inherits them as gates
 - [x] Cross-backend migration tooling (export from one → import to another)
 - [x] Self-contained CI docker-compose for mem0 (no API secrets needed)
 - [x] Scope-aware import dedup
+- [x] `sqlite` backend — a second in-repository adapter, and the keyless durable path
+- [x] One-command provisioning of memcp plus its backend (`memcp up`)
 - [ ] Cognee backend adapter
 - [ ] Protocol refinements from friction (one breaking revision allowed)
 - [ ] Upstream shims for Cognee-specific limitations

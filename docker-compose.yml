@@ -1,21 +1,40 @@
-# memcp — one-command local deployment with mem0 backend
+# memcp on its own, for someone who wants to hand-manage the stack.
 #
-# Usage:
-#   cp .env.example .env    # fill in MEM0_API_BASE + MEM0_API_KEY
+#   cp .env.example .env    # set MEMCP_AUTH_TOKENS, pick a backend
 #   docker compose up -d
 #
-# Connects to an external mem0 instance (not bundled here).
+# `memcp up` is the supported path and does more than this file can: it mints the
+# token, provisions the memory backend beside memcp, pins every image by digest, and
+# prints the MCP client snippet. See docs/deployment.md.
+#
+# Defaults here are the sqlite backend — durable, no API key. For mem0, set
+# MEMCP_BACKEND=mem0 plus MEM0_API_BASE and MEM0_API_KEY in .env and point them at
+# an instance you run.
+#
+# This builds rather than pulling, on purpose. `main` is where the code is developed,
+# so its compose file runs the code in the checkout — a published image here would
+# run something else. The maintained release branches are the ones that deploy a
+# released artifact, and their compose files name ghcr.io/jartan-llc/memcp at an
+# exact version. To run a published release from here, name it directly with
+# `docker run` — see docs/deployment.md.
 
 services:
   memcp:
     build: .
-    # Or use a pre-built image instead of building from source:
-    # image: ghcr.io/jartan-llc/mem0-mcp:latest
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      MEMCP_BACKEND: ${MEMCP_BACKEND:-sqlite}
+      MEMCP_SQLITE_PATH: /data/memcp.sqlite3
+      MEMCP_HOST: 0.0.0.0
+      MEMCP_PORT: "8080"
+    # Loopback: the server is unreachable from another machine unless you change
+    # this deliberately. memcp refuses to start unauthenticated on any other bind.
     ports:
-      - 8080
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - memcp_data:/data
     deploy:
       resources:
         limits:
@@ -24,3 +43,6 @@ services:
         reservations:
           cpus: "0.25"
           memory: 64M
+
+volumes:
+  memcp_data:

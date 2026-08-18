@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from memcp.types import (
+    AUTHOR_METADATA_KEY,
     AddResult,
     EntitiesResult,
     HealthStatus,
@@ -22,6 +23,8 @@ from memcp.types import (
     MemoryAPIError,
     paginate,
     reject_nested_filters,
+    split_author,
+    strip_reserved_metadata,
 )
 
 from .base import MemoryBackend
@@ -73,18 +76,23 @@ def _build_identifier_params(
 
 def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
     """Convert mem0's response shape to canonical Memory."""
+    author, metadata = split_author(raw.get("metadata") or {})
     return Memory(
         id=raw.get("id", ""),
         content=raw.get("memory", raw.get("text", "")),
         score=score if score is not None else raw.get("score"),
         scope={k: v for k, v in raw.items() if k in ("agent_id", "run_id") and v is not None},
-        metadata=raw.get("metadata") or {},
+        metadata=metadata,
+        author=author,
         created_at=raw.get("created_at", ""),
         updated_at=raw.get("updated_at"),
     )
 
 
 class Mem0Backend(MemoryBackend):
+    # mem0 runs content through an LLM on add(infer=True) and may store nothing.
+    extracts_facts = True
+
     """Adapter for self-hosted mem0 REST API."""
 
     def __init__(self, base_url: str, api_key: str, *, timeout: float = 30.0):
@@ -93,6 +101,19 @@ class Mem0Backend(MemoryBackend):
             headers={"X-API-Key": api_key},
             timeout=httpx.Timeout(timeout),
             transport=httpx.AsyncHTTPTransport(retries=3),
+        )
+        # Unlike sqlite, this backend has no local file to run a one-time cleanse
+        # migration against (Thorne, JAR-723 finding 1) — memcp has no way to
+        # enumerate every tenant a mem0 install holds, only whichever a request
+        # addresses. A row written before every server that has ever talked to
+        # this store validated `metadata` may carry a caller-planted reserved
+        # key that reads back as server-attributed. See docs/reference.md.
+        logger.warning(
+            "mem0 backend: memory attribution (`author`/`attributed`) is only as "
+            "trustworthy as this store's write history. memcp has no migration "
+            "hook for mem0 — run a metadata sweep on it before trusting "
+            "attribution if any client could have written to it before this "
+            "server version was deployed."
         )
 
     async def _request(
@@ -123,7 +144,8 @@ class Mem0Backend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
-    ) -> AddResult | list[AddResult]:
+        author: str | None = None,
+    ) -> list[AddResult]:
         payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": content}],
             "user_id": user_id,
@@ -135,8 +157,13 @@ class Mem0Backend(MemoryBackend):
                 normed = _norm(val)
                 if normed is not None:
                     payload[key] = normed
-        if metadata:
-            payload["metadata"] = metadata
+        # Stripped here, not just by the tool layer — see in_memory.add()'s
+        # comment on the same line.
+        stored_metadata = strip_reserved_metadata(metadata) or {}
+        if author is not None:
+            stored_metadata[AUTHOR_METADATA_KEY] = author
+        if stored_metadata:
+            payload["metadata"] = stored_metadata
 
         result = await self._request("POST", "/memories", json=payload)
         if not isinstance(result, dict):
@@ -226,14 +253,26 @@ class Mem0Backend(MemoryBackend):
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
+        author: str | None = None,
     ) -> Memory:
-        # Fetch-then-verify: mem0 PUT is global, check ownership first
+        # Fetch-then-verify: mem0 PUT is global, check ownership first. `existing`
+        # also supplies the base metadata to re-stamp onto when the caller passes
+        # no metadata of its own — mem0's PUT has no partial-merge semantics, so
+        # sending a fresh metadata dict with only the new author would drop
+        # whatever else was stored.
         existing = await self.get(user_id, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Memory not found")
         body: dict[str, Any] = {"text": content}
-        if metadata is not None:
-            body["metadata"] = metadata
+        if metadata is not None or author is not None:
+            # existing.metadata is already reserved-key-free (it came back through
+            # _parse_memory/split_author); a caller-supplied metadata still needs
+            # the same strip _parse_memory would have applied.
+            raw = metadata if metadata is not None else existing.metadata
+            base = strip_reserved_metadata(raw) or {}
+            if author is not None:
+                base[AUTHOR_METADATA_KEY] = author
+            body["metadata"] = base
         await self._request("PUT", f"/memories/{memory_id}", json=body)
         # mem0 PUT returns {"message": "..."}, not the memory. Fetch it.
         updated = await self.get(user_id, memory_id)
@@ -274,12 +313,18 @@ class Mem0Backend(MemoryBackend):
         result = await self._request("GET", f"/memories/{memory_id}/history")
         if not result:
             return []
+        # mem0's history log is entirely upstream-managed and carries no metadata
+        # per event, so there is nowhere to read a per-event author from — unlike
+        # in_memory/sqlite, which own their history log and record one directly.
+        # The memory's current `.author` (from _parse_memory) still reflects its
+        # last writer; only the event-by-event trail cannot be attributed here.
         return [
             HistoryEntry(
                 action=entry.get("event", "unknown").lower(),
                 timestamp=entry.get("created_at", ""),
                 content_before=entry.get("old_memory"),
                 content_after=entry.get("new_memory"),
+                author=None,
             )
             for entry in result
         ]
