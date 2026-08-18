@@ -46,11 +46,14 @@ jobs:
       # pulling it would silently downgrade. metadata-action's own `latest=auto`
       # does not check this — it only excludes pre-releases — so the flavor is
       # turned off and the decision made here instead.
+      # Pre-releases are dropped before taking the highest: GNU sort -V orders
+      # 1.0.0 ahead of 1.0.0-rc1 (the suffix sorts as "greater"), so an rc tag
+      # would otherwise outrank the release it precedes.
       - name: Decide whether this tag takes `latest`
         id: latest
         run: |
           version="${GITHUB_REF#refs/tags/v}"
-          highest="$(git tag -l 'v*' | sed 's/^v//' | sort -V | tail -1)"
+          highest="$(git tag -l 'v*' | sed 's/^v//' | grep -v -- '-' | sort -V | tail -1)"
           if [ "$version" = "$highest" ]; then
             echo "take=true" >> "$GITHUB_OUTPUT"
           else

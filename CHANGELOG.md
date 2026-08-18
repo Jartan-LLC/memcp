@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **A `v*` tag now creates the GitHub release itself** (`release.yml`, ported unchanged from `Jartan-LLC/scaffold`). memcp had no such workflow: a tag published to PyPI and ghcr, and the release page was a separate `gh release create` somebody ran by hand. v0.1.0 and v0.1.1 were created that way, v0.1.2 was not, and nothing noticed. The `view || create` guard makes a re-run on the same tag idempotent. (JAR-623)
 
+### Fixed
+- **The `:latest` guard's highest-tag lookup no longer mis-orders pre-release tags.** GNU `sort -V` ranks `1.0.0` above `1.0.0-rc1` — the `-rc1` suffix sorts as "greater" — so an rc tag pushed after a stable release would have taken `:latest`, and the stable release cut after an rc line started would not have. Pre-releases are now dropped before the highest tag is chosen. Latent until memcp cuts its first rc tag; ported from `Jartan-LLC/scaffold` PR #98. (JAR-676)
+
 ### Changed
 - **Image tags come from `docker/metadata-action`**, converging with scaffold: `{{version}}` and `{{major}}.{{minor}}` instead of one hardcoded pair. `{{major}}` is deliberately absent — pre-1.0 it is an alias for "any version at all", and across minor lines it carries the same ordering defect `latest` had. `flavor: latest=false` turns off metadata-action's own `latest=auto`, which excludes pre-releases but does **not** check whether the tag is the highest version; the explicit guard added earlier makes that decision instead.
 - The README's time-to-first-memory figures are a table, one row per backend, so a new backend is a new row. Same numbers, same statement of what CI measures.
