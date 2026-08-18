@@ -22,7 +22,7 @@ from memcp.types import MemoryAPIError
 
 
 class FakeMCP:
-    """Minimal stand-in for FastMCP that captures registered tools."""
+    """Minimal stand-in for MCPServer that captures registered tools."""
 
     def __init__(self) -> None:
         self._tools: dict[str, Any] = {}

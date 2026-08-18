@@ -1,6 +1,6 @@
 """Integration test — real MCP request through the full ASGI stack.
 
-Exercises: FastMCP session manager → BearerGate → tool dispatch → backend.
+Exercises: MCPServer session manager → BearerGate → tool dispatch → backend.
 Catches lifespan/initialization issues that unit tests miss.
 """
 
