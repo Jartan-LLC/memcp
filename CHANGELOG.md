@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **A `v*` tag cut from this branch now creates its own GitHub release** (`release.yml`, ported unchanged from `Jartan-LLC/scaffold`). v0.1.2's tag published to PyPI and ghcr and left no release page, because there was no workflow for it and nobody ran `gh release create` by hand — which is how v0.1.0 and v0.1.1 got theirs. (JAR-623)
+
 ## [0.1.2] — 2026-08-18
 
 Backport of the MCP SDK 2.0 fix from `main` (commit `7613adc`). 0.1.1 does not
