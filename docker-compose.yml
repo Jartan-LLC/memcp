@@ -1,16 +1,28 @@
-# memcp — one-command local deployment with mem0 backend
+# memcp 0.1.x — deploy the published release image.
 #
-# Usage:
 #   cp .env.example .env    # fill in MEM0_API_BASE + MEM0_API_KEY
 #   docker compose up -d
+#
+# This is a maintained release branch, so what it deploys is a released artifact
+# rather than whatever the checkout builds today. The image below was built once,
+# at tag time, with its dependencies already resolved inside it — re-pulling it
+# cannot change what runs. Building from source can: nothing on this branch changed
+# before brain-mcp went down on 2026-08-17, but an unpinned dependency floor plus an
+# automatic rebuild resolved `mcp` to a new major and the server stopped importing
+# (JAR-557, fixed in 0.1.2).
+#
+# The tag is an exact version and moves only when this branch cuts a release. Never
+# `:latest` here — `latest` follows the highest released version across every line,
+# which on a patch branch is somebody else's code.
+#
+# To run the code in this checkout instead of the release:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 #
 # Connects to an external mem0 instance (not bundled here).
 
 services:
   memcp:
-    build: .
-    # Or use a pre-built image instead of building from source:
-    # image: ghcr.io/jartan-llc/mem0-mcp:latest
+    image: ghcr.io/jartan-llc/memcp:0.1.2
     restart: unless-stopped
     env_file:
       - .env
