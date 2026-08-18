@@ -18,7 +18,8 @@ mid-task rather than read through. For getting a deployment running, see
 | `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
-| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob`. Unset means unauthenticated, which is refused on any non-loopback bind |
+| `MEMCP_AUTH_TOKENS` | No | Token-to-tenant mapping: `tok1:alice,tok2:bob`. Parsed exactly as before this project added attribution — a `user_id` containing a colon still round-trips unchanged. Unset means unauthenticated, which is refused on any non-loopback bind |
+| `MEMCP_AUTH_SEATS` | No | Optional token-to-seat mapping, layered onto `MEMCP_AUTH_TOKENS`: `tok1:agent-one,tok2:agent-two`, seat matching `[A-Za-z0-9_.-]+`. What memcp stamps as `author` on every write that token makes. A token named here with no `MEMCP_AUTH_TOKENS` entry is rejected at startup. Two tokens can share a tenant with different seats — that is how one shared token becomes individually attributable — and a token absent from this mapping keeps its seat equal to its tenant, as it always has |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
 | `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. Unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
@@ -31,6 +32,29 @@ mid-task rather than read through. For getting a deployment running, see
 
 Names, argument schemas and behaviour annotations are frozen in
 [tool-surface.json](tool-surface.json); a test fails on any drift.
+
+Every memory a read tool returns carries `author` (the seat `MEMCP_AUTH_TOKENS`
+resolved at write time, server-stamped — a caller cannot set it) and `attributed`
+(`false` when `author` is `null`, which is every row written before this field
+existed). It is a record of what some client stored, not a verified fact — see
+the server's own MCP instructions for how a client is told to treat it.
+
+**`attributed: true` only means a server version that validates `metadata`
+produced this stamp — it is not a statement about a store's entire history.**
+Before this field existed, `metadata` was entirely unvalidated, so any caller
+holding a bearer token could have written the reserved key directly, and a row
+like that would read back exactly like a real stamp. `sqlite` and `in_memory`
+close this **for a file only ever served by a version carrying this guard**: a
+one-time, marked cleanse strips the reserved namespace from every row already
+in the file the first time such a version opens it, and the write path itself
+now refuses a caller-supplied reserved key regardless of caller. The marker
+does not re-trigger — a file that is later opened by an unguarded version
+(a rollback, then a roll-forward) can have a key planted in that window, and
+the guarded version that reopens it afterward will not know to look again.
+`mem0` has no local file this server can scan and no way to enumerate every
+tenant an install holds — **run a metadata sweep on a `mem0`-backed store
+before serving it with a server version carrying this guard**, or a
+pre-existing row will read as attributed when it never was.
 
 ### Universal — registered on every backend
 
@@ -64,6 +88,7 @@ Names, argument schemas and behaviour annotations are frozen in
 - List endpoint does not filter by metadata
 - Entities endpoint does not filter by user — post-filtered client-side
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
+- `memory_history` entries carry `author: null` for every event — mem0's history log is entirely upstream-managed and has no field to record it in. A memory's current `author` (from `search_memory`, `get_memory`, `list_memories`) is unaffected; only the event-by-event trail cannot be attributed
 
 **`sqlite` and `in_memory` — no model behind them:**
 

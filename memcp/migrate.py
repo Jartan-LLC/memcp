@@ -8,6 +8,7 @@ errors — that stays in `memcp.tools`.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,8 +19,11 @@ from memcp.types import (
     Memory,
     MemoryAPIError,
     serialize_memory,
+    strip_reserved_metadata,
     validate_content,
 )
+
+logger = logging.getLogger(__name__)
 
 ON_CONFLICT_CHOICES = ("skip", "overwrite", "duplicate")
 
@@ -117,12 +121,21 @@ async def import_payload(
     on_conflict: str = "skip",
     scope_validator: Callable[[Any], Any] | None = None,
     dedup_limit: int = MAX_EXPORT,
+    author: str | None = None,
 ) -> ImportOutcome:
     """Store `memories` verbatim (no extraction), deduped on content plus scope.
 
     `scope_validator` may rewrite a scope dict or raise ValueError to reject one
     entry; its message lands in `errors` for that index. Raises ValueError for an
     unusable `on_conflict`, and MemoryAPIError if the dedup index cannot be read.
+
+    `author`, when given, is stamped onto every created or overwritten memory as
+    the importing principal (SEC-2026-0094 conjunct 2, item 4) — never inherited
+    from a duplicate's prior author, and never read from an entry's own `author`
+    key. `export_memories` now emits `author` on every entry, so a raw
+    export/import round trip carries it in the payload; import does not read it
+    back. That is deliberate: an entry's `content`, `scope` and `metadata` keys
+    are the only ones this function looks at.
     """
     if on_conflict not in ON_CONFLICT_CHOICES:
         raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
@@ -153,7 +166,21 @@ async def import_payload(
             except ValueError as e:
                 outcome.errors.append({"index": i, "error": str(e)})
                 continue
-        metadata = entry.get("metadata")
+        raw_metadata = entry.get("metadata")
+        if raw_metadata is not None and not isinstance(raw_metadata, dict):
+            outcome.errors.append({"index": i, "error": "metadata must be an object"})
+            continue
+        metadata = strip_reserved_metadata(raw_metadata)
+        if (
+            metadata is not None
+            and raw_metadata is not None
+            and len(metadata) != len(raw_metadata)
+        ):
+            logger.warning(
+                "Stripped reserved metadata keys from import entry %d; remaining keys: %s",
+                i,
+                list(metadata.keys()),
+            )
 
         key = dedup_key(content, scope)
         dup_id = existing.get(key)
@@ -164,7 +191,7 @@ async def import_payload(
 
         if dup_id and on_conflict == "overwrite":
             try:
-                await backend.update(user_id, dup_id, content, metadata=metadata)
+                await backend.update(user_id, dup_id, content, metadata=metadata, author=author)
                 outcome.imported.append({"id": dup_id, "index": i, "action": "updated"})
             except MemoryAPIError as e:
                 outcome.errors.append({"index": i, "error": str(e)})
@@ -172,7 +199,7 @@ async def import_payload(
 
         try:
             result = await backend.add(
-                user_id, content, scope=scope, metadata=metadata, infer=False
+                user_id, content, scope=scope, metadata=metadata, infer=False, author=author
             )
         except MemoryAPIError as e:
             outcome.errors.append({"index": i, "error": str(e)})
@@ -200,13 +227,16 @@ async def migrate(
     source_name: str = "source",
     target_name: str = "target",
     scope_validator: Callable[[Any], Any] | None = None,
+    author: str | None = None,
 ) -> MigrationReport:
     """Copy one tenant's memories from `source` into `target` (GitHub #27).
 
     `target_user_id` defaults to `user_id` — pass it to land the memories under a
     different tenant on the target. Both backends need the `list_memories`
     capability. What does not survive the trip is documented per pair in
-    `docs/portability.md`; see `memcp.conformance.portability`.
+    `docs/portability.md`; see `memcp.conformance.portability`. `author`, when
+    given, is stamped onto the target's copies as the principal running the
+    migration — see `import_payload`.
     """
     payload = await export_payload(source, user_id, limit=limit)
     outcome = await import_payload(
@@ -216,6 +246,7 @@ async def migrate(
         on_conflict=on_conflict,
         scope_validator=scope_validator,
         dedup_limit=limit,
+        author=author,
     )
     return MigrationReport(
         source=source_name,
