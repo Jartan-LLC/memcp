@@ -59,10 +59,18 @@ def get_principal() -> Principal:
 def is_unattributed(principal: Principal) -> bool:
     """True when `principal` is the dev-mode fallback — nothing was actually
     resolved, so a write made under it should not be stamped as attributed
-    (Corin, JAR-723 finding 2). `Principal` stays exactly `{tenant, seat}` per
-    item 1 and item 6's own check, so this is a value comparison against the
-    known sentinel rather than a third field."""
-    return principal == _DEFAULT_PRINCIPAL
+    (Corin, JAR-723 finding 2).
+
+    Identity, not equality: a real resolved `Principal` that happens to equal
+    `_DEFAULT_PRINCIPAL` by value (a token mapped onto memcp's own default
+    tenant name, e.g. while migrating a no-auth deployment onto tokens) must
+    still count as attributed — that mapping is a legitimate configuration,
+    and a value comparison would misread it as the fallback (Corin, JAR-723
+    finding 3). Only the literal sentinel object, never rebuilt, ever
+    satisfies this — `set_principal(_DEFAULT_PRINCIPAL)` is how a caller opts
+    into it deliberately. `Principal` stays exactly `{tenant, seat}` per item
+    1 and item 6's own check, so this cannot be a third field."""
+    return principal is _DEFAULT_PRINCIPAL
 
 
 def set_tenant(user_id: str) -> Any:
@@ -108,75 +116,72 @@ class StaticResolver:
         return matched
 
     @classmethod
-    def from_env(cls, raw: str) -> StaticResolver:
-        """Parse 'token:user_id' or 'token:user_id:seat' pairs, comma-separated.
+    def from_env(cls, raw: str, seats_raw: str | None = None) -> StaticResolver:
+        """Parse `MEMCP_AUTH_TOKENS` ('token:user_id', comma-separated) exactly
+        as pre-patch: `split(":", 1)` per pair, so a `user_id` containing a
+        colon round-trips byte-for-byte unchanged — no seat field is ever read
+        out of this string, so there is nothing here for a legacy `user_id` to
+        collide with (Corin, JAR-723, correction A re-verification: a bare
+        positional third field is genuinely indistinguishable from a
+        colon-containing `user_id`, and no fix should have tried to guess
+        between them from the string alone).
 
-        The two forms are told apart by field count after a full split on ':' —
-        never by widening a maxsplit. A pair that splits into anything other
-        than 2 or 3 fields is rejected at startup rather than silently
-        truncated: `token:user_id:seat:extra` and bare `token` both fail
-        closed, named.
-
-        **A field count of exactly 3 is not fully disambiguated by count
-        alone.** It is read as `token:user_id:seat`, unconditionally — the only
-        way this parser can select the explicit-seat form the issue asks for,
-        since a legacy `user_id` that itself contains exactly one colon
-        (`urn:alice` today, alone, meant tenant `'urn:alice'`) produces the
-        identical three fields as `token:user_id:seat` and there is no content
-        in the string that tells the two apart; the tenant `alice` used with
-        two different seats (`alice:corin`, `alice:sable` — the shape one
-        shared bearer token is meant to become individually attributable
-        under) has the same shape again. Choosing "always fail on 3 fields"
-        instead would make the explicit-seat form the issue names entirely
-        unreachable through this env var. A startup warning below is the
-        mitigation: it names every tenant this parse resolved via the
-        three-field form, so an operator who *does* rely on a colon inside a
-        legacy `user_id` sees it before traffic is served, rather than
-        recall silently narrowing at request time. Two or more colons beyond
-        the first field, or a tail outside `[A-Za-z0-9_.-]+`, still fail
-        closed — those cases have no valid reading at all, unlike the
-        clean-3-field case.
+        `seats_raw` (`MEMCP_AUTH_SEATS`, 'token:seat', comma-separated) is a
+        second, independent variable: an optional seat for a token already
+        named in `MEMCP_AUTH_TOKENS`, keyed by token rather than embedded in
+        the same field. The discriminator is which variable a value came
+        from, not its shape. A token in `MEMCP_AUTH_SEATS` with no
+        `MEMCP_AUTH_TOKENS` entry is unresolvable and fails closed, named; a
+        seat outside `[A-Za-z0-9_.-]+` does too. A token absent from
+        `MEMCP_AUTH_SEATS` keeps its seat mirroring its tenant, as it always
+        has.
         """
-        mapping: dict[str, Principal] = {}
-        explicit_seat_tenants: list[str] = []
+        mapping: dict[str, str] = {}
         for pair in raw.split(","):
             pair = pair.strip()
             if not pair:
                 continue
-            fields = [f.strip() for f in pair.split(":")]
-            if len(fields) == 2:
-                token, user_id = fields
-                seat = user_id
-            elif len(fields) == 3:
-                token, user_id, seat = fields
-                if not _SEAT_RE.match(seat):
-                    raise ValueError(
-                        f"Invalid seat label in mapping: {pair!r}. Seat must match "
-                        f"{_SEAT_RE.pattern!r}."
-                    )
-                explicit_seat_tenants.append(user_id)
-            else:
+            if ":" not in pair:
                 raise ValueError(
-                    f"Invalid token mapping: {pair!r}. Expected 'token:user_id' or "
-                    "'token:user_id:seat' — got an ambiguous field count "
-                    f"({len(fields)}). A user_id or seat containing ':' is not "
-                    "supported."
+                    f"Invalid token mapping: {pair!r}. Expected format: token:user_id"
                 )
-            if not token or not user_id or not seat:
-                raise ValueError(f"Empty token, user_id or seat in mapping: {pair!r}")
-            mapping[token] = Principal(tenant=user_id, seat=seat)
+            token, user_id = pair.split(":", 1)
+            token, user_id = token.strip(), user_id.strip()
+            if not token or not user_id:
+                raise ValueError(f"Empty token or user_id in mapping: {pair!r}")
+            mapping[token] = user_id
         if not mapping:
             raise ValueError("MEMCP_AUTH_TOKENS is set but contains no valid mappings")
-        if explicit_seat_tenants:
-            logger.warning(
-                "MEMCP_AUTH_TOKENS resolved an explicit seat (token:user_id:seat) for "
-                "tenant(s) %s. If any of these was meant as a two-field mapping whose "
-                "user_id itself contains a colon, that reading is no longer supported "
-                "and the tenant here has silently narrowed — check against the source "
-                "of this env var before trusting recall under it.",
-                sorted(set(explicit_seat_tenants)),
-            )
-        return cls(mapping)
+
+        seats: dict[str, str] = {}
+        for pair in (seats_raw or "").split(","):
+            pair = pair.strip()
+            if not pair:
+                continue
+            if ":" not in pair:
+                raise ValueError(f"Invalid seat mapping: {pair!r}. Expected format: token:seat")
+            token, seat = pair.split(":", 1)
+            token, seat = token.strip(), seat.strip()
+            if not token or not seat:
+                raise ValueError(f"Empty token or seat in MEMCP_AUTH_SEATS mapping: {pair!r}")
+            if not _SEAT_RE.match(seat):
+                raise ValueError(
+                    f"Invalid seat label in MEMCP_AUTH_SEATS for token {token!r}: {seat!r}. "
+                    f"Seat must match {_SEAT_RE.pattern!r}."
+                )
+            if token not in mapping:
+                raise ValueError(
+                    f"MEMCP_AUTH_SEATS names token {token!r}, which has no "
+                    "MEMCP_AUTH_TOKENS mapping."
+                )
+            seats[token] = seat
+
+        return cls(
+            {
+                token: Principal(tenant=user_id, seat=seats.get(token, user_id))
+                for token, user_id in mapping.items()
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -201,8 +206,9 @@ class BearerGate:
             return
 
         if not self.resolver:
-            # Dev mode: no auth, default user
-            token = set_tenant(_DEFAULT_USER)
+            # Dev mode: no auth, default user. The literal sentinel, not a
+            # freshly-built equal Principal — is_unattributed() checks identity.
+            token = set_principal(_DEFAULT_PRINCIPAL)
             try:
                 await self.app(scope, receive, send)
             finally:

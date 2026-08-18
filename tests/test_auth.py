@@ -124,35 +124,13 @@ async def test_static_resolver_from_env_whitespace():
     assert await resolver.resolve("tok1") == Principal(tenant="alice", seat="alice")
 
 
-async def test_static_resolver_from_env_explicit_seat():
-    """token:user_id:seat — the seat is distinct from the tenant it scopes storage under."""
-    resolver = StaticResolver.from_env("tok:shared-tenant:agent-one")
-    assert await resolver.resolve("tok") == Principal(tenant="shared-tenant", seat="agent-one")
-
-
-async def test_static_resolver_from_env_multiple_explicit_seats_same_tenant():
-    """Two seats can share a tenant — that is exactly the SEC-2026-0038 shape this
-    row exists to make attributable."""
-    resolver = StaticResolver.from_env("tok1:shared:agent-one,tok2:shared:agent-two")
-    p1 = await resolver.resolve("tok1")
-    p2 = await resolver.resolve("tok2")
-    assert p1 is not None
-    assert p2 is not None
-    assert p1.tenant == p2.tenant == "shared"
-    assert p1.seat == "agent-one"
-    assert p2.seat == "agent-two"
-
-
-def test_static_resolver_from_env_invalid_seat_charset():
-    with pytest.raises(ValueError, match="Invalid seat label"):
-        StaticResolver.from_env("tok:user:not a valid seat")
-
-
-def test_static_resolver_from_env_ambiguous_field_count_fails_closed():
-    """A user_id containing a colon (legal under the two-field form) must not be
-    silently truncated by widening the split — it has to fail startup instead."""
-    with pytest.raises(ValueError, match="ambiguous field count"):
-        StaticResolver.from_env("tok:user:with:many:colons")
+async def test_static_resolver_from_env_user_id_with_a_colon_is_unchanged():
+    """MEMCP_AUTH_TOKENS parsing is byte-identical to pre-patch — split(':', 1)
+    per pair — so a user_id that itself contains a colon still round-trips as a
+    single tenant, exactly as it did before this fix (Corin, JAR-723 correction
+    A re-verification)."""
+    resolver = StaticResolver.from_env("tok:urn:alice")
+    assert await resolver.resolve("tok") == Principal(tenant="urn:alice", seat="urn:alice")
 
 
 def test_static_resolver_from_env_invalid():
@@ -161,18 +139,69 @@ def test_static_resolver_from_env_invalid():
 
 
 def test_static_resolver_from_env_empty_token():
-    with pytest.raises(ValueError, match="Empty token, user_id or seat"):
+    with pytest.raises(ValueError, match="Empty token or user_id"):
         StaticResolver.from_env(":alice")
 
 
 def test_static_resolver_from_env_empty_user():
-    with pytest.raises(ValueError, match="Empty token, user_id or seat"):
+    with pytest.raises(ValueError, match="Empty token or user_id"):
         StaticResolver.from_env("tok:")
 
 
 def test_static_resolver_from_env_empty():
     with pytest.raises(ValueError, match="no valid mappings"):
         StaticResolver.from_env("")
+
+
+# ---------------------------------------------------------------------------
+# MEMCP_AUTH_SEATS — construction 2 (JAR-723, Corin's discriminator_poc.py)
+# ---------------------------------------------------------------------------
+
+
+async def test_static_resolver_from_env_seats_gives_an_explicit_seat():
+    resolver = StaticResolver.from_env("tok:shared-tenant", "tok:agent-one")
+    assert await resolver.resolve("tok") == Principal(tenant="shared-tenant", seat="agent-one")
+
+
+async def test_static_resolver_from_env_seats_two_seats_share_a_tenant():
+    """Two tokens, one tenant, two seats — the SEC-2026-0038 shape this row
+    exists to make attributable."""
+    resolver = StaticResolver.from_env("tok1:shared,tok2:shared", "tok1:agent-one,tok2:agent-two")
+    p1 = await resolver.resolve("tok1")
+    p2 = await resolver.resolve("tok2")
+    assert p1 is not None
+    assert p2 is not None
+    assert p1.tenant == p2.tenant == "shared"
+    assert (p1.seat, p2.seat) == ("agent-one", "agent-two")
+
+
+async def test_static_resolver_from_env_seats_absent_token_mirrors_tenant():
+    """A token with no MEMCP_AUTH_SEATS entry keeps seat == tenant, as always."""
+    resolver = StaticResolver.from_env("tok1:alice,tok2:bob", "tok1:agent-one")
+    p1, p2 = await resolver.resolve("tok1"), await resolver.resolve("tok2")
+    assert p1 is not None and p1.seat == "agent-one"
+    assert p2 is not None and p2.seat == "bob"
+
+
+def test_static_resolver_from_env_seats_unknown_token_fails_closed():
+    with pytest.raises(ValueError, match="no MEMCP_AUTH_TOKENS mapping"):
+        StaticResolver.from_env("tok:alice", "ghost:agent-one")
+
+
+def test_static_resolver_from_env_seats_invalid_charset():
+    with pytest.raises(ValueError, match="Invalid seat label"):
+        StaticResolver.from_env("tok:alice", "tok:not a valid seat")
+
+
+def test_static_resolver_from_env_seats_empty_token_or_seat():
+    with pytest.raises(ValueError, match="Empty token or seat"):
+        StaticResolver.from_env("tok:alice", "tok:")
+
+
+def test_static_resolver_from_env_seats_none_is_the_same_as_absent():
+    resolver_none = StaticResolver.from_env("tok:alice", None)
+    resolver_omitted = StaticResolver.from_env("tok:alice")
+    assert resolver_none._mapping == resolver_omitted._mapping
 
 
 # ---------------------------------------------------------------------------

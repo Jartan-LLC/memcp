@@ -68,7 +68,7 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
 
     resolver = None
     if config.memcp_auth_tokens:
-        resolver = StaticResolver.from_env(config.memcp_auth_tokens)
+        resolver = StaticResolver.from_env(config.memcp_auth_tokens, config.memcp_auth_seats)
 
     # Initialize the MCP app (creates session manager). `host` only selects the
     # DNS-rebinding defaults; the bind address is uvicorn's, in __main__.

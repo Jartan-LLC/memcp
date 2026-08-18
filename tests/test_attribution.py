@@ -242,3 +242,26 @@ async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
     memory = result["results"][0]
     assert memory["author"] is None
     assert memory["attributed"] is False
+
+
+async def test_real_token_onto_the_default_tenant_name_is_still_attributed(mcp_with_tools):
+    """Corin, JAR-723 finding 3: a real, resolved token that happens to map onto
+    memcp's own dev-mode tenant name ('default_user') is not the dev-mode
+    fallback — something did authenticate it — so it must not be misread as
+    unattributed. The natural way this mapping arises: migrating a no-auth
+    deployment onto tokens while keeping existing data's tenant name."""
+    from memcp.auth import StaticResolver, reset_tenant, set_principal
+
+    mcp, _ = mcp_with_tools
+    resolved = await StaticResolver.from_env("realtoken:default_user").resolve("realtoken")
+    assert resolved is not None
+    tok = set_principal(resolved)
+    try:
+        await mcp.call("add_memory", content="authenticated as default_user")
+        result = await mcp.call("search_memory", query="authenticated as default")
+    finally:
+        reset_tenant(tok)
+
+    memory = result["results"][0]
+    assert memory["author"] == "default_user"
+    assert memory["attributed"] is True

@@ -47,6 +47,16 @@ class Config(BaseSettings):
     def _empty_tokens_is_none(cls, v: str | None) -> str | None:
         return v if v else None
 
+    # Optional token:seat mapping, layered onto MEMCP_AUTH_TOKENS so two tokens can
+    # share a tenant with distinct seats without touching that variable's own
+    # 'token:user_id' parsing — see StaticResolver.from_env.
+    memcp_auth_seats: str | None = Field(default=None, alias="MEMCP_AUTH_SEATS")
+
+    @field_validator("memcp_auth_seats", mode="before")
+    @classmethod
+    def _empty_seats_is_none(cls, v: str | None) -> str | None:
+        return v if v else None
+
     host: str = Field(default="0.0.0.0", alias="MEMCP_HOST")
     port: int = Field(default=8080, alias="MEMCP_PORT")
 
