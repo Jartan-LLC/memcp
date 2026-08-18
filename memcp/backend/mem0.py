@@ -24,6 +24,7 @@ from memcp.types import (
     paginate,
     reject_nested_filters,
     split_author,
+    strip_reserved_metadata,
 )
 
 from .base import MemoryBackend
@@ -101,6 +102,19 @@ class Mem0Backend(MemoryBackend):
             timeout=httpx.Timeout(timeout),
             transport=httpx.AsyncHTTPTransport(retries=3),
         )
+        # Unlike sqlite, this backend has no local file to run a one-time cleanse
+        # migration against (Thorne, JAR-723 finding 1) — memcp has no way to
+        # enumerate every tenant a mem0 install holds, only whichever a request
+        # addresses. A row written before every server that has ever talked to
+        # this store validated `metadata` may carry a caller-planted reserved
+        # key that reads back as server-attributed. See docs/reference.md.
+        logger.warning(
+            "mem0 backend: memory attribution (`author`/`attributed`) is only as "
+            "trustworthy as this store's write history. memcp has no migration "
+            "hook for mem0 — run a metadata sweep on it before trusting "
+            "attribution if any client could have written to it before this "
+            "server version was deployed."
+        )
 
     async def _request(
         self,
@@ -143,7 +157,9 @@ class Mem0Backend(MemoryBackend):
                 normed = _norm(val)
                 if normed is not None:
                     payload[key] = normed
-        stored_metadata = dict(metadata or {})
+        # Stripped here, not just by the tool layer — see in_memory.add()'s
+        # comment on the same line.
+        stored_metadata = strip_reserved_metadata(metadata) or {}
         if author is not None:
             stored_metadata[AUTHOR_METADATA_KEY] = author
         if stored_metadata:
@@ -249,7 +265,11 @@ class Mem0Backend(MemoryBackend):
             raise MemoryAPIError(404, "Memory not found")
         body: dict[str, Any] = {"text": content}
         if metadata is not None or author is not None:
-            base = dict(metadata) if metadata is not None else dict(existing.metadata)
+            # existing.metadata is already reserved-key-free (it came back through
+            # _parse_memory/split_author); a caller-supplied metadata still needs
+            # the same strip _parse_memory would have applied.
+            raw = metadata if metadata is not None else existing.metadata
+            base = strip_reserved_metadata(raw) or {}
             if author is not None:
                 base[AUTHOR_METADATA_KEY] = author
             body["metadata"] = base

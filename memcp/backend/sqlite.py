@@ -40,6 +40,7 @@ from memcp.types import (
     paginate,
     reject_nested_filters,
     split_author,
+    strip_reserved_metadata,
 )
 
 from .base import MemoryBackend
@@ -69,6 +70,11 @@ CREATE TABLE IF NOT EXISTS history (
 CREATE INDEX IF NOT EXISTS idx_history_memory ON history (memory_id);
 """
 
+# `PRAGMA user_version` bump gating the one-time reserved-metadata cleanse below —
+# see `_cleanse_preexisting_reserved_metadata`. Bump this if a future reserved key
+# needs the same one-time treatment.
+_RESERVED_METADATA_CLEANSE_VERSION = 1
+
 
 class SqliteBackend(MemoryBackend):
     """Durable, keyless memory storage in a single SQLite file."""
@@ -85,6 +91,7 @@ class SqliteBackend(MemoryBackend):
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(SCHEMA)
         self._migrate_history_author_column()
+        self._cleanse_preexisting_reserved_metadata()
         self._conn.commit()
 
     def _migrate_history_author_column(self) -> None:
@@ -94,6 +101,38 @@ class SqliteBackend(MemoryBackend):
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(history)")}
         if "author" not in columns:
             self._conn.execute("ALTER TABLE history ADD COLUMN author TEXT")
+
+    def _cleanse_preexisting_reserved_metadata(self) -> None:
+        """Strip any reserved-namespace metadata key from every row already in
+        this file, once per file (marked via `PRAGMA user_version`, the same
+        kind of one-time-migration need `_migrate_history_author_column` has,
+        via a different mechanism since this is a data change, not a schema
+        one).
+
+        `add`/`update` strip the reserved namespace from caller-supplied
+        metadata unconditionally, so nothing written through this class from
+        here on can carry a forged key — but that guard did not always exist.
+        Before it did, `metadata` was entirely unvalidated (correction B), so
+        any bearer-token holder could have stored a `_memcp_author` key
+        directly, and the read path cannot otherwise tell that from a real
+        server stamp (Thorne, JAR-723 finding 1). A row in an existing file
+        predates every version of the write-time guard by definition, so
+        stripping it once, unconditionally, is exact — nothing legitimate is
+        lost, because nothing in this namespace has ever been a caller's to
+        set."""
+        current = self._conn.execute("PRAGMA user_version").fetchone()[0]
+        if current >= _RESERVED_METADATA_CLEANSE_VERSION:
+            return
+        rows = self._conn.execute("SELECT id, metadata FROM memories").fetchall()
+        for row in rows:
+            stored = json.loads(row["metadata"])
+            cleaned = strip_reserved_metadata(stored)
+            if cleaned != stored:
+                self._conn.execute(
+                    "UPDATE memories SET metadata = ? WHERE id = ?",
+                    (json.dumps(cleaned), row["id"]),
+                )
+        self._conn.execute(f"PRAGMA user_version = {_RESERVED_METADATA_CLEANSE_VERSION}")
 
     @property
     def path(self) -> Path:
@@ -141,7 +180,10 @@ class SqliteBackend(MemoryBackend):
             reject_nested_filters(scope)
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        stored_metadata = dict(metadata or {})
+        # Stripped here, not just by the tool layer — see in_memory.add()'s
+        # comment on the same line; a caller cannot plant the reserved key
+        # regardless of which caller reaches this method.
+        stored_metadata = strip_reserved_metadata(metadata) or {}
         if author is not None:
             stored_metadata[AUTHOR_METADATA_KEY] = author
 
@@ -279,7 +321,8 @@ class SqliteBackend(MemoryBackend):
             if row is None:
                 raise MemoryAPIError(404, "Not found")
             if metadata is not None or author is not None:
-                base = dict(metadata) if metadata is not None else json.loads(row["metadata"])
+                raw = metadata if metadata is not None else json.loads(row["metadata"])
+                base = strip_reserved_metadata(raw) or {}
                 if author is not None:
                     base[AUTHOR_METADATA_KEY] = author
                 new_metadata = json.dumps(base)

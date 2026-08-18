@@ -23,6 +23,7 @@ from memcp.types import (
     paginate,
     reject_nested_filters,
     split_author,
+    strip_reserved_metadata,
 )
 
 from .base import MemoryBackend
@@ -68,7 +69,12 @@ class InMemoryBackend(MemoryBackend):
             reject_nested_filters(scope)
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        stored_metadata = dict(metadata or {})
+        # Reserved keys are stripped here, not just by the tool layer: a caller-
+        # supplied `_memcp_author` (or any future `_memcp_` key) must never reach
+        # storage regardless of who calls this method (Thorne, JAR-723 finding 1
+        # — metadata was entirely unvalidated pre-patch, so any bearer-token
+        # holder could plant one, and the read path trusts whatever it finds).
+        stored_metadata = strip_reserved_metadata(metadata) or {}
         if author is not None:
             stored_metadata[AUTHOR_METADATA_KEY] = author
         self._store[memory_id] = {
@@ -180,7 +186,8 @@ class InMemoryBackend(MemoryBackend):
         entry["content"] = content
         entry["updated_at"] = now
         if metadata is not None or author is not None:
-            new_metadata = dict(metadata) if metadata is not None else dict(entry["metadata"])
+            base = metadata if metadata is not None else entry["metadata"]
+            new_metadata = strip_reserved_metadata(base) or {}
             if author is not None:
                 new_metadata[AUTHOR_METADATA_KEY] = author
             entry["metadata"] = new_metadata

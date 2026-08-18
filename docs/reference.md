@@ -39,6 +39,20 @@ resolved at write time, server-stamped — a caller cannot set it) and `attribut
 existed). It is a record of what some client stored, not a verified fact — see
 the server's own MCP instructions for how a client is told to treat it.
 
+**`attributed: true` only means a server version that validates `metadata`
+produced this stamp — it is not a statement about a store's entire history.**
+Before this field existed, `metadata` was entirely unvalidated, so any caller
+holding a bearer token could have written the reserved key directly, and a row
+like that would read back exactly like a real stamp. `sqlite` and `in_memory`
+close this automatically: a one-time, marked cleanse strips the reserved
+namespace from every row already in a file the first time a server version
+carrying this guard opens it, and the write path itself now refuses a
+caller-supplied reserved key regardless of caller. `mem0` has no local file
+this server can scan and no way to enumerate every tenant an install holds —
+**run a metadata sweep on a `mem0`-backed store before serving it with a
+server version carrying this guard**, or a pre-existing row will read as
+attributed when it never was.
+
 ### Universal — registered on every backend
 
 | Tool | Description |

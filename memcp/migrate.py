@@ -167,6 +167,9 @@ async def import_payload(
                 outcome.errors.append({"index": i, "error": str(e)})
                 continue
         raw_metadata = entry.get("metadata")
+        if raw_metadata is not None and not isinstance(raw_metadata, dict):
+            outcome.errors.append({"index": i, "error": "metadata must be an object"})
+            continue
         metadata = strip_reserved_metadata(raw_metadata)
         if (
             metadata is not None
