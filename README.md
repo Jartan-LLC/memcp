@@ -125,6 +125,33 @@ lexical, so a question phrased in words that do not appear in the memory will no
 find it. `mem0` and `cognee` are the backends that match on meaning; `cognee` is the
 one that also builds a graph out of what you store.
 
+### 4. Upgrade to a backend that matches on meaning
+
+```bash
+memcp up --backend cognee   # or --backend mem0
+```
+
+`cognee` gives you embedding-similarity retrieval and a knowledge graph with the
+relationships in it. Two things to know before you run that command.
+
+**It needs an OpenAI-compatible key.** `memcp up --backend cognee` refuses to start
+without `COGNEE_LLM_API_KEY` rather than standing up a stack that half-works. There is
+no keyless cognee path that is usable on ordinary hardware today: `--llm-base-url`
+points it at a local model and removes the account, but measured on five CPU cores with
+Qwen2.5-1.5B-Instruct Q4_K_M, one `add_memory` took three to five minutes, exceeded the
+adapter's 120-second default, and sometimes failed outright because the model could not
+produce cognee's extraction schema — no memory stored (`docs/local-models.md`, measured
+2026-08-17).
+
+**It costs about $0.50 per 1,000 memory operations** — an approximate figure, and
+roughly $0.00046 per `add_memory` and $0.00047 per `search_memory` at OpenAI list
+prices read 2026-08-18,
+for the `gpt-4o-mini` and `text-embedding-3-small` pair `memcp up --backend cognee`
+provisions. Recall does not get more expensive as your corpus grows: 12 memories and 48
+memories produced the same per-search token count. `docs/deployment.md` carries the
+token counts, the prices, the cognee version measured and which parts are estimated, so
+you can redo the arithmetic yourself.
+
 ## Configuration
 
 ### Requirements
@@ -132,7 +159,7 @@ one that also builds a graph out of what you store.
 - Docker, for `memcp up`
 - Python 3.12+, to run the server directly
 - For `MEMCP_BACKEND=mem0`: a running [mem0](https://github.com/mem0ai/mem0) instance — or let `memcp up --backend mem0` provision one
-- For `MEMCP_BACKEND=cognee`: a running [cognee](https://github.com/topoteretes/cognee) server with `ENABLE_BACKEND_ACCESS_CONTROL=true` — or let `memcp up --backend cognee` provision one. Both the extractor and the embedder need a model, so this backend is not keyless
+- For `MEMCP_BACKEND=cognee`: a running [cognee](https://github.com/topoteretes/cognee) server with `ENABLE_BACKEND_ACCESS_CONTROL=true` — or let `memcp up --backend cognee` provision one. Both the extractor and the embedder need a model, so this backend is not keyless, and it costs about $0.50 per 1,000 memory operations to run — an approximate figure, with the token counts and prices behind it in `docs/deployment.md`
 
 ### Environment Variables
 
