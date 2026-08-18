@@ -218,3 +218,27 @@ async def test_import_memories_overwrite_re_stamps_author_too(mcp_with_tools):
 
     memory = next(m for m in listing["memories"] if m["content"] == "dup content")
     assert memory["author"] == "importer"
+
+
+async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
+    """Corin, JAR-723 finding 2: with no resolver, nothing authenticated the
+    caller, so a write made under the dev-mode fallback principal must not
+    claim `attributed: true` — that would tell a reader "the server resolved
+    this seat" when it resolved nothing at all.
+
+    No `tenant_context` fixture override here: the default `_DEFAULT_PRINCIPAL`
+    context (unset contextvar) is exactly the no-`MEMCP_AUTH_TOKENS` shape.
+    """
+    from memcp.auth import _DEFAULT_PRINCIPAL, reset_tenant, set_principal
+
+    mcp, _ = mcp_with_tools
+    tok = set_principal(_DEFAULT_PRINCIPAL)
+    try:
+        await mcp.call("add_memory", content="no auth configured")
+        result = await mcp.call("search_memory", query="no auth")
+    finally:
+        reset_tenant(tok)
+
+    memory = result["results"][0]
+    assert memory["author"] is None
+    assert memory["attributed"] is False

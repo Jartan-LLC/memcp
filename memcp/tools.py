@@ -11,7 +11,7 @@ import logging
 import time
 from typing import Any
 
-from memcp.auth import get_principal, get_tenant
+from memcp.auth import Principal, get_principal, get_tenant, is_unattributed
 from memcp.backend import MemoryBackend
 from memcp.config import Config
 from memcp.migrate import ON_CONFLICT_CHOICES, export_payload, import_payload
@@ -130,7 +130,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                 scope=scope,
                 metadata=metadata,
                 infer=infer,
-                author=principal.seat,
+                author=_author_for(principal),
             )
         except MemoryAPIError as e:
             return _backend_error(e)
@@ -312,7 +312,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                     on_conflict=on_conflict,
                     scope_validator=validate_entry_scope,
                     dedup_limit=MAX_EXPORT,
-                    author=principal.seat,
+                    author=_author_for(principal),
                 )
             except MemoryAPIError as e:
                 # Only the dedup index read raises out here; per-entry failures are
@@ -410,7 +410,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                     memory_id,
                     content,
                     metadata=metadata,
-                    author=principal.seat,
+                    author=_author_for(principal),
                 )
             except MemoryAPIError as e:
                 if e.status in (404, 410):
@@ -552,6 +552,15 @@ def _strip_reserved_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] 
             list(cleaned.keys()),
         )
     return cleaned
+
+
+def _author_for(principal: Principal) -> str | None:
+    """The seat to stamp, or None when nothing was actually resolved.
+
+    The dev-mode fallback principal (no MEMCP_AUTH_TOKENS) is not an
+    attribution — nothing authenticated it — so a write made under it must
+    not claim `attributed: true` (Corin, JAR-723 finding 2)."""
+    return None if is_unattributed(principal) else principal.seat
 
 
 def _serialize_add_result(result: Any) -> Any:

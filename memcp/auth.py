@@ -56,6 +56,15 @@ def get_principal() -> Principal:
     return _principal_var.get(_DEFAULT_PRINCIPAL)
 
 
+def is_unattributed(principal: Principal) -> bool:
+    """True when `principal` is the dev-mode fallback — nothing was actually
+    resolved, so a write made under it should not be stamped as attributed
+    (Corin, JAR-723 finding 2). `Principal` stays exactly `{tenant, seat}` per
+    item 1 and item 6's own check, so this is a value comparison against the
+    known sentinel rather than a third field."""
+    return principal == _DEFAULT_PRINCIPAL
+
+
 def set_tenant(user_id: str) -> Any:
     """Set the current request's principal from a bare tenant id (seat mirrors
     tenant). Returns a reset token."""
@@ -103,16 +112,33 @@ class StaticResolver:
         """Parse 'token:user_id' or 'token:user_id:seat' pairs, comma-separated.
 
         The two forms are told apart by field count after a full split on ':' —
-        never by widening a maxsplit — because a `user_id` may itself contain a
-        colon under the two-field form. A pair that splits into anything other
-        than 2 or 3 fields is ambiguous and fails closed rather than being
-        silently truncated: a `user_id` (or `user_id:seat`) that happens to
-        contain a colon must be rejected at startup, not misparsed. Two fields
-        means no seat was given, so seat mirrors user_id (attribution is at
-        least as specific as tenancy already was). Three fields means an
-        explicit seat, constrained to `[A-Za-z0-9_.-]+`.
+        never by widening a maxsplit. A pair that splits into anything other
+        than 2 or 3 fields is rejected at startup rather than silently
+        truncated: `token:user_id:seat:extra` and bare `token` both fail
+        closed, named.
+
+        **A field count of exactly 3 is not fully disambiguated by count
+        alone.** It is read as `token:user_id:seat`, unconditionally — the only
+        way this parser can select the explicit-seat form the issue asks for,
+        since a legacy `user_id` that itself contains exactly one colon
+        (`urn:alice` today, alone, meant tenant `'urn:alice'`) produces the
+        identical three fields as `token:user_id:seat` and there is no content
+        in the string that tells the two apart; the tenant `alice` used with
+        two different seats (`alice:corin`, `alice:sable` — the shape one
+        shared bearer token is meant to become individually attributable
+        under) has the same shape again. Choosing "always fail on 3 fields"
+        instead would make the explicit-seat form the issue names entirely
+        unreachable through this env var. A startup warning below is the
+        mitigation: it names every tenant this parse resolved via the
+        three-field form, so an operator who *does* rely on a colon inside a
+        legacy `user_id` sees it before traffic is served, rather than
+        recall silently narrowing at request time. Two or more colons beyond
+        the first field, or a tail outside `[A-Za-z0-9_.-]+`, still fail
+        closed — those cases have no valid reading at all, unlike the
+        clean-3-field case.
         """
         mapping: dict[str, Principal] = {}
+        explicit_seat_tenants: list[str] = []
         for pair in raw.split(","):
             pair = pair.strip()
             if not pair:
@@ -128,6 +154,7 @@ class StaticResolver:
                         f"Invalid seat label in mapping: {pair!r}. Seat must match "
                         f"{_SEAT_RE.pattern!r}."
                     )
+                explicit_seat_tenants.append(user_id)
             else:
                 raise ValueError(
                     f"Invalid token mapping: {pair!r}. Expected 'token:user_id' or "
@@ -140,6 +167,15 @@ class StaticResolver:
             mapping[token] = Principal(tenant=user_id, seat=seat)
         if not mapping:
             raise ValueError("MEMCP_AUTH_TOKENS is set but contains no valid mappings")
+        if explicit_seat_tenants:
+            logger.warning(
+                "MEMCP_AUTH_TOKENS resolved an explicit seat (token:user_id:seat) for "
+                "tenant(s) %s. If any of these was meant as a two-field mapping whose "
+                "user_id itself contains a colon, that reading is no longer supported "
+                "and the tenant here has silently narrowed — check against the source "
+                "of this env var before trusting recall under it.",
+                sorted(set(explicit_seat_tenants)),
+            )
         return cls(mapping)
 
 
