@@ -11,6 +11,7 @@ and keeps the volumes unless you ask for them to go (C5).
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -28,6 +29,7 @@ from memcp.deploy.secretstore import (
     resolve_secrets,
     write_gitignore,
 )
+from memcp.deploy.smoke import SmokeError, SmokeResult
 from memcp.deploy.stacks import (
     DEFAULT_TENANT,
     MEMCP_TOKEN_VAR,
@@ -36,6 +38,7 @@ from memcp.deploy.stacks import (
 )
 
 COMPOSE_FILENAME = "docker-compose.yml"
+STATE_FILENAME = "deployment.json"
 DEFAULT_DIR = ".memcp"
 DEFAULT_TIMEOUT = 600
 
@@ -121,6 +124,9 @@ def plan_for(
     bind: str,
     project: str,
     source_spec: str,
+    publish: bool = True,
+    network: str | None = None,
+    external_url: str | None = None,
     llm_base_url: str | None = None,
 ) -> tuple[Deployment, MemcpSource]:
     source = resolve_source(source_spec, directory)
@@ -132,6 +138,9 @@ def plan_for(
         project=project,
         directory=str(directory),
         generates_dockerfile=source.generated,
+        publish=publish,
+        network=network,
+        external_url=external_url,
         llm_base_url=llm_base_url,
     )
     return build(backend, options), source
@@ -183,6 +192,7 @@ def materialize(
         compose_yaml.render(deployment.to_compose(), GENERATED_HEADER), encoding="utf-8"
     )
     EnvFile(directory / ENV_FILENAME).write(env_values)
+    write_state(deployment, directory)
 
     if source.generated:
         image_dir = directory / "memcp-image"
@@ -286,6 +296,124 @@ def compose_ps(directory: Path) -> int:
     return subprocess.run(compose_command(directory, ["ps"])).returncode
 
 
+# --- how to reach it, recorded for the commands that run later ---------------
+
+
+@dataclass(frozen=True)
+class DeploymentState:
+    """The non-secret facts a later command needs about a deployment it did not create.
+
+    `verify` and `up --smoke` have to know whether there is a host port to talk to.
+    With publishing off there is not, and dialling localhost anyway would report a
+    failure that says nothing about the deployment. Written beside the .env and
+    holding no credential — this is the file in that directory you can read.
+    """
+
+    publish_host_port: bool
+    host_port: int | None
+    container_port: int
+    client_url: str
+
+    @property
+    def host_url(self) -> str | None:
+        """The MCP endpoint on this machine, if the deployment publishes one."""
+        if not self.publish_host_port or self.host_port is None:
+            return None
+        return f"http://127.0.0.1:{self.host_port}/mcp"
+
+
+def write_state(deployment: Deployment, directory: Path) -> Path:
+    """Record how this deployment is reached. No secret goes in here."""
+    ports = deployment.memcp_service.ports
+    payload = {
+        "backend": deployment.backend,
+        "project": deployment.project_name,
+        "publish_host_port": deployment.publish_host_port,
+        "host_ip": ports[0].host_ip if ports else None,
+        "host_port": ports[0].host_port if ports else None,
+        "container_port": deployment.container_port,
+        "client_url": deployment.client_url,
+        "networks": [{"name": n.name, "external": n.external} for n in deployment.networks],
+    }
+    path = directory / STATE_FILENAME
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def read_state(directory: Path) -> DeploymentState | None:
+    """What `up` recorded, or None for a deployment provisioned before this existed."""
+    path = directory / STATE_FILENAME
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return DeploymentState(
+        publish_host_port=bool(raw.get("publish_host_port", True)),
+        host_port=raw.get("host_port"),
+        container_port=int(raw.get("container_port", 8080)),
+        client_url=str(raw.get("client_url", "")),
+    )
+
+
+# --- the first-memory check, from wherever it can be run ---------------------
+
+
+# Sent to the container's own python on stdin rather than invoked as a module: the
+# image may be running a memcp released before this file existed (`--memcp-source
+# pypi` builds the version that is on PyPI), and what the check has to exercise is
+# this checkout's understanding of the protocol. The token travels in the pipe, so it
+# reaches neither the host's process list nor the container's environment.
+_IN_CONTAINER_DRIVER = """
+import json as _json
+
+try:
+    _result = first_memory({url!r}, {token!r})
+except Exception as exc:  # the message is the operator-facing output
+    print("MEMCP_SMOKE_FAILED " + str(exc))
+    raise SystemExit(1) from None
+print("MEMCP_SMOKE_RESULT " + _json.dumps({{"seconds": _result.seconds, "id": _result.memory_id}}))
+"""
+
+
+def smoke_inside_container(
+    directory: Path, token: str, container_port: int, *, service: str = "memcp"
+) -> SmokeResult:
+    """Store and retrieve one memory over MCP from inside the memcp container.
+
+    The route a published port would give does not exist here, so the check goes in
+    through `docker compose exec` and talks to the server over the container's own
+    loopback. It exercises the MCP protocol, the bearer gate, the adapter and the
+    backend; what it cannot exercise is the platform's route to the container, and
+    the caller says that rather than reporting a success it did not perform.
+    """
+    source = Path(__file__).with_name("smoke.py").read_text(encoding="utf-8")
+    url = f"http://localhost:{container_port}/mcp"
+    script = source + _IN_CONTAINER_DRIVER.format(url=url, token=token)
+    result = subprocess.run(
+        compose_command(directory, ["exec", "-T", service, "python", "-"]),
+        input=script,
+        capture_output=True,
+        text=True,
+    )
+    reported = next(
+        (line for line in result.stdout.splitlines() if line.startswith("MEMCP_SMOKE_")), ""
+    )
+    if reported.startswith("MEMCP_SMOKE_RESULT "):
+        payload = json.loads(reported[len("MEMCP_SMOKE_RESULT ") :])
+        return SmokeResult(
+            seconds=float(payload["seconds"]), memory_id=str(payload["id"]), matched=""
+        )
+    if reported.startswith("MEMCP_SMOKE_FAILED "):
+        raise SmokeError(reported[len("MEMCP_SMOKE_FAILED ") :])
+    raise SmokeError(
+        "the check could not be run inside the container "
+        f"(`docker compose exec {service}` exited {result.returncode}):\n"
+        f"{(result.stderr or result.stdout).strip()[:400]}"
+    )
+
+
 # --- token lifecycle -------------------------------------------------------
 
 
@@ -312,14 +440,19 @@ def rotate_token(directory: Path) -> str:
 # --- client snippet --------------------------------------------------------
 
 
-def client_snippet(token: str, bind: str, port: int) -> str:
-    host = "localhost" if bind in ("127.0.0.1", "0.0.0.0") else bind
+def client_snippet(token: str, url: str) -> str:
+    """The MCP client configuration for this deployment, at the URL it answers on.
+
+    The URL is the deployment's, not this function's guess: with no published port
+    `localhost` reaches nothing, and printing it anyway would be a snippet that looks
+    right and fails (`stacks.client_url`).
+    """
     return f"""\
 {{
   "mcpServers": {{
     "memcp": {{
       "type": "streamable-http",
-      "url": "http://{host}:{port}/mcp",
+      "url": "{url}",
       "headers": {{
         "Authorization": "Bearer {token}"
       }}
@@ -336,6 +469,9 @@ def prepare(
     bind: str,
     project: str,
     source_spec: str,
+    publish: bool = True,
+    network: str | None = None,
+    external_url: str | None = None,
     llm_base_url: str | None = None,
 ) -> tuple[Deployment, MemcpSource, dict[str, str], list[str]]:
     """Resolve the plan and its secrets without creating anything."""
@@ -346,6 +482,9 @@ def prepare(
         bind=bind,
         project=project,
         source_spec=source_spec,
+        publish=publish,
+        network=network,
+        external_url=external_url,
         llm_base_url=llm_base_url,
     )
     values, minted = resolve_secrets(deployment, directory)
@@ -363,7 +502,9 @@ __all__ = [
     "DEFAULT_DIR",
     "DEFAULT_TENANT",
     "DEFAULT_TIMEOUT",
+    "STATE_FILENAME",
     "DeployError",
+    "DeploymentState",
     "MemcpSource",
     "client_snippet",
     "compose_down",
@@ -373,8 +514,11 @@ __all__ = [
     "materialize",
     "plan_for",
     "prepare",
+    "read_state",
     "read_token",
     "require_docker",
     "resolve_source",
     "rotate_token",
+    "smoke_inside_container",
+    "write_state",
 ]

@@ -18,12 +18,14 @@ Two rules hold across all of them, and they are the ones the security gate turns
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from urllib.parse import urlsplit
 
 from memcp.deploy.images import COGNEE, MEM0_SOURCE_PIN, MEM0_SOURCE_REPO, PGVECTOR
 from memcp.deploy.model import (
     BindMount,
     Deployment,
     EnvVar,
+    Network,
     Port,
     RequiredSecret,
     Service,
@@ -34,7 +36,12 @@ BACKENDS = ("sqlite", "in_memory", "mem0", "cognee")
 DEFAULT_BACKEND = "sqlite"
 DEFAULT_PROJECT = "memcp"
 DEFAULT_PORT = 8080
+CONTAINER_PORT = 8080
 LOOPBACK = "127.0.0.1"
+# The compose network every service joins unless told otherwise. memcp has to name it
+# explicitly once it also joins an external one: a service that declares any network
+# stops joining the default implicitly, and losing it would cut memcp off from mem0.
+DEFAULT_NETWORK = "default"
 
 # The tenant the minted token resolves to. One deployment, one owner — a second
 # identity is a second token, added to MEMCP_AUTH_TOKENS by hand.
@@ -62,6 +69,18 @@ class StackOptions:
     project: str = DEFAULT_PROJECT
     directory: str = ""
     generates_dockerfile: bool = False
+    # Whether memcp publishes a host port at all. It does by default and that does not
+    # change; False is for a platform that routes into the container itself — Dokploy,
+    # Coolify, Kubernetes, a hand-run Traefik — where a published port is redundant at
+    # best and a second, unrouted way in at worst.
+    publish: bool = True
+    # An existing Docker network to attach memcp to, when the platform's router is not
+    # on this deployment's own project network.
+    network: str | None = None
+    # The URL clients actually reach this deployment at, when that is not
+    # `http://<bind>:<port>`. It is what the client snippet prints and what Host
+    # validation admits.
+    external_url: str | None = None
     # An OpenAI-compatible endpoint for mem0's LLM and embedder — Ollama, llama.cpp,
     # LiteLLM, or anything else that speaks the API. Set it and the provider key
     # stops being something the operator has to hold.
@@ -138,26 +157,106 @@ def _llm_secret(options: StackOptions) -> RequiredSecret:
     )
 
 
-def _allowed_hosts(bind: str, port: int) -> str:
+def _format_host(hostname: str, port: int | None) -> str:
+    """A hostname and optional port, as the SDK's Host matcher expects it.
+
+    An IPv6 literal contains colons of its own, so it is bracketed the way the
+    hardcoded `[::1]` entry already is — otherwise it is indistinguishable from a
+    trailing `:port`.
+    """
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    return f"{host}:{port}" if port else host
+
+
+def external_host(url: str) -> str | None:
+    """The Host header a client sends when it reaches this deployment at `url`."""
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return None
+    return _format_host(parts.hostname, parts.port)
+
+
+def _raw_external_host(url: str) -> str | None:
+    """`external_host`, but in the case the operator typed it.
+
+    `urlsplit().hostname` lowercases; the SDK's Host matcher does not. A proxy that
+    forwards the Host header verbatim sends whatever case the operator wrote, so that
+    spelling has to be admitted too — only ever the name they supplied, never a wider
+    one.
+    """
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return None
+    netloc = parts.netloc.rsplit("@", 1)[-1]
+    if netloc.startswith("["):
+        raw_hostname = netloc[1 : netloc.index("]")]
+    else:
+        raw_hostname = netloc.rsplit(":", 1)[0] if parts.port else netloc
+    return _format_host(raw_hostname, parts.port)
+
+
+def _allowed_hosts(options: StackOptions) -> str:
     """Host header values this deployment answers to.
 
     A client reaches it at whatever `--bind` says, so that name is admitted along
-    with the loopback spellings. A deployment behind a reverse proxy under its own
-    hostname adds that name to MEMCP_ALLOWED_HOSTS.
+    with the loopback spellings. Behind a proxy the client sends the proxy's own
+    hostname instead, and the SDK answers 421 to a Host it was not told about — so
+    `--external-url` is what puts that name here. Asking for it while provisioning is
+    what keeps SEC-2026-0063 from being a thing to remember afterwards.
+
+    The loopback entries stay in every case: the container's own healthcheck and the
+    in-container first-memory check both go through localhost.
     """
     hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
-    if bind not in ("127.0.0.1", "0.0.0.0", "localhost"):
-        hosts.append(f"{bind}:*")
+    if options.publish and options.bind not in ("127.0.0.1", "0.0.0.0", "localhost"):
+        hosts.append(f"{options.bind}:*")
+    if options.external_url:
+        parts = urlsplit(options.external_url)
+        if parts.hostname:
+            for host in dict.fromkeys(
+                (
+                    _format_host(parts.hostname, parts.port),
+                    _raw_external_host(options.external_url),
+                )
+            ):
+                if host is None:
+                    continue
+                hosts.append(host)
+                # A proxy that forwards a non-default port sends `name:port`; one on
+                # 80 or 443 sends the bare name. Both are the same deployment.
+                if parts.port is None:
+                    hosts.append(f"{host}:*")
     return ",".join(hosts)
+
+
+def client_url(options: StackOptions) -> str:
+    """The URL an MCP client puts in its configuration.
+
+    With no published port `localhost` is wrong and there is nothing memcp can derive
+    in its place — only the operator knows the hostname their platform routes, which
+    is why `--no-publish` asks for it rather than printing a URL that does not work.
+    """
+    if options.external_url:
+        base = options.external_url.rstrip("/")
+        return base if base.endswith("/mcp") else f"{base}/mcp"
+    host = "localhost" if options.bind in ("127.0.0.1", "0.0.0.0") else options.bind
+    return f"http://{host}:{options.port}/mcp"
+
+
+def _networks(options: StackOptions) -> tuple[list[Network], tuple[str, ...]]:
+    """The networks the deployment declares, and the ones memcp attaches to."""
+    if not options.network:
+        return [], ()
+    return (
+        [Network(DEFAULT_NETWORK), Network(options.network, external=True)],
+        (DEFAULT_NETWORK, options.network),
+    )
 
 
 def _memcp_service(
     *,
     env: tuple[EnvVar, ...],
-    build_context: str,
-    build_dockerfile: str | None,
-    port: int,
-    bind: str,
+    options: StackOptions,
     volumes: tuple[VolumeMount, ...] = (),
     depends_on: tuple[str, ...] = (),
 ) -> Service:
@@ -167,22 +266,25 @@ def _memcp_service(
         # port reaches nothing. What keeps it off the network is the host-side bind
         # below, plus a token that is always set.
         EnvVar("MEMCP_HOST", "0.0.0.0"),
-        EnvVar("MEMCP_PORT", "8080"),
+        EnvVar("MEMCP_PORT", str(CONTAINER_PORT)),
         # DNS-rebinding protection, on explicitly. The SDK enables it on its own only
         # when the bind address is loopback, and inside a container the bind must be
         # 0.0.0.0 — so a provisioned deployment would otherwise validate no Host
         # header at all. The bearer token is what actually stops a rebinding attack;
         # this is the layer above it.
-        EnvVar("MEMCP_ALLOWED_HOSTS", _allowed_hosts(bind, port)),
+        EnvVar("MEMCP_ALLOWED_HOSTS", _allowed_hosts(options)),
         EnvVar("MEMCP_LOG_FORMAT", "json"),
     )
     return Service(
         name="memcp",
-        build_context=build_context,
-        build_dockerfile=build_dockerfile,
+        build_context=options.build_context,
+        build_dockerfile=options.build_dockerfile,
         env=base_env + env,
-        ports=(Port(bind, port, 8080),),
+        # No port at all when publishing is off — `model.to_compose` then renders no
+        # `ports` key, which is a strictly narrower surface than binding loopback.
+        ports=(Port(options.bind, options.port, CONTAINER_PORT),) if options.publish else (),
         volumes=volumes,
+        networks=_networks(options)[1],
         depends_on=depends_on,
         healthcheck=_memcp_healthcheck(),
         description="the MCP server your client connects to — the only way in",
@@ -192,10 +294,7 @@ def _memcp_service(
 def in_memory_stack(options: StackOptions) -> Deployment:
     service = _memcp_service(
         env=(EnvVar("MEMCP_BACKEND", "in_memory"),),
-        build_context=options.build_context,
-        build_dockerfile=options.build_dockerfile,
-        port=options.port,
-        bind=options.bind,
+        options=options,
     )
     return Deployment(
         backend="in_memory",
@@ -220,10 +319,7 @@ def sqlite_stack(options: StackOptions) -> Deployment:
             EnvVar("MEMCP_BACKEND", "sqlite"),
             EnvVar("MEMCP_SQLITE_PATH", SQLITE_DATA_PATH),
         ),
-        build_context=options.build_context,
-        build_dockerfile=options.build_dockerfile,
-        port=options.port,
-        bind=options.bind,
+        options=options,
         volumes=(data,),
     )
     return Deployment(
@@ -333,10 +429,7 @@ def mem0_stack(options: StackOptions) -> Deployment:
             EnvVar("MEM0_API_BASE", "http://mem0:8000"),
             EnvVar("MEM0_API_KEY", f"${{{MEM0_ADMIN_KEY_VAR}}}", secret=True),
         ),
-        build_context=options.build_context,
-        build_dockerfile=options.build_dockerfile,
-        port=options.port,
-        bind=options.bind,
+        options=options,
         depends_on=("mem0",),
     )
 
@@ -492,10 +585,7 @@ def cognee_stack(options: StackOptions) -> Deployment:
                 description="derives every tenant's cognee account",
             ),
         ),
-        build_context=options.build_context,
-        build_dockerfile=options.build_dockerfile,
-        port=options.port,
-        bind=options.bind,
+        options=options,
         depends_on=("cognee",),
     )
 
@@ -553,6 +643,7 @@ def build(backend: str, options: StackOptions) -> Deployment:
         "docker-compose.yml",
         ".env  (0600 — holds every credential)",
         ".gitignore  (makes this directory uncommittable)",
+        "deployment.json  (how to reach this deployment; no credential in it)",
     ]
     if options.generates_dockerfile:
         files.append("memcp-image/Dockerfile")
@@ -560,4 +651,22 @@ def build(backend: str, options: StackOptions) -> Deployment:
         files.append("init-db.sh")
         files.append("mem0-src/  (git clone of the pinned mem0 fork)")
     prefix = f"{options.directory}/" if options.directory else ""
-    return replace(deployment, generated_files=[f"{prefix}{f}" for f in files])
+    notes = list(deployment.notes)
+    if not options.publish:
+        notes.append(
+            "This deployment publishes no host port. Nothing on the host can reach it "
+            "directly; the platform routing to it — Dokploy, Coolify, Traefik, an "
+            "ingress — has to reach the container over Docker, and `--smoke` and "
+            "`verify` run their check from inside the container instead."
+        )
+    # Set once here rather than in each stack: how a deployment is reached is the same
+    # question for every backend, and three copies of the answer is three chances for
+    # the plan to describe something other than what `up` creates (C6).
+    return replace(
+        deployment,
+        generated_files=[f"{prefix}{f}" for f in files],
+        networks=_networks(options)[0],
+        publish_host_port=options.publish,
+        client_url=client_url(options),
+        notes=notes,
+    )

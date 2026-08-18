@@ -20,7 +20,7 @@ to paste into your MCP client.
 |---|---|
 | `memcp plan` | Prints every container, volume, port, environment variable and file the deployment would create. Creates nothing. |
 | `memcp up` | Creates it, waits for health, prints the client snippet. Idempotent. |
-| `memcp verify` | Stores and retrieves one memory over MCP against a running deployment, and times it. |
+| `memcp verify` | Stores and retrieves one memory over MCP against a running deployment, and times it. `--url` checks over the address a proxy serves. |
 | `memcp status` | What is running. |
 | `memcp down` | Stops it. Memories survive. `--volumes` deletes them. |
 | `memcp rotate-token` | Mints a new bearer token. Apply it with `memcp up`. |
@@ -124,6 +124,12 @@ than for mem0: cognee's graph is only as good as the entities the model finds, a
 small local model finding few or wrong entities would produce a graph that looks
 populated and is not worth querying.
 
+`docs/local-models.md` measures one such endpoint. The short version: on five CPU
+cores with a 1.5B model, one `add_memory` through cognee takes three to five minutes,
+exceeds the adapter's 120-second default — raise `COGNEE_TIMEOUT` — and sometimes
+fails outright because the model cannot produce cognee's extraction schema. Read it
+before choosing that path.
+
 ## What gets created
 
 `memcp plan` is the authority, and it is worth reading before the first `up`:
@@ -143,6 +149,86 @@ PUBLISHED PORTS
 
 `memcp plan --json` is the same thing for a script.
 
+## Behind a platform that routes into the container
+
+Dokploy, Coolify, Kubernetes and a hand-run Traefik or Caddy all own the external
+port mapping themselves and route into the container. Under any of them a published
+host port is redundant, and a redundant port is a second way in that nothing routes,
+watches or terminates TLS on. `--no-publish` provisions the same stack with no host
+port at all:
+
+```bash
+memcp up \
+  --no-publish \
+  --network dokploy-network \
+  --external-url https://memory.example.com
+```
+
+- **`--no-publish`** — the compose file gets no `ports:` key. Nothing on the host can
+  reach memcp; only something on its Docker network can.
+- **`--network NAME`** — attaches memcp to a network that already exists, as well as
+  this deployment's own, so the platform's router can see it. memcp joins that
+  network and never creates or deletes it. Leave it off when the router is already on
+  the project's default network.
+- **`--external-url URL`** — the address clients use. `--no-publish` requires it,
+  because `localhost:8080` is not the address any more and memcp cannot derive what
+  is. It is what the client snippet prints and what `MEMCP_ALLOWED_HOSTS` admits. If
+  the deployment is reached only by other containers, that URL is
+  `http://memcp:8080`.
+
+`memcp plan` says the port is absent because you asked, not because the plan forgot:
+
+```
+PUBLISHED PORTS
+  (none — publishing is off, because you asked for it: --no-publish)
+  memcp listens on container port 8080, reachable only from inside Docker,
+  over Docker network(s) default, dokploy-network (external).
+  Whatever routes to this deployment has to be on one of those networks.
+
+NETWORKS
+  default  created by compose for this deployment
+  dokploy-network  existing network, joined not created — memcp attaches to it
+
+CLIENTS REACH IT AT
+  https://memory.example.com/mcp
+```
+
+**If clients get a 421.** The server's own error text is just "Invalid Host header" —
+this is what it means. `--external-url` sets `MEMCP_ALLOWED_HOSTS` to the hostname
+*you* said the proxy serves under, but some proxies rewrite the Host header to the
+upstream address before forwarding it — nginx's `proxy_set_header Host $proxy_host`
+does this; Traefik does not. Point that kind of proxy at memcp and every request
+arrives with `Host: memcp:8080` instead of `Host: memory.example.com`, and the
+deployment refuses all of them, because that is not the name it was told to admit.
+Fix it either way:
+
+- Point `--external-url` at what the proxy actually sends (`memcp:8080` in the
+  example above), not at the public name. That flag is also what the client snippet
+  prints, so this fix is the right one only when the clients are other containers
+  reaching memcp at that same address.
+- Or add the extra name to `MEMCP_ALLOWED_HOSTS` by hand in the deployment's `.env`,
+  alongside the one `--external-url` set. This is the fix that keeps the public
+  address printed for clients while admitting the name the proxy sends.
+
+**What still works, and what changes.** `up --wait` gates on health exactly as before
+— the healthcheck runs inside the container and never used the host port. `--smoke`
+and `verify` no longer have a host route to take, so they run the same store-and-
+retrieve check from inside the container through `docker compose exec`, and say so:
+they exercise the MCP protocol, the bearer gate, the adapter and the backend, and
+they do **not** exercise your platform's route to it. Once that route is up, check it
+with the one command that can:
+
+```bash
+memcp verify --url https://memory.example.com/mcp
+```
+
+Switching an existing deployment to `--no-publish` (or back) is a normal `up`: same
+project, same volumes, same token, same memories.
+
+`.memcp/deployment.json` records how the deployment is reached — published port,
+container port, client URL, networks. It holds no credential, and it is how a later
+`verify` knows which route exists.
+
 ## How it is secured
 
 - **memcp is the only service with a host port, and it binds `127.0.0.1`.** The
@@ -150,7 +236,8 @@ PUBLISHED PORTS
   isolation in-process, so a route to the engine that skips memcp has no isolation —
   mem0's own compose file publishes both its API and its Postgres, and adopting it as
   written would stand an unauthenticated store beside the gate. `--bind 0.0.0.0` is
-  available and is a decision you type.
+  available and is a decision you type. `--no-publish` goes the other way and is
+  strictly narrower: no service in the stack has a host port at all.
 - **Every credential is minted**, including the memcp↔mem0 link on the private
   network, and the pgvector password. Nothing in this repository ships a fixed
   password. The `.env` holding them is created at mode 0600 and the deployment
@@ -171,6 +258,11 @@ PUBLISHED PORTS
 
 memcp passes `MEMCP_ALLOWED_HOSTS` to the MCP SDK's DNS-rebinding protection.
 Provisioned deployments set it to the loopback names plus whatever `--bind` says.
+
+`--external-url` adds the hostname a proxy serves under, so a provisioned deployment
+behind one is not a deployment you have to remember to configure afterwards. The
+loopback names stay in the list either way — the container's own healthcheck and the
+in-container first-memory check both go through `localhost`.
 
 Running the server yourself, the SDK's own rule applies when the variable is unset:
 protection is enabled only when `MEMCP_HOST` is `127.0.0.1`, `localhost` or `::1`,

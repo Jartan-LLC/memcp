@@ -180,8 +180,11 @@ one that also builds a graph out of what you store.
 
 ## Docker
 
-`memcp up` is the supported path — it provisions the backend too. For a
-hand-managed single-service stack:
+`memcp up` is the supported path — it provisions the backend too. Under a platform
+that routes into the container itself (Dokploy, Coolify, Kubernetes, your own
+Traefik), add `--no-publish --external-url https://your.host` and it publishes no
+host port at all — see [docs/deployment.md](docs/deployment.md). For a hand-managed
+single-service stack:
 
 ```bash
 cp .env.example .env   # set MEMCP_AUTH_TOKENS, pick a backend
@@ -238,7 +241,7 @@ locally with no API key (`ci/mem0/up.sh`, `ci/cognee/up.sh`).
 - `update_memory` is a delete and a rewrite under the same id, not an in-place edit. It is not atomic, and `created_at` moves
 - Every write runs extraction and embedding inside the request. That is what makes the memory findable when `add_memory` returns, and it is why writes are slow and metered
 - Cognee's API has no bulk read and no server-side scope filter, so `search_memory` lists the tenant's data once and then fetches each hit's text — one request per result. Scope narrowing happens after cognee has ranked, not inside it
-- How well cognee works against a small local model is measured in `docs/local-models.md`, on one corpus and one model. Read the number there rather than assuming either way
+- Against a small local model on CPU, one `add_memory` takes minutes and some writes fail outright — measured in `docs/local-models.md`. Read that before pointing `--llm-base-url` at one
 
 **sqlite and in-memory backends (no model behind them):**
 - Retrieval is keyword matching, not vector similarity. Tokens match when they are equal or share a four-character prefix, so `linter` finds `linting` but a question phrased in different words finds nothing
