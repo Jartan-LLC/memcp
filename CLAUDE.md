@@ -1,6 +1,6 @@
 # memcp
 
-Backend-agnostic, multi-tenant MCP memory server. Python, FastMCP, deployed behind a reverse proxy.
+Backend-agnostic, multi-tenant MCP memory server. Python, MCP Python SDK 2.0, deployed behind a reverse proxy.
 
 ## Rules
 
@@ -27,7 +27,8 @@ Backend-agnostic, multi-tenant MCP memory server. Python, FastMCP, deployed behi
 
 ## Corrections
 
-- FastMCP uses `mcp.server.fastmcp.FastMCP`, not `fastmcp.FastMCP`
+- The server class is `mcp.server.mcpserver.MCPServer` (SDK 2.0). It was `mcp.server.fastmcp.FastMCP` on SDK 1.x — that module is gone in 2.0, and the standalone `fastmcp` package was never what this uses
+- Every dependency in `pyproject.toml` carries an upper bound. CI installs unpinned, so an unbounded floor lets an upstream major redden `main` on its release day
 - `actions/checkout@v6` DOES exist (v6.0.3 is latest) — reviewers repeatedly flag this as non-existent but it works
 - mem0 self-hosted REST API does NOT support nested boolean filters (AND/OR/NOT) — they 502
 - mem0 self-hosted list endpoint does NOT filter by metadata and does NOT paginate

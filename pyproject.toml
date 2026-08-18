@@ -4,18 +4,21 @@ build-backend = "hatchling.build"
 
 [project]
 name = "memcp-server"
-version = "0.1.1"
+version = "0.1.2"
 description = "Backend-agnostic, multi-tenant MCP memory server"
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
+# Every dependency carries an upper bound. CI installs unpinned on every run,
+# so an unbounded floor lets an upstream major break `main` with no change here
+# (mcp 2.0 removed `mcp.server.fastmcp`, which is exactly how this got found).
 dependencies = [
-    "httpx>=0.27",
-    "mcp>=1.0",
-    "pydantic>=2.13.4",
-    "pydantic-settings>=2.14.1",
-    "starlette>=0.27",
-    "uvicorn>=0.49.0",
+    "httpx>=0.27,<1",
+    "mcp>=2.0,<3",
+    "pydantic>=2.13.4,<3",
+    "pydantic-settings>=2.14.1,<3",
+    "starlette>=0.27,<2",
+    "uvicorn>=0.49.0,<1",
 ]
 
 [project.scripts]
@@ -23,12 +26,12 @@ memcp = "memcp.__main__:main"
 
 [project.optional-dependencies]
 dev = [
-    "asgi-lifespan>=2.1",
-    "pytest>=9.0.3",
-    "pytest-asyncio>=1.4.0",
-    "respx>=0.22",
-    "ruff>=0.15.16",
-    "pyright>=1.1",
+    "asgi-lifespan>=2.1,<3",
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.4.0,<2",
+    "respx>=0.22,<1",
+    "ruff>=0.15.16,<1",
+    "pyright>=1.1,<2",
 ]
 
 [tool.hatch.build.targets.wheel]

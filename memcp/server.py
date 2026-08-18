@@ -1,4 +1,4 @@
-"""Application factory — assembles FastMCP server from config + backend."""
+"""Application factory — assembles the MCP server from config + backend."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -51,13 +51,7 @@ def _create_backend(config: Config) -> MemoryBackend:
 
 def create_app(config: Config) -> tuple[Any, MemoryBackend]:
     """Build and return (asgi_app, backend)."""
-    mcp = FastMCP(
-        "memcp",
-        instructions=INSTRUCTIONS,
-        host=config.host,
-        port=config.port,
-        stateless_http=True,
-    )
+    mcp = MCPServer("memcp", instructions=INSTRUCTIONS)
 
     backend = _create_backend(config)
     register_tools(mcp, backend, config)
@@ -66,11 +60,12 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
     if config.memcp_auth_tokens:
         resolver = StaticResolver.from_env(config.memcp_auth_tokens)
 
-    # Initialize the MCP app (creates session manager)
-    mcp_starlette = mcp.streamable_http_app()
+    # Initialize the MCP app (creates session manager). `host` only selects the
+    # DNS-rebinding defaults; the bind address is uvicorn's, in __main__.
+    mcp_starlette = mcp.streamable_http_app(stateless_http=True, host=config.host)
     session_manager = mcp.session_manager
 
-    # Ensure Accept header includes what FastMCP requires — some MCP clients
+    # Ensure Accept header includes what the streamable HTTP transport requires — some MCP clients
     # (e.g. Claude Code) may not send it, causing 406 (anthropics/claude-code#45368).
     # Only applies to the MCP endpoint; other routes pass through unchanged.
     _REQUIRED_ACCEPT = b"text/event-stream, application/json"
