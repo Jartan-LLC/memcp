@@ -8,7 +8,9 @@ import pytest
 
 from memcp.auth import (
     BearerGate,
+    Principal,
     StaticResolver,
+    get_principal,
     get_tenant,
     reset_tenant,
     set_tenant,
@@ -47,7 +49,12 @@ async def _dummy_app(scope, receive, send):
 
 
 def _resolver() -> StaticResolver:
-    return StaticResolver({"secret-token": "alice", "other-token": "bob"})
+    return StaticResolver(
+        {
+            "secret-token": Principal(tenant="alice", seat="alice"),
+            "other-token": Principal(tenant="bob", seat="bob"),
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +97,8 @@ async def test_dev_mode_uses_default_user():
 
 async def test_static_resolver_valid_token():
     resolver = _resolver()
-    assert await resolver.resolve("secret-token") == "alice"
-    assert await resolver.resolve("other-token") == "bob"
+    assert await resolver.resolve("secret-token") == Principal(tenant="alice", seat="alice")
+    assert await resolver.resolve("other-token") == Principal(tenant="bob", seat="bob")
 
 
 async def test_static_resolver_invalid_token():
@@ -108,13 +115,44 @@ async def test_static_resolver_near_miss_rejected():
 
 async def test_static_resolver_from_env():
     resolver = StaticResolver.from_env("tok1:alice,tok2:bob")
-    assert await resolver.resolve("tok1") == "alice"
-    assert await resolver.resolve("tok2") == "bob"
+    assert await resolver.resolve("tok1") == Principal(tenant="alice", seat="alice")
+    assert await resolver.resolve("tok2") == Principal(tenant="bob", seat="bob")
 
 
 async def test_static_resolver_from_env_whitespace():
     resolver = StaticResolver.from_env(" tok1 : alice , tok2 : bob ")
-    assert await resolver.resolve("tok1") == "alice"
+    assert await resolver.resolve("tok1") == Principal(tenant="alice", seat="alice")
+
+
+async def test_static_resolver_from_env_explicit_seat():
+    """token:user_id:seat — the seat is distinct from the tenant it scopes storage under."""
+    resolver = StaticResolver.from_env("tok:shared-tenant:agent-one")
+    assert await resolver.resolve("tok") == Principal(tenant="shared-tenant", seat="agent-one")
+
+
+async def test_static_resolver_from_env_multiple_explicit_seats_same_tenant():
+    """Two seats can share a tenant — that is exactly the SEC-2026-0038 shape this
+    row exists to make attributable."""
+    resolver = StaticResolver.from_env("tok1:shared:agent-one,tok2:shared:agent-two")
+    p1 = await resolver.resolve("tok1")
+    p2 = await resolver.resolve("tok2")
+    assert p1 is not None
+    assert p2 is not None
+    assert p1.tenant == p2.tenant == "shared"
+    assert p1.seat == "agent-one"
+    assert p2.seat == "agent-two"
+
+
+def test_static_resolver_from_env_invalid_seat_charset():
+    with pytest.raises(ValueError, match="Invalid seat label"):
+        StaticResolver.from_env("tok:user:not a valid seat")
+
+
+def test_static_resolver_from_env_ambiguous_field_count_fails_closed():
+    """A user_id containing a colon (legal under the two-field form) must not be
+    silently truncated by widening the split — it has to fail startup instead."""
+    with pytest.raises(ValueError, match="ambiguous field count"):
+        StaticResolver.from_env("tok:user:with:many:colons")
 
 
 def test_static_resolver_from_env_invalid():
@@ -123,12 +161,12 @@ def test_static_resolver_from_env_invalid():
 
 
 def test_static_resolver_from_env_empty_token():
-    with pytest.raises(ValueError, match="Empty token or user_id"):
+    with pytest.raises(ValueError, match="Empty token, user_id or seat"):
         StaticResolver.from_env(":alice")
 
 
 def test_static_resolver_from_env_empty_user():
-    with pytest.raises(ValueError, match="Empty token or user_id"):
+    with pytest.raises(ValueError, match="Empty token, user_id or seat"):
         StaticResolver.from_env("tok:")
 
 
@@ -145,10 +183,12 @@ def test_static_resolver_from_env_empty():
 async def test_valid_token_resolves_user():
     """Valid token sets tenant context and passes through."""
     captured_user = None
+    captured_principal = None
 
     async def capture_app(scope, receive, send):
-        nonlocal captured_user
+        nonlocal captured_user, captured_principal
         captured_user = get_tenant()
+        captured_principal = get_principal()
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b'{"ok": true}'})
 
@@ -156,6 +196,7 @@ async def test_valid_token_resolves_user():
     status, _body = await _make_request(gate, [(b"authorization", b"Bearer secret-token")])
     assert status == 200
     assert captured_user == "alice"
+    assert captured_principal == Principal(tenant="alice", seat="alice")
 
 
 async def test_different_tokens_different_users():

@@ -11,7 +11,7 @@ import logging
 import time
 from typing import Any
 
-from memcp.auth import get_tenant
+from memcp.auth import get_principal, get_tenant
 from memcp.backend import MemoryBackend
 from memcp.config import Config
 from memcp.migrate import ON_CONFLICT_CHOICES, export_payload, import_payload
@@ -26,6 +26,7 @@ from memcp.types import (
     canonical_error,
     reject_nested_filters,
     serialize_memory,
+    strip_reserved_metadata,
     validate_content,
     validate_limit,
     validate_memory_id,
@@ -116,14 +117,20 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             validate_content(content)
         except ValueError as e:
             return canonical_error("validation_error", str(e))
-        user_id = get_tenant()
+        principal = get_principal()
         try:
             scope = _validate_scope(scope, allowed_scope_keys)
         except _ScopeError as e:
             return e.error
+        metadata = _strip_reserved_metadata(metadata)
         try:
             result = await backend.add(
-                user_id, content, scope=scope, metadata=metadata, infer=infer
+                principal.tenant,
+                content,
+                scope=scope,
+                metadata=metadata,
+                infer=infer,
+                author=principal.seat,
             )
         except MemoryAPIError as e:
             return _backend_error(e)
@@ -289,7 +296,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                     "on_conflict='overwrite' requires update_memory capability",
                 )
 
-            user_id = get_tenant()
+            principal = get_principal()
 
             def validate_entry_scope(scope: Any) -> Any:
                 try:
@@ -300,11 +307,12 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             try:
                 outcome = await import_payload(
                     backend,
-                    user_id,
+                    principal.tenant,
                     memories,
                     on_conflict=on_conflict,
                     scope_validator=validate_entry_scope,
                     dedup_limit=MAX_EXPORT,
+                    author=principal.seat,
                 )
             except MemoryAPIError as e:
                 # Only the dedup index read raises out here; per-entry failures are
@@ -389,14 +397,21 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             content: str,
             metadata: dict[str, Any] | None = None,
         ) -> Any:
-            user_id = get_tenant()
+            principal = get_principal()
             try:
                 validate_memory_id(memory_id)
                 validate_content(content)
             except ValueError as e:
                 return canonical_error("validation_error", str(e))
+            metadata = _strip_reserved_metadata(metadata)
             try:
-                result = await backend.update(user_id, memory_id, content, metadata=metadata)
+                result = await backend.update(
+                    principal.tenant,
+                    memory_id,
+                    content,
+                    metadata=metadata,
+                    author=principal.seat,
+                )
             except MemoryAPIError as e:
                 if e.status in (404, 410):
                     return canonical_error("not_found", NOT_FOUND_MSG)
@@ -431,6 +446,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                         "timestamp": e.timestamp,
                         "content_before": e.content_before,
                         "content_after": e.content_after,
+                        "author": e.author,
                     }
                     for e in entries
                 ]
@@ -524,6 +540,18 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
             )
         )
     return scope
+
+
+def _strip_reserved_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Strip caller-supplied keys in memcp's reserved metadata namespace — the
+    author stamp lives there and the caller cannot set it (SEC-2026-0094)."""
+    cleaned = strip_reserved_metadata(metadata)
+    if cleaned is not None and metadata is not None and len(cleaned) != len(metadata):
+        logger.warning(
+            "Stripped reserved metadata keys from metadata dict; remaining keys: %s",
+            list(cleaned.keys()),
+        )
+    return cleaned
 
 
 def _serialize_add_result(result: Any) -> Any:

@@ -18,7 +18,7 @@ mid-task rather than read through. For getting a deployment running, see
 | `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
-| `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob`. Unset means unauthenticated, which is refused on any non-loopback bind |
+| `MEMCP_AUTH_TOKENS` | No | Token-to-principal mapping: `tok1:alice,tok2:bob` or `tok1:alice:agent-one` to give a tenant a seat distinct from it (`token:user_id:seat`, seat matching `[A-Za-z0-9_.-]+`) — what memcp stamps as `author` on every write it makes. Two tokens can share a tenant with different seats; that is how one shared token becomes individually attributable. Unset means unauthenticated, which is refused on any non-loopback bind |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
 | `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. Unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
@@ -31,6 +31,12 @@ mid-task rather than read through. For getting a deployment running, see
 
 Names, argument schemas and behaviour annotations are frozen in
 [tool-surface.json](tool-surface.json); a test fails on any drift.
+
+Every memory a read tool returns carries `author` (the seat `MEMCP_AUTH_TOKENS`
+resolved at write time, server-stamped — a caller cannot set it) and `attributed`
+(`false` when `author` is `null`, which is every row written before this field
+existed). It is a record of what some client stored, not a verified fact — see
+the server's own MCP instructions for how a client is told to treat it.
 
 ### Universal — registered on every backend
 
@@ -64,6 +70,7 @@ Names, argument schemas and behaviour annotations are frozen in
 - List endpoint does not filter by metadata
 - Entities endpoint does not filter by user — post-filtered client-side
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
+- `memory_history` entries carry `author: null` for every event — mem0's history log is entirely upstream-managed and has no field to record it in. A memory's current `author` (from `search_memory`, `get_memory`, `list_memories`) is unaffected; only the event-by-event trail cannot be attributed
 
 **`sqlite` and `in_memory` — no model behind them:**
 

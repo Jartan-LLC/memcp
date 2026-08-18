@@ -41,7 +41,14 @@ class MemoryBackend(ABC):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
-    ) -> AddResult | list[AddResult]: ...
+        author: str | None = None,
+    ) -> AddResult | list[AddResult]:
+        """`author`, when given, is the resolved seat stamped into the reserved
+        metadata namespace (SEC-2026-0094 conjunct 2) — never sourced from the
+        caller's `metadata`. None means the caller bypassed attribution (a direct
+        backend call, or a request the auth layer never resolved); the memory
+        comes back unattributed rather than guessing."""
+        ...
 
     @abstractmethod
     async def search(
@@ -86,8 +93,14 @@ class MemoryBackend(ABC):
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
+        author: str | None = None,
     ) -> Memory:
-        """Raises MemoryAPIError(404) if not found or not owned by user_id."""
+        """Raises MemoryAPIError(404) if not found or not owned by user_id.
+
+        `author`, when given, always re-stamps — it is never inherited from the
+        memory's prior author, even when `metadata` is omitted. Inheriting it
+        would launder attribution: an attacker who edits a trusted seat's memory
+        would keep that seat's label (SEC-2026-0094 conjunct 2, item 4)."""
         raise NotImplementedError
 
     async def list_memories(

@@ -67,6 +67,8 @@ async def test_export_returns_wire_shapes(backend: InMemoryBackend):
         "metadata",
         "created_at",
         "updated_at",
+        "author",
+        "attributed",
     }
 
 

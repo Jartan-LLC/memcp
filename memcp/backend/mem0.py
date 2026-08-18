@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from memcp.types import (
+    AUTHOR_METADATA_KEY,
     AddResult,
     EntitiesResult,
     HealthStatus,
@@ -22,6 +23,7 @@ from memcp.types import (
     MemoryAPIError,
     paginate,
     reject_nested_filters,
+    split_author,
 )
 
 from .base import MemoryBackend
@@ -73,12 +75,14 @@ def _build_identifier_params(
 
 def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
     """Convert mem0's response shape to canonical Memory."""
+    author, metadata = split_author(raw.get("metadata") or {})
     return Memory(
         id=raw.get("id", ""),
         content=raw.get("memory", raw.get("text", "")),
         score=score if score is not None else raw.get("score"),
         scope={k: v for k, v in raw.items() if k in ("agent_id", "run_id") and v is not None},
-        metadata=raw.get("metadata") or {},
+        metadata=metadata,
+        author=author,
         created_at=raw.get("created_at", ""),
         updated_at=raw.get("updated_at"),
     )
@@ -126,6 +130,7 @@ class Mem0Backend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
+        author: str | None = None,
     ) -> list[AddResult]:
         payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": content}],
@@ -138,8 +143,11 @@ class Mem0Backend(MemoryBackend):
                 normed = _norm(val)
                 if normed is not None:
                     payload[key] = normed
-        if metadata:
-            payload["metadata"] = metadata
+        stored_metadata = dict(metadata or {})
+        if author is not None:
+            stored_metadata[AUTHOR_METADATA_KEY] = author
+        if stored_metadata:
+            payload["metadata"] = stored_metadata
 
         result = await self._request("POST", "/memories", json=payload)
         if not isinstance(result, dict):
@@ -229,14 +237,22 @@ class Mem0Backend(MemoryBackend):
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
+        author: str | None = None,
     ) -> Memory:
-        # Fetch-then-verify: mem0 PUT is global, check ownership first
+        # Fetch-then-verify: mem0 PUT is global, check ownership first. `existing`
+        # also supplies the base metadata to re-stamp onto when the caller passes
+        # no metadata of its own — mem0's PUT has no partial-merge semantics, so
+        # sending a fresh metadata dict with only the new author would drop
+        # whatever else was stored.
         existing = await self.get(user_id, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Memory not found")
         body: dict[str, Any] = {"text": content}
-        if metadata is not None:
-            body["metadata"] = metadata
+        if metadata is not None or author is not None:
+            base = dict(metadata) if metadata is not None else dict(existing.metadata)
+            if author is not None:
+                base[AUTHOR_METADATA_KEY] = author
+            body["metadata"] = base
         await self._request("PUT", f"/memories/{memory_id}", json=body)
         # mem0 PUT returns {"message": "..."}, not the memory. Fetch it.
         updated = await self.get(user_id, memory_id)
@@ -277,12 +293,18 @@ class Mem0Backend(MemoryBackend):
         result = await self._request("GET", f"/memories/{memory_id}/history")
         if not result:
             return []
+        # mem0's history log is entirely upstream-managed and carries no metadata
+        # per event, so there is nowhere to read a per-event author from — unlike
+        # in_memory/sqlite, which own their history log and record one directly.
+        # The memory's current `.author` (from _parse_memory) still reflects its
+        # last writer; only the event-by-event trail cannot be attributed here.
         return [
             HistoryEntry(
                 action=entry.get("event", "unknown").lower(),
                 timestamp=entry.get("created_at", ""),
                 content_before=entry.get("old_memory"),
                 content_after=entry.get("new_memory"),
+                author=None,
             )
             for entry in result
         ]
