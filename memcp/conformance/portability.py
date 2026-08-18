@@ -101,7 +101,34 @@ DECLARED_LOSSES: dict[tuple[str, str], tuple[Loss, ...]] = {
     ("mem0", "in_memory"): IDENTITY_LOSSES,
     ("mem0", "sqlite"): IDENTITY_LOSSES,
     ("mem0", "mem0"): IDENTITY_LOSSES,
+    ("in_memory", "cognee"): IDENTITY_LOSSES,
+    ("sqlite", "cognee"): IDENTITY_LOSSES,
+    ("mem0", "cognee"): IDENTITY_LOSSES,
+    ("cognee", "in_memory"): IDENTITY_LOSSES,
+    ("cognee", "sqlite"): IDENTITY_LOSSES,
+    ("cognee", "mem0"): IDENTITY_LOSSES,
+    ("cognee", "cognee"): IDENTITY_LOSSES,
 }
+
+# The graph is the aspect this table cannot express as a per-memory field, and it is
+# the one thing a cognee pair loses that no other pair can. Stated once here and
+# repeated into each cognee pair's notes, because a reader arrives at one pair.
+GRAPH_IS_NOT_CARRIED = (
+    "The knowledge graph does not migrate. Entities and relationships are derived by "
+    "cognee from the memories rather than stored beside them, and export_memories "
+    "carries memories only — so the graph is rebuilt from scratch on the target if the "
+    "target builds one, and simply does not exist if it does not."
+)
+GRAPH_IS_BUILT_ON_IMPORT = (
+    "Importing into cognee runs its extraction pipeline over every memory, so the "
+    "target ends up with a graph the source never had — one LLM call per memory, at "
+    "whatever that endpoint costs."
+)
+COGNEE_DEDUP_IS_DEFEATED = (
+    "cognee deduplicates by content hash within a dataset. memcp prefixes each "
+    "uploaded file with the memory's own id, so identical content written into two "
+    "different scopes stays two memories rather than collapsing into one."
+)
 
 # Notes that are true of a pair but are not a per-memory field loss. Published in
 # the document; not asserted by the round trip.
@@ -135,6 +162,54 @@ PAIR_NOTES: dict[tuple[str, str], tuple[str, ...]] = {
     ("sqlite", "in_memory"): (
         "The reverse of the same pair, and the way to read a deployment's SQLite "
         "file into a throwaway process. Everything but identity survives.",
+    ),
+    ("in_memory", "cognee"): (
+        GRAPH_IS_BUILT_ON_IMPORT,
+        COGNEE_DEDUP_IS_DEFEATED,
+        "Ranking changes from word overlap to embedding similarity, so a query that "
+        "found a memory by sharing its words may now find it by meaning, or miss it.",
+    ),
+    ("sqlite", "cognee"): (
+        GRAPH_IS_BUILT_ON_IMPORT,
+        COGNEE_DEDUP_IS_DEFEATED,
+        "This is the upgrade path off the keyless default: same memories, same scopes, "
+        "and a graph plus semantic retrieval that sqlite has no way to offer. It stops "
+        "being keyless — cognee needs an LLM endpoint for both extraction and "
+        "embeddings.",
+    ),
+    ("mem0", "cognee"): (
+        GRAPH_IS_BUILT_ON_IMPORT,
+        COGNEE_DEDUP_IS_DEFEATED,
+        "Both sides retrieve semantically, and both have a graph, but they are not the "
+        "same graph: mem0's entities come from its own extraction over what it chose to "
+        "store, cognee's from a fresh pass over the migrated content.",
+    ),
+    ("cognee", "in_memory"): (
+        GRAPH_IS_NOT_CARRIED,
+        "in_memory does not declare memory_entities, so after this migration the graph "
+        "is not merely stale — the tool is gone from the surface. Retrieval drops to "
+        "word overlap, and nothing survives a restart.",
+    ),
+    ("cognee", "sqlite"): (
+        GRAPH_IS_NOT_CARRIED,
+        "sqlite does not declare memory_entities either, so the eleven-tool keyless "
+        "surface is what an agent sees afterwards. This is the downgrade that keeps the "
+        "memories and the durability and gives up the graph and semantic ranking.",
+    ),
+    ("cognee", "mem0"): (
+        GRAPH_IS_NOT_CARRIED,
+        "mem0 declares memory_entities, so memory_entities keeps answering — but it "
+        "answers from mem0's own extraction over the imported memories, which is a "
+        "different graph with different nodes, not cognee's graph moved across.",
+        "mem0 stores a content hash and may deduplicate server-side. Import writes with "
+        "infer=false, so nothing is re-extracted, but a target that already holds the "
+        "same content in the same scope can collapse the write.",
+    ),
+    ("cognee", "cognee"): (
+        "The backup-and-restore case. Memories, scopes and metadata survive; the graph "
+        "is rebuilt on the target by re-running extraction, so its node ids differ from "
+        "the source's and its shape depends on the LLM that ran, not on the one that "
+        "built the original.",
     ),
 }
 

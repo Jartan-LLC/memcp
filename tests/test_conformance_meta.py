@@ -107,7 +107,7 @@ def test_undeclared_reports_only_new_losses():
 
 def test_unknown_pair_is_a_loud_failure():
     with pytest.raises(portability.UndocumentedPairError):
-        portability.declared_aspects("in_memory", "cognee")
+        portability.declared_aspects("in_memory", "a_backend_nobody_has_written")
 
 
 def test_corpus_covers_the_criterion():

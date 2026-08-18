@@ -4,6 +4,11 @@
 set -euo pipefail
 
 backend="${1:-sqlite}"
+shift || true
+# Everything after the backend is passed through to the second `up`. A backend whose
+# engine needs a model endpoint refuses without it (C3), so the re-run has to be
+# spelled the same way the first one was or this asserts the refusal, not idempotency.
+extra=("$@")
 dir=".memcp"
 token="$(grep '^MEMCP_TOKEN=' "$dir/.env" | cut -d= -f2-)"
 port=8080
@@ -21,7 +26,8 @@ marker="idempotency-$(date +%s)"
 call "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"add_memory\",\"arguments\":{\"content\":\"${marker}\",\"infer\":false}}}" > /dev/null
 echo "stored ${marker}"
 
-python -m memcp up --backend "$backend" --dir "$dir" --memcp-source . --timeout 600
+python -m memcp up --backend "$backend" --dir "$dir" --memcp-source . --timeout 600 \
+  "${extra[@]+"${extra[@]}"}"
 
 after="$(grep '^MEMCP_TOKEN=' "$dir/.env" | cut -d= -f2-)"
 if [ "$token" != "$after" ]; then

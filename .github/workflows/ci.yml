@@ -126,6 +126,59 @@ jobs:
         if: always()
         run: ci/mem0/down.sh
 
+  # B1: the cognee half of the conformance suite, against a real cognee with a real
+  # Kuzu graph and no external API secret. ci/cognee explains what the stand-in model
+  # does and does not prove.
+  conformance_cognee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+
+      - run: uv pip install -e ".[dev]"
+
+      - name: Stand up a self-contained cognee
+        run: ci/cognee/up.sh
+
+      - name: Conformance suite — cognee, and every round trip through it
+        env:
+          COGNEE_API_BASE: http://127.0.0.1:8890
+          COGNEE_TENANT_SECRET: memcp-conformance-tenant-secret
+          MEMCP_CONFORMANCE_BACKENDS: in_memory,sqlite,cognee
+        run: |
+          python -m memcp.conformance -q \
+            --conformance-report=conformance-cognee-report.json
+
+      # The claims the shared suite cannot make: that add() returns only once the
+      # memory is findable, and that memory_entities answers from a graph with edges.
+      - name: Graph and findability — cognee
+        env:
+          COGNEE_API_BASE: http://127.0.0.1:8890
+          COGNEE_TENANT_SECRET: memcp-conformance-tenant-secret
+        run: pytest tests/test_backend_cognee.py -v
+
+      - name: cognee stack logs
+        if: failure()
+        run: docker compose -f ci/cognee/docker-compose.yml logs --tail=300
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: conformance-cognee-report
+          path: conformance-cognee-report.json
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        run: ci/cognee/down.sh
+
   # C1 and C2: one command brings up memcp plus a backend on a machine with nothing
   # running, fails non-zero if it does not become healthy, and the first memory over
   # MCP is timed. This is the only place the workspace can execute it — no agent
@@ -262,6 +315,64 @@ jobs:
           docker rm -f fake-openai || true
           python -m memcp down --dir .memcp --volumes || true
 
+  # B3's cognee half. Nobody in this workspace holds a provider key, so the stack is
+  # pointed at ci/cognee's stand-in via --llm-base-url — the option that exists so a
+  # local endpoint can replace a paid account. What this proves is the provisioning
+  # path and the tenant partitioning memcp's /health insists on; what it does not
+  # prove is extraction or embedding quality, which ci/cognee/README.md states.
+  provision_cognee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+
+      - run: uv pip install -e ".[dev]"
+
+      - name: Plan declares the stack before anything is created
+        run: python -m memcp plan --backend cognee --dir .memcp
+
+      - name: Stand the keyless model endpoint up on the host
+        run: |
+          docker build -t memcp-ci/cognee-fake-openai:local ci/cognee/fake-openai
+          docker run -d --name cognee-fake-openai -p 8000:8000 \
+            memcp-ci/cognee-fake-openai:local
+          gateway="$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}')"
+          echo "LLM_BASE_URL=http://${gateway}:8000/v1" >> "$GITHUB_ENV"
+
+      - name: memcp up --backend cognee
+        run: |
+          /usr/bin/time -f 'COGNEE_PROVISION_SECONDS=%e' -o timing.txt \
+            python -m memcp up --backend cognee --dir .memcp --memcp-source . \
+              --llm-base-url "$LLM_BASE_URL" --timeout 900
+          cat timing.txt >> "$GITHUB_STEP_SUMMARY"
+          cat timing.txt
+
+      - name: First memory over MCP, through cognee's graph pipeline
+        run: python -m memcp verify --dir .memcp
+
+      - name: Re-running up is idempotent and keeps the memories
+        run: ci/provision/idempotency.sh cognee --llm-base-url "$LLM_BASE_URL"
+
+      - name: No secret reached a tracked file
+        run: ci/provision/no-secret-leak.sh
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f .memcp/docker-compose.yml logs --tail=300
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker rm -f cognee-fake-openai || true
+          python -m memcp down --dir .memcp --volumes || true
+
   build:
     needs: [lint, test]
     runs-on: ubuntu-latest
@@ -297,11 +408,11 @@ jobs:
 
   check:
     if: always()
-    needs: [lint, test, conformance, provision, provision_unpublished, provision_mem0, build]
+    needs: [lint, test, conformance, conformance_cognee, provision, provision_unpublished, provision_mem0, provision_cognee, build]
     runs-on: ubuntu-latest
     steps:
       - run: |
-          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.conformance.result }}" "${{ needs.provision.result }}" "${{ needs.provision_unpublished.result }}" "${{ needs.provision_mem0.result }}" "${{ needs.build.result }}")
+          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.conformance.result }}" "${{ needs.conformance_cognee.result }}" "${{ needs.provision.result }}" "${{ needs.provision_unpublished.result }}" "${{ needs.provision_mem0.result }}" "${{ needs.provision_cognee.result }}" "${{ needs.build.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then
               echo "Check failed: $r"

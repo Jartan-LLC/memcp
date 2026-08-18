@@ -30,6 +30,16 @@ class MemoryBackend(ABC):
     # every optional *method* with a capability, and this gates no tool.
     extracts_facts: bool = False
 
+    # How search() ranks: "keyword" for word overlap, "semantic" for embedding
+    # similarity. Reported by memory_status and stated nowhere else.
+    #
+    # This used to be derived from extracts_facts, which held only while every backend
+    # answered both questions the same way. Cognee is the counter-example the second
+    # engine was supposed to produce: it stores content verbatim (no fact extraction)
+    # and retrieves it by embedding similarity, so a derived answer would have told
+    # fifteen agents that a vector store does keyword matching.
+    retrieval: str = "keyword"
+
     # --- required (universal tools) ---
 
     @abstractmethod

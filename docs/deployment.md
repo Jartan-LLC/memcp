@@ -37,7 +37,8 @@ Docker image does and what an existing deployment runs.
 |---|---|---|---|
 | `sqlite` (default) | yes | no | One SQLite file. Keyword retrieval, no fact extraction, no knowledge graph. |
 | `in_memory` | **no** | no | Process memory. Everything is lost on restart. A smoke test, not a deployment. |
-| `mem0` | yes | yes, unless you bring a local LLM | mem0's REST server on pgvector. Real embeddings, real extraction, a real graph. |
+| `mem0` | yes | yes, unless you bring a local LLM | mem0's REST server on pgvector. Real embeddings, real extraction, a graph of entities. |
+| `cognee` | yes | yes — about $0.50 per 1,000 memory operations, and no keyless substitute this repo has measured is usable ([below](#what-cognee-costs-to-run)) | cognee's server with Kuzu, LanceDB and SQLite inside it. Real embeddings, and the only backend whose `memory_entities` returns relationships as well as entities. |
 
 ### The keyless path, and what it costs you
 
@@ -58,28 +59,136 @@ costs you:
 For a personal or single-project brain that is usually enough, and it is the
 difference between installing memcp and having memory, and installing memcp and then
 going to get an OpenAI account. For search that matches on meaning, extraction, and a
-graph, you need a model — that is what `mem0` is for.
+graph, you need a model — that is what `mem0` and `cognee` are for.
 
-### mem0 without a provider bill
+### Choosing between mem0 and cognee
 
-mem0 embeds and extracts through an OpenAI-compatible client. Point it at a local
+Both need a model and both retrieve semantically. They differ in what they keep.
+
+- **`mem0` decides what is worth storing.** `add_memory` with `infer=true` runs your
+  text through an LLM and may store a distilled fact, several, or nothing at all.
+  `memory_entities` returns entities, without the relationships between them.
+- **`cognee` keeps your text and builds a graph beside it.** Content is stored
+  verbatim whatever `infer` says, and the extraction pass produces entities *and* the
+  edges between them, which is what `memory_entities` returns. The cost is speed and
+  money: every write runs extraction and embedding inside the request, so `add_memory`
+  is slower here than on any other backend — and it returns only once the memory is
+  findable, which is the trade being made. The money is about $0.50 per 1,000 memory
+  operations, priced with its arithmetic below.
+
+Two operational differences worth knowing before you pick:
+
+- cognee reports no relevance score, so `search_memory` results carry `score: null`
+  and the `threshold` argument does nothing.
+- cognee has no per-memory change log, so `memory_history` is not registered.
+
+### What cognee costs to run
+
+**About $0.50 per 1,000 memory operations** at OpenAI list prices — an approximate
+figure, and roughly $0.00046 per `add_memory` and $0.00047 per `search_memory`. The
+arithmetic is below so you can redo it against your own model choice and today's
+prices instead of taking the figure on trust.
+
+Measured against **cognee 1.5.0**, the release `ci/cognee` pins by digest, with every
+prompt cognee sent logged at the model endpoint. Input tokens are counted from
+cognee's own prompts in `o200k_base`, gpt-4o-mini's encoding. Two runs — 12 writes and
+6 writes — agreed.
+
+| Per `add_memory` | Counted |
+|---|---|
+| chat completions | 2 — one `KnowledgeGraph` extraction (~1,046 input tokens), one `Summary` (~411) |
+| chat input | 1,459 tokens |
+| embedding calls | ~8, totalling 250 tokens |
+| chat output | 71 tokens — the floor, see below |
+
+| Per `search_memory` | Counted |
+|---|---|
+| chat completions | 1, at 2,329 input tokens |
+| embedding calls | 1, at 8 tokens |
+
+That search prompt is a fixed template and does not carry the retrieved memories: 12
+memories and 48 memories both produced 2,329.08 input tokens per search, identical to
+the token. **Recall cost does not grow with the size of your corpus.**
+
+Prices read **2026-08-18**, for the model pair `memcp up --backend cognee` provisions
+— `openai/gpt-4o-mini` at $0.15/M input and $0.60/M output, and
+`openai/text-embedding-3-small` at $0.02/M:
+
+- **write** — 1,459 × $0.15/M + 250 × $0.02/M + 400 × $0.60/M = **$0.00046**
+- **search** — 2,329 × $0.15/M + 8 × $0.02/M + 200 × $0.60/M = **$0.00047**
+
+**The output-token counts are the estimated part.** The 400 per write and 200 per
+search above are estimates; every other number here is counted. The completions in the
+measurement came from a deterministic stand-in rather than a language model, so what
+it counted is a floor: 71 output tokens per write, and effectively none per search.
+Priced at that floor a write is $0.00027 and a search is $0.00035 — the search figure
+being its input cost alone. A real extractor writes more than the stand-in, which is
+why the estimates above sit above the floor.
+
+Two things this does not price. `docs/local-models.md` counted six to seven
+completions per write where this measurement counted two; the gap is `instructor`
+retrying a model that cannot satisfy cognee's extraction schema, so a model that
+retries costs more than the table says. And a cognee release that changes its pipeline
+changes every number above.
+
+**cognee needs an OpenAI-compatible key either way, and there is no keyless cognee
+path that is usable on ordinary hardware today.** `memcp up --backend cognee` refuses
+to start without `COGNEE_LLM_API_KEY`, and `--llm-base-url` removes the account rather
+than the model: measured on five CPU cores with Qwen2.5-1.5B-Instruct Q4_K_M and
+`nomic-embed-text-v1.5`, one `add_memory` took three to five minutes, exceeded the
+adapter's 120-second default, and sometimes failed outright with cognee's `409` because
+the model could not produce its extraction schema — no memory stored, not a worse graph
+(`docs/local-models.md`, measured 2026-08-17). On a GPU or a larger model this may look
+different, and `tools/local_model_retrieval.py` is the harness to find out.
+
+### cognee, and the tenant boundary it depends on
+
+memcp derives one cognee account per tenant — the login from a hash of the tenant id,
+the password from `COGNEE_TENANT_SECRET` — and cognee's own per-user access control is
+what keeps those accounts apart. That is not a detail: a cognee started without
+`ENABLE_BACKEND_ACCESS_CONTROL=true` serves every request as one default user, and
+every memcp tenant would read and write the same memories.
+
+`memcp up --backend cognee` sets it. Pointed at a cognee you configured yourself,
+memcp checks: `/health` asks cognee whether it refuses an unauthenticated read, and
+reports **unhealthy** if it does not. Since `memcp up --wait` gates on that, a
+misconfigured server fails provisioning rather than quietly collapsing your tenants.
+
+`COGNEE_TENANT_SECRET` is minted per deployment and lives only in the deployment's
+`.env`. Losing it does not lose the memories, but a different value derives different
+accounts, so every tenant would come up empty.
+
+### mem0 or cognee without a provider bill
+
+Both embed and extract through an OpenAI-compatible client. Point either at a local
 endpoint and no provider account is involved:
 
 ```bash
 # Ollama, llama.cpp, LiteLLM — anything that speaks the OpenAI API
-memcp up --backend mem0 --llm-base-url http://192.168.1.10:11434/v1
+memcp up --backend mem0   --llm-base-url http://192.168.1.10:11434/v1
+memcp up --backend cognee --llm-base-url http://192.168.1.10:11434/v1
 ```
 
-memcp then mints a placeholder for `OPENAI_API_KEY`, because mem0's client library
-requires the variable to exist even when the endpoint ignores it. Without
-`--llm-base-url`, `OPENAI_API_KEY` is yours to supply and `memcp up` refuses to start
-without it rather than standing up a stack that half-works.
+memcp then mints a placeholder for the provider key, because both client libraries
+require the variable to exist even when the endpoint ignores it. Without
+`--llm-base-url`, that key is yours to supply — `OPENAI_API_KEY` for mem0,
+`COGNEE_LLM_API_KEY` for cognee — and `memcp up` refuses to start without it rather
+than standing up a stack that half-works.
 
 **This is plumbing, not a quality claim.** CI exercises the path against a
 deterministic stand-in, which proves the stack comes up and the round trip works. How
-well any particular local model performs as mem0's extractor or embedder is something
+well any particular local model performs as an extractor or an embedder is something
 this repository has not measured, so do not read this section as saying memcp works
-well with local models — only that it connects to them.
+well with local models — only that it connects to them. That gap is larger for cognee
+than for mem0: cognee's graph is only as good as the entities the model finds, and a
+small local model finding few or wrong entities would produce a graph that looks
+populated and is not worth querying.
+
+`docs/local-models.md` measures one such endpoint. The short version: on five CPU
+cores with a 1.5B model, one `add_memory` through cognee takes three to five minutes,
+exceeds the adapter's 120-second default — raise `COGNEE_TIMEOUT` — and sometimes
+fails outright because the model cannot produce cognee's extraction schema. Read it
+before choosing that path.
 
 ## What gets created
 

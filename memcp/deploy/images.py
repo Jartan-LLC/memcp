@@ -51,4 +51,15 @@ PGVECTOR = PinnedImage(
 MEM0_SOURCE_REPO = "https://github.com/Jartan-LLC/mem0.git"
 MEM0_SOURCE_PIN = "42fe3511615cb8aa8c12363b1c8733da9d51ac24"
 
-ALL_IMAGES: tuple[PinnedImage, ...] = (PYTHON_BASE, PGVECTOR)
+# Cognee, unlike mem0, publishes a release image that matches a release on PyPI, and
+# 1.5.0 is the version the adapter was measured against — every claim in
+# memcp/backend/cognee.py about dataset scoping, dedup and per-user isolation came from
+# a running 1.5.0. Moving this pin means re-running the conformance suite against the
+# new one, because those are behaviours cognee has changed before and documents nowhere.
+COGNEE = PinnedImage(
+    repository="cognee/cognee",
+    tag="1.5.0",
+    digest="sha256:8d32015feb2d3c1c6f98f5935fe385161039d796ef63cae3fde6ffc39b71cf5d",
+)
+
+ALL_IMAGES: tuple[PinnedImage, ...] = (PYTHON_BASE, PGVECTOR, COGNEE)

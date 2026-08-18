@@ -16,7 +16,7 @@ graph engines need a key.
 ## Features
 
 - One-command deployment that provisions memcp **and** its memory backend
-- Durable, keyless local storage (`sqlite`), or mem0 on pgvector when you want semantic search and a knowledge graph
+- Durable, keyless local storage (`sqlite`); mem0 on pgvector for semantic search; cognee when you want a real knowledge graph
 - Add, search, list, update and delete memories over MCP
 - Flat scope-based filtering (agent_id, run_id)
 - Per-tenant bearer token auth, minted per deployment, never defaulted
@@ -122,7 +122,35 @@ In a new conversation, ask:
 Claude searches memory automatically and uses the stored context. On the default
 `sqlite` backend this works because `linter` and `linting` share a stem — matching is
 lexical, so a question phrased in words that do not appear in the memory will not
-find it. `mem0` is the backend that matches on meaning.
+find it. `mem0` and `cognee` are the backends that match on meaning; `cognee` is the
+one that also builds a graph out of what you store.
+
+### 4. Upgrade to a backend that matches on meaning
+
+```bash
+memcp up --backend cognee   # or --backend mem0
+```
+
+`cognee` gives you embedding-similarity retrieval and a knowledge graph with the
+relationships in it. Two things to know before you run that command.
+
+**It needs an OpenAI-compatible key.** `memcp up --backend cognee` refuses to start
+without `COGNEE_LLM_API_KEY` rather than standing up a stack that half-works. There is
+no keyless cognee path that is usable on ordinary hardware today: `--llm-base-url`
+points it at a local model and removes the account, but measured on five CPU cores with
+Qwen2.5-1.5B-Instruct Q4_K_M, one `add_memory` took three to five minutes, exceeded the
+adapter's 120-second default, and sometimes failed outright because the model could not
+produce cognee's extraction schema — no memory stored (`docs/local-models.md`, measured
+2026-08-17).
+
+**It costs about $0.50 per 1,000 memory operations** — an approximate figure, and
+roughly $0.00046 per `add_memory` and $0.00047 per `search_memory` at OpenAI list
+prices read 2026-08-18,
+for the `gpt-4o-mini` and `text-embedding-3-small` pair `memcp up --backend cognee`
+provisions. Recall does not get more expensive as your corpus grows: 12 memories and 48
+memories produced the same per-search token count. `docs/deployment.md` carries the
+token counts, the prices, the cognee version measured and which parts are estimated, so
+you can redo the arithmetic yourself.
 
 ## Configuration
 
@@ -131,15 +159,21 @@ find it. `mem0` is the backend that matches on meaning.
 - Docker, for `memcp up`
 - Python 3.12+, to run the server directly
 - For `MEMCP_BACKEND=mem0`: a running [mem0](https://github.com/mem0ai/mem0) instance — or let `memcp up --backend mem0` provision one
+- For `MEMCP_BACKEND=cognee`: a running [cognee](https://github.com/topoteretes/cognee) server with `ENABLE_BACKEND_ACCESS_CONTROL=true` — or let `memcp up --backend cognee` provision one. Both the extractor and the embedder need a model, so this backend is not keyless, and it costs about $0.50 per 1,000 memory operations to run — an approximate figure, with the token counts and prices behind it in `docs/deployment.md`
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `MEMCP_BACKEND` | No | Backend for the server itself: `mem0`, `sqlite` or `in_memory`. Defaults to `mem0` when you run the server directly; `memcp up` provisions `sqlite` unless you pass `--backend` |
+| `MEMCP_BACKEND` | No | Backend for the server itself: `mem0`, `sqlite`, `in_memory` or `cognee`. Defaults to `mem0` when you run the server directly; `memcp up` provisions `sqlite` unless you pass `--backend` |
 | `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
+| `COGNEE_API_BASE` | cognee | Base URL of your cognee server |
+| `COGNEE_TENANT_SECRET` | cognee | Derives one cognee account per memcp tenant. Same secret means same accounts; a different one addresses different accounts, so every tenant reads empty |
+| `COGNEE_DATASET` | No | Dataset each tenant's memories are written into (default: `memcp`) |
+| `COGNEE_EMAIL_DOMAIN` | No | Domain the derived tenant logins are built from. Nothing is ever sent to it |
+| `COGNEE_TIMEOUT` | No | Seconds to allow one cognee call (default: `120`). A write runs extraction and embedding inside the request, so a small local model on CPU needs far more — see `docs/local-models.md` |
 | `MEMCP_AUTH_TOKENS` | No | Token-to-user mapping: `tok1:alice,tok2:bob`. Unset means unauthenticated, which is refused on any non-loopback bind |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
@@ -153,8 +187,8 @@ find it. `mem0` is the backend that matches on meaning.
 
 | Tool | Description |
 |---|---|
-| `add_memory` | Store a fact/preference/decision. On `mem0`, extracts facts by default (may store nothing) and `infer=false` stores verbatim. On `sqlite` and `in_memory` there is no model, so content is always stored verbatim and `infer` has no effect — the tool's own description says which, per deployment. Bulk: use `import_memories` |
-| `search_memory` | Ranked search — semantic on `mem0`, keyword on `sqlite` and `in_memory`. `threshold` filters by minimum score (0-1). For browsing: `list_memories` |
+| `add_memory` | Store a fact/preference/decision. On `mem0`, extracts facts by default (may store nothing) and `infer=false` stores verbatim. On `sqlite` and `in_memory` there is no model, so content is always stored verbatim and `infer` has no effect. On `cognee` content is always stored verbatim and a graph is extracted beside it, and the call returns only once the memory is findable — which makes it the slowest write of the four. The tool's own description says which, per deployment. Bulk: use `import_memories` |
+| `search_memory` | Ranked search — semantic on `mem0` and `cognee`, keyword on `sqlite` and `in_memory`. `threshold` filters by minimum score (0-1), and has no effect on `cognee`, which reports no score. For browsing: `list_memories` |
 | `delete_memory` | Delete one memory by ID. Confirm with user first |
 | `delete_all_memories` | Bulk-delete by scope (e.g. agent_id, run_id), not content. Requires at least one scope key. Confirm first |
 | `memory_status` | Returns server version, backend type, capabilities, valid scope keys, whether the backend extracts facts, and whether retrieval is semantic or keyword. No memory content |
@@ -169,7 +203,7 @@ find it. `mem0` is the backend that matches on meaning.
 | `export_memories` | Export memories as JSON (max 10k, truncates with flag). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
 | `import_memories` | Batch-import from JSON. Dedup via exact content match (scope-independent). `on_conflict`: skip, overwrite, duplicate (requires `list_memories`; overwrite requires `update_memory`) |
 | `memory_history` | Change log for a memory: timestamps and previous/current content per create/update event |
-| `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `mem0` does, `sqlite` and `in_memory` do not, so it is absent on a keyless install. Not a search tool — use `search_memory` for topics |
+| `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `cognee` and `mem0` do, `sqlite` and `in_memory` do not, so it is absent on a keyless install. `cognee` is the one that returns relationships as well as entities. Not a search tool — use `search_memory` for topics |
 
 ## Docker
 
@@ -213,8 +247,8 @@ and retrieval by the original query all survive. What does not survive is writte
 down per pair in `docs/portability.md` and asserted against — an undocumented loss
 fails CI rather than passing quietly.
 
-Both run on every pull request against a real mem0, stood up locally with no API key
-(`ci/mem0/up.sh`).
+Both run on every pull request against a real mem0 and a real cognee, each stood up
+locally with no API key (`ci/mem0/up.sh`, `ci/cognee/up.sh`).
 
 ## Known Limitations
 
@@ -226,6 +260,15 @@ Both run on every pull request against a real mem0, stood up locally with no API
 - List endpoint does not filter by metadata
 - Entities endpoint does not filter by user — post-filtered client-side
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
+
+**cognee backend:**
+- Tenancy is cognee's per-user access control. Pointed at a cognee started without `ENABLE_BACKEND_ACCESS_CONTROL`, memcp reports unhealthy rather than serving every tenant out of one account
+- `threshold` has no effect: cognee's chunk recall reports no score, so `search_memory` results carry `score: null`
+- No `memory_history`. Cognee keeps a pipeline run log, not a per-memory change log
+- `update_memory` is a delete and a rewrite under the same id, not an in-place edit. It is not atomic, and `created_at` moves
+- Every write runs extraction and embedding inside the request. That is what makes the memory findable when `add_memory` returns, and it is why writes are slow and metered
+- Cognee's API has no bulk read and no server-side scope filter, so `search_memory` lists the tenant's data once and then fetches each hit's text — one request per result. Scope narrowing happens after cognee has ranked, not inside it
+- Against a small local model on CPU, one `add_memory` takes minutes and some writes fail outright — measured in `docs/local-models.md`. Read that before pointing `--llm-base-url` at one
 
 **sqlite and in-memory backends (no model behind them):**
 - Retrieval is keyword matching, not vector similarity. Tokens match when they are equal or share a four-character prefix, so `linter` finds `linting` but a question phrased in different words finds nothing

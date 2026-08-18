@@ -229,7 +229,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             # The argument shape is the same either way, so this is the only way a
             # caller can find out.
             "extracts_facts": backend.extracts_facts,
-            "retrieval": "semantic" if backend.extracts_facts else "keyword",
+            "retrieval": backend.retrieval,
         }
 
     # --- optional tools (registered if backend declares capability) ---

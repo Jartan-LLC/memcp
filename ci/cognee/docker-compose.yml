@@ -1,0 +1,77 @@
+# Self-contained cognee for conformance runs — no external API secret.
+#
+#   ci/cognee/up.sh        bring it up and print the adapter's environment
+#   ci/cognee/down.sh      tear it down, volumes included
+#
+# Everything cognee needs is inside its own image: Kuzu for the graph, LanceDB for
+# vectors, SQLite for the rest. The only thing it reaches out for is a model, and
+# fake-openai stands in for both the extractor and the embedder — see
+# ci/cognee/fake-openai/server.py for exactly what that does and does not prove.
+#
+# Credentials below are fixed literals on purpose: this stack is disposable, listens
+# on localhost only, and holds nothing but test corpora. Nothing here is a secret and
+# nothing here is reused by any deployment.
+
+name: memcp-conformance-cognee
+
+services:
+  fake-openai:
+    image: memcp-ci/cognee-fake-openai:local
+    build:
+      context: ./fake-openai
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  cognee:
+    # Pinned by digest to the release memcp/backend/cognee.py was measured against.
+    # Kept equal to memcp.deploy.images.COGNEE by tests/test_deploy_plan.py.
+    image: cognee/cognee@sha256:8d32015feb2d3c1c6f98f5935fe385161039d796ef63cae3fde6ffc39b71cf5d
+    depends_on:
+      fake-openai:
+        condition: service_healthy
+    environment:
+      # The posture memcp's tenant isolation depends on. With this off, cognee serves
+      # every request as one default user and the conformance suite's tenant-isolation
+      # assertions are the ones that would catch it.
+      ENABLE_BACKEND_ACCESS_CONTROL: "true"
+      REQUIRE_AUTHENTICATION: "true"
+
+      LLM_PROVIDER: custom
+      LLM_MODEL: openai/gpt-4o-mini
+      LLM_ENDPOINT: http://fake-openai:8000/v1
+      LLM_API_KEY: not-a-real-key
+      EMBEDDING_PROVIDER: openai
+      EMBEDDING_MODEL: openai/text-embedding-3-small
+      EMBEDDING_ENDPOINT: http://fake-openai:8000/v1
+      EMBEDDING_API_KEY: not-a-real-key
+      EMBEDDING_DIMENSIONS: "1536"
+
+      TELEMETRY_DISABLED: "true"
+      ENV: local
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - cognee_system:/app/.cognee_system
+      - cognee_data:/app/.data_storage
+    ports:
+      - "127.0.0.1:8890:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 30s
+
+volumes:
+  cognee_system:
+  cognee_data:

@@ -105,9 +105,11 @@ def build_parser() -> argparse.ArgumentParser:
             "--llm-base-url",
             default=None,
             help=(
-                "OpenAI-compatible endpoint for the mem0 backend's LLM and embedder "
-                "(Ollama, llama.cpp, LiteLLM). Set it and no provider account is "
-                "needed; leave it unset and OPENAI_API_KEY is required."
+                "OpenAI-compatible endpoint for the LLM and embedder the mem0 and "
+                "cognee backends need (Ollama, llama.cpp, LiteLLM). Set it and no "
+                "provider account is needed; leave it unset and a provider key is "
+                "required. How well either backend works against a small local model "
+                "is not something this repository has measured."
             ),
         )
         p.add_argument(
