@@ -1,0 +1,35 @@
+name: Create GitHub Release
+
+# Ported from Jartan-LLC/scaffold unchanged, and carried onto this branch so a
+# patch cut here gets a release page without anyone remembering to make one.
+# v0.1.2 did not: the tag published to PyPI and ghcr, and the release was created
+# by hand afterwards.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # No checkout needed: gh talks to the API and resolves the repo from
+      # GH_REPO. The view-or-create guard keeps re-runs on the same tag
+      # idempotent instead of failing with "release already exists".
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
