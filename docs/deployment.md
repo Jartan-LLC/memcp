@@ -238,5 +238,35 @@ them, and every memory with them.
 
 ## Running the server without provisioning
 
-`.env.example` covers every variable, and `docker-compose.yml` at the repository root
-is a single-service compose file for someone managing the stack by hand.
+`memcp up` is the supported path, and it is the only one that provisions a backend.
+To run the server against a backend you already have:
+
+```bash
+pip install memcp-server
+MEMCP_BACKEND=sqlite MEMCP_HOST=127.0.0.1 python -m memcp
+```
+
+The server starts on `http://localhost:8080`. With no `MEMCP_AUTH_TOKENS` set it
+serves every request as one tenant, so it refuses to start on any interface another
+machine can reach — set a token, or keep it on loopback as above.
+[reference.md](reference.md) covers every variable, and `.env.example` carries the
+same set in the shape a deployment reads it.
+
+For a hand-managed single-service stack, `docker-compose.yml` at the repository root
+builds the checkout you are in:
+
+```bash
+cp .env.example .env   # set MEMCP_AUTH_TOKENS, pick a backend
+docker compose up -d
+```
+
+That file builds rather than pulling, on purpose: `main` is where the code is
+developed, so its compose file runs the code in the checkout. The maintained release
+branches are the ones that deploy a released artifact, and their compose files name
+the published image at an exact version — `ghcr.io/jartan-llc/memcp:<version>`, which
+is built once at tag time and cannot change on a re-pull. To run a published release
+instead of the checkout, name it directly:
+
+```bash
+docker run --rm --env-file .env -p 127.0.0.1:8080:8080 ghcr.io/jartan-llc/memcp:0.1.2
+```
