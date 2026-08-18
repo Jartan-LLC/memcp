@@ -44,14 +44,17 @@ produced this stamp — it is not a statement about a store's entire history.**
 Before this field existed, `metadata` was entirely unvalidated, so any caller
 holding a bearer token could have written the reserved key directly, and a row
 like that would read back exactly like a real stamp. `sqlite` and `in_memory`
-close this automatically: a one-time, marked cleanse strips the reserved
-namespace from every row already in a file the first time a server version
-carrying this guard opens it, and the write path itself now refuses a
-caller-supplied reserved key regardless of caller. `mem0` has no local file
-this server can scan and no way to enumerate every tenant an install holds —
-**run a metadata sweep on a `mem0`-backed store before serving it with a
-server version carrying this guard**, or a pre-existing row will read as
-attributed when it never was.
+close this **for a file only ever served by a version carrying this guard**: a
+one-time, marked cleanse strips the reserved namespace from every row already
+in the file the first time such a version opens it, and the write path itself
+now refuses a caller-supplied reserved key regardless of caller. The marker
+does not re-trigger — a file that is later opened by an unguarded version
+(a rollback, then a roll-forward) can have a key planted in that window, and
+the guarded version that reopens it afterward will not know to look again.
+`mem0` has no local file this server can scan and no way to enumerate every
+tenant an install holds — **run a metadata sweep on a `mem0`-backed store
+before serving it with a server version carrying this guard**, or a
+pre-existing row will read as attributed when it never was.
 
 ### Universal — registered on every backend
 

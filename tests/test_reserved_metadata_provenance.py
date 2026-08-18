@@ -173,6 +173,48 @@ async def test_sqlite_cleanse_does_not_touch_ordinary_metadata(tmp_path: Path):
     await backend.close()
 
 
+def _seed_raw_metadata(path: Path, *, memory_id: str, raw_metadata: str) -> None:
+    conn = sqlite3.connect(path)
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO memories (id, user_id, content, scope, metadata, created_at, updated_at)"
+        " VALUES (?, 't', 'pre-existing content', '{}', ?, '2026-01-01T00:00:00Z', NULL)",
+        (memory_id, raw_metadata),
+    )
+    conn.commit()
+    conn.close()
+
+
+async def test_sqlite_cleanse_skips_an_unparseable_row_instead_of_failing_to_boot(
+    tmp_path: Path,
+):
+    """Thorne, JAR-723 pre-merge gate C4: the cleanse used to json.loads() every
+    row unconditionally, so one corrupt metadata blob raised out of
+    SqliteBackend.__init__ and the process would not start at all — turning a
+    single unreadable row into a total boot failure, on the migration path
+    that most needs to not do that. A row this cannot parse cannot be read
+    normally either, so skipping it costs nothing the cleanse could otherwise
+    have delivered."""
+    path = tmp_path / "legacy.sqlite3"
+    _seed_raw_metadata(path, memory_id="corrupt-1", raw_metadata="{not valid json")
+    _seed_legacy_row(
+        path, memory_id="legacy-2", metadata={AUTHOR_METADATA_KEY: "forged", "note": "kept"}
+    )
+
+    backend = SqliteBackend(path)  # must not raise
+
+    # The corrupt row is left exactly as it was — untouched, not crashed on.
+    cur = backend._conn.execute("SELECT metadata FROM memories WHERE id = 'corrupt-1'")
+    assert cur.fetchone()[0] == "{not valid json"
+
+    # The cleanse still ran for every row it *could* parse.
+    memory = await backend.get("t", "legacy-2")
+    assert memory is not None
+    assert memory.author is None
+    assert memory.metadata == {"note": "kept"}
+    await backend.close()
+
+
 # ---------------------------------------------------------------------------
 # mem0 — documented, not code-closed. Recorded so the gap is visible in the
 # test suite rather than only in prose; not a security guarantee to defend.

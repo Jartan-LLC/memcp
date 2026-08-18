@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sqlite3
 import time
 import uuid
@@ -45,6 +46,8 @@ from memcp.types import (
 
 from .base import MemoryBackend
 from .keyword import score as _score
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS memories (
@@ -125,7 +128,20 @@ class SqliteBackend(MemoryBackend):
             return
         rows = self._conn.execute("SELECT id, metadata FROM memories").fetchall()
         for row in rows:
-            stored = json.loads(row["metadata"])
+            try:
+                stored = json.loads(row["metadata"])
+            except json.JSONDecodeError:
+                # Everything this class ever writes goes out through json.dumps,
+                # so a row this can't parse can't be read normally either —
+                # skipping it loses nothing this cleanse could otherwise have
+                # cleaned, and a boot failure here (Thorne, JAR-723 C4) would be
+                # strictly worse than leaving one unreadable row exactly as it
+                # already was.
+                logger.warning(
+                    "Skipped unparseable metadata during reserved-key cleanse for row %s",
+                    row["id"],
+                )
+                continue
             cleaned = strip_reserved_metadata(stored)
             if cleaned != stored:
                 self._conn.execute(
