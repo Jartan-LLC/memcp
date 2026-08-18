@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
 
 from memcp.deploy import cli, runner
 from memcp.deploy import compose as compose_yaml
@@ -369,6 +370,33 @@ def test_ac6_a_published_deployment_behind_a_proxy_gets_the_same_treatment():
     hosts = _env(plan(external_url=EXTERNAL))["MEMCP_ALLOWED_HOSTS"].split(",")
     assert "memory.example.com" in hosts
     assert "127.0.0.1:*" in hosts
+
+
+def _matches(allowed_hosts: list[str], host_header: str) -> bool:
+    """Drive the SDK's own matcher rather than compare allow-list strings."""
+    settings = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True, allowed_hosts=allowed_hosts, allowed_origins=[]
+    )
+    return TransportSecurityMiddleware(settings)._validate_host(host_header)
+
+
+def test_ac6_an_ipv6_external_url_is_bracketed_so_the_sdk_admits_it():
+    """JAR-591: `urlsplit(...).hostname` strips the brackets a client's Host keeps."""
+    hosts = _env(unpublished(external_url="http://[2001:db8::1]:8080"))[
+        "MEMCP_ALLOWED_HOSTS"
+    ].split(",")
+    assert _matches(hosts, "[2001:db8::1]:8080")
+    assert not _matches(hosts, "2001:db8::1:8080")
+
+
+def test_ac6_a_mixed_case_external_url_admits_both_spellings_and_nothing_else():
+    """JAR-591: `urlsplit` lowercases; a proxy that forwards Host verbatim does not."""
+    hosts = _env(unpublished(external_url="https://MEMORY.Example.COM"))[
+        "MEMCP_ALLOWED_HOSTS"
+    ].split(",")
+    assert _matches(hosts, "MEMORY.Example.COM")
+    assert _matches(hosts, "memory.example.com")
+    assert not _matches(hosts, "evil.example.com")
 
 
 # --- AC7: the security position does not move --------------------------------

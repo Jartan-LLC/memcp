@@ -144,6 +144,20 @@ CLIENTS REACH IT AT
   https://memory.example.com/mcp
 ```
 
+**If clients get a 421.** The server's own error text is just "Invalid Host header" —
+this is what it means. `--external-url` sets `MEMCP_ALLOWED_HOSTS` to the hostname
+*you* said the proxy serves under, but some proxies rewrite the Host header to the
+upstream address before forwarding it — nginx's `proxy_set_header Host $proxy_host`
+does this; Traefik does not. Point that kind of proxy at memcp and every request
+arrives with `Host: memcp:8080` instead of `Host: memory.example.com`, and the
+deployment refuses all of them, because that is not the name it was told to admit.
+Fix it either way:
+
+- Point `--external-url` at what the proxy actually sends (`memcp:8080` in the
+  example above), not at the public name.
+- Or add the extra name to `MEMCP_ALLOWED_HOSTS` by hand in the deployment's `.env`,
+  alongside the one `--external-url` set.
+
 **What still works, and what changes.** `up --wait` gates on health exactly as before
 — the healthcheck runs inside the container and never used the host port. `--smoke`
 and `verify` no longer have a host route to take, so they run the same store-and-
