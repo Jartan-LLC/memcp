@@ -19,6 +19,11 @@ imported. The server exits at import with `ModuleNotFoundError`.
 ### Added
 - CI runs on push to `main` and `release/**`, on pull requests into either, and weekly on a schedule. Dependency drift is now found by CI rather than by a deploy.
 
+### Changed
+- **`docker-compose.yml` on this branch deploys the published release image** (`ghcr.io/jartan-llc/memcp:0.1.2`) rather than building the checkout. A release branch exists to be deployed, and an image built once at tag time cannot change what it runs on a re-pull; a rebuild of unchanged source can, which is how 0.1.1 broke. The tag is an exact version, never `:latest`. `docker-compose.build.yml` is the documented override for building this checkout instead, and it replaces the stale `ghcr.io/jartan-llc/mem0-mcp:latest` comment, which named a repository that no longer exists.
+- **`:latest` now follows the highest released version, not the most recent tag push.** This branch is maintained beside `main`, so a patch cut after a higher minor would have moved `:latest` backwards and downgraded anyone pulling it.
+- Both publish workflows pin every action by commit SHA and the build frontend by version, matching `main` (commit `93fc173`). These are the jobs a tag push runs with `packages: write` and PyPI trusted publishing, so a moved upstream tag reaches a release path.
+
 ## [0.1.1] — 2026-06-14
 
 ### Fixed

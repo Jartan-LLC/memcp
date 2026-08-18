@@ -13,14 +13,19 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     steps:
-      - uses: actions/checkout@v6
+      # Every action is pinned by commit SHA and the build frontend by version: a
+      # tag is mutable, and this job publishes to PyPI under trusted publishing.
+      # Same policy as `main` (commit 93fc173); the versions beside each SHA are the
+      # ones this branch already named. `main` builds with uv — not backported, so
+      # that this release path stays the one 0.1.1 shipped through.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.3
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
 
-      - run: pip install build
+      - run: pip install build==1.5.0
 
       - run: python -m build
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

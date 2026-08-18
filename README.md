@@ -158,7 +158,7 @@ pytest -x
 
 ## Status
 
-v0.1.0 — API may change before v1.0. Suitable for development and early adoption.
+v0.1.2 — API may change before v1.0. Suitable for development and early adoption.
 
 ## License
 

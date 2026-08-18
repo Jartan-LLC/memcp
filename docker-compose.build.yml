@@ -1,0 +1,15 @@
+# Build memcp from this checkout instead of pulling the released image.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# For working on this branch — a patch you have not released yet, or a bisect. A
+# deployment should use docker-compose.yml on its own, which pulls the release.
+#
+# `pull_policy: build` is what makes this unambiguous: with both `image:` and
+# `build:` set, compose otherwise reuses a local image of that name if one happens
+# to exist, so you could get the release image while believing you built the tree.
+
+services:
+  memcp:
+    build: .
+    pull_policy: build
