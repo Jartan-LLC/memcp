@@ -154,9 +154,12 @@ deployment refuses all of them, because that is not the name it was told to admi
 Fix it either way:
 
 - Point `--external-url` at what the proxy actually sends (`memcp:8080` in the
-  example above), not at the public name.
+  example above), not at the public name. That flag is also what the client snippet
+  prints, so this fix is the right one only when the clients are other containers
+  reaching memcp at that same address.
 - Or add the extra name to `MEMCP_ALLOWED_HOSTS` by hand in the deployment's `.env`,
-  alongside the one `--external-url` set.
+  alongside the one `--external-url` set. This is the fix that keeps the public
+  address printed for clients while admitting the name the proxy sends.
 
 **What still works, and what changes.** `up --wait` gates on health exactly as before
 — the healthcheck runs inside the container and never used the host port. `--smoke`
