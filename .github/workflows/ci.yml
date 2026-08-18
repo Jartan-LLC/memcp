@@ -358,7 +358,7 @@ jobs:
         run: python -m memcp verify --dir .memcp
 
       - name: Re-running up is idempotent and keeps the memories
-        run: ci/provision/idempotency.sh cognee
+        run: ci/provision/idempotency.sh cognee --llm-base-url "$LLM_BASE_URL"
 
       - name: No secret reached a tracked file
         run: ci/provision/no-secret-leak.sh
