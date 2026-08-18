@@ -155,12 +155,42 @@ def _llm_secret(options: StackOptions) -> RequiredSecret:
     )
 
 
+def _format_host(hostname: str, port: int | None) -> str:
+    """A hostname and optional port, as the SDK's Host matcher expects it.
+
+    An IPv6 literal contains colons of its own, so it is bracketed the way the
+    hardcoded `[::1]` entry already is — otherwise it is indistinguishable from a
+    trailing `:port`.
+    """
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    return f"{host}:{port}" if port else host
+
+
 def external_host(url: str) -> str | None:
     """The Host header a client sends when it reaches this deployment at `url`."""
     parts = urlsplit(url)
     if not parts.hostname:
         return None
-    return f"{parts.hostname}:{parts.port}" if parts.port else parts.hostname
+    return _format_host(parts.hostname, parts.port)
+
+
+def _raw_external_host(url: str) -> str | None:
+    """`external_host`, but in the case the operator typed it.
+
+    `urlsplit().hostname` lowercases; the SDK's Host matcher does not. A proxy that
+    forwards the Host header verbatim sends whatever case the operator wrote, so that
+    spelling has to be admitted too — only ever the name they supplied, never a wider
+    one.
+    """
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return None
+    netloc = parts.netloc.rsplit("@", 1)[-1]
+    if netloc.startswith("["):
+        raw_hostname = netloc[1 : netloc.index("]")]
+    else:
+        raw_hostname = netloc.rsplit(":", 1)[0] if parts.port else netloc
+    return _format_host(raw_hostname, parts.port)
 
 
 def _allowed_hosts(options: StackOptions) -> str:
@@ -179,13 +209,21 @@ def _allowed_hosts(options: StackOptions) -> str:
     if options.publish and options.bind not in ("127.0.0.1", "0.0.0.0", "localhost"):
         hosts.append(f"{options.bind}:*")
     if options.external_url:
-        host = external_host(options.external_url)
-        if host:
-            hosts.append(host)
-            # A proxy that forwards a non-default port sends `name:port`; one on 80 or
-            # 443 sends the bare name. Both are the same deployment.
-            if ":" not in host:
-                hosts.append(f"{host}:*")
+        parts = urlsplit(options.external_url)
+        if parts.hostname:
+            for host in dict.fromkeys(
+                (
+                    _format_host(parts.hostname, parts.port),
+                    _raw_external_host(options.external_url),
+                )
+            ):
+                if host is None:
+                    continue
+                hosts.append(host)
+                # A proxy that forwards a non-default port sends `name:port`; one on
+                # 80 or 443 sends the bare name. Both are the same deployment.
+                if parts.port is None:
+                    hosts.append(f"{host}:*")
     return ",".join(hosts)
 
 
