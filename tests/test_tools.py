@@ -513,6 +513,91 @@ async def test_valid_scope_keys_pass(mcp_with_tools):
 
 
 # ---------------------------------------------------------------------------
+# agent_id normalization (symmetric across write and filter paths)
+# ---------------------------------------------------------------------------
+
+
+async def test_agent_id_normalized_on_write(mcp_with_tools):
+    """A differently-cased/spaced agent_id is stored in normalized form."""
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="scoped fact", scope={"agent_id": "Claude Code"})
+    listing = await backend.list_memories("test_user", scope={"agent_id": "claude-code"})
+    assert len(listing.memories) == 1
+    assert listing.memories[0].scope["agent_id"] == "claude-code"
+
+
+async def test_agent_id_normalized_symmetrically_on_filter(mcp_with_tools):
+    """A write and a differently-formatted filter for the same agent_id must match —
+    normalization has to apply identically on both paths or the corpus silently splits."""
+    mcp, _ = mcp_with_tools
+    await mcp.call("add_memory", content="scoped fact", scope={"agent_id": "claude-code"})
+    result = await mcp.call("list_memories", scope={"agent_id": "Claude Code"})
+    assert len(result["memories"]) == 1
+
+
+async def test_agent_id_normalized_on_search(mcp_with_tools):
+    mcp, _ = mcp_with_tools
+    await mcp.call("add_memory", content="scoped fact", scope={"agent_id": "Claude_Code"})
+    result = await mcp.call("search_memory", query="scoped", scope={"agent_id": "claude-code"})
+    assert len(result["results"]) == 1
+
+
+async def test_agent_id_normalized_on_delete_all(mcp_with_tools):
+    """delete_all_memories is destructive — normalization must reach memories written
+    under any casing/spacing variant of the same agent_id, not just the exact string."""
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="a1 memory", scope={"agent_id": "Claude Code"})
+    await mcp.call("add_memory", content="a2 memory", scope={"agent_id": "claude-code"})
+    await mcp.call("add_memory", content="other memory", scope={"agent_id": "cursor"})
+    result = await mcp.call("delete_all_memories", scope={"agent_id": "CLAUDE-CODE"})
+    assert result["deleted_count"] == 2
+    remaining = await backend.list_memories("test_user")
+    assert len(remaining.memories) == 1
+
+
+async def test_agent_id_normalized_on_import(mcp_with_tools):
+    """import_memories' per-entry scope goes through the same write-path normalization."""
+    mcp, backend = mcp_with_tools
+    await mcp.call(
+        "import_memories",
+        memories=[{"content": "imported fact", "scope": {"agent_id": "Claude Code"}}],
+    )
+    listing = await backend.list_memories("test_user", scope={"agent_id": "claude-code"})
+    assert len(listing.memories) == 1
+
+
+async def test_agent_id_collapses_internal_whitespace_and_punctuation(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="fact", scope={"agent_id": "  My  Agent!! 01  "})
+    listing = await backend.list_memories("test_user")
+    assert listing.memories[0].scope["agent_id"] == "my-agent-01"
+
+
+async def test_agent_id_already_normalized_is_unchanged(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="fact", scope={"agent_id": "already-normal-2"})
+    listing = await backend.list_memories("test_user")
+    assert listing.memories[0].scope["agent_id"] == "already-normal-2"
+
+
+async def test_agent_id_empty_after_normalization_rejected(mcp_with_tools):
+    """An agent_id made entirely of characters outside [a-z0-9-] normalizes to nothing —
+    that's not a naming-convention mismatch, it's not usable as an identifier at all."""
+    mcp, _ = mcp_with_tools
+    result = await mcp.call("add_memory", content="test", scope={"agent_id": "!!!"})
+    assert result["error"]["code"] == "validation_error"
+    assert "agent_id" in result["error"]["message"]
+
+
+async def test_non_agent_id_scope_values_not_normalized(mcp_with_tools):
+    """Only agent_id gets this treatment — other scope keys pass through verbatim."""
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="fact", scope={"run_id": "Run ABC"})
+    listing = await backend.list_memories("test_user")
+    assert listing.memories[0].scope["run_id"] == "Run ABC"
+
+
+# ---------------------------------------------------------------------------
 # Backend error forwarding
 # ---------------------------------------------------------------------------
 

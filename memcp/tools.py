@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import re
 import time
 from typing import Any
 
@@ -494,8 +495,25 @@ class _ScopeError(Exception):
         self.error = error
 
 
+# Collapses anything outside [a-z0-9] (after lowercasing) to a single hyphen —
+# covers whitespace, underscores, and punctuation from live agents' varied naming
+# (e.g. "Claude Code", "claude_code") without 4xx-ing a naming-convention mismatch.
+_AGENT_ID_COLLAPSE_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _normalize_agent_id(value: str) -> str:
+    """Normalize an agent_id scope value to ``^[a-z0-9-]+$`` form."""
+    return _AGENT_ID_COLLAPSE_RE.sub("-", value.strip().lower()).strip("-")
+
+
 def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict[str, Any] | None:
-    """Strip user_id, reject nested filters, validate scope keys."""
+    """Strip user_id, reject nested filters, validate scope keys, normalize agent_id.
+
+    agent_id is normalized identically here on every path — write (add_memory,
+    import_memories) and filter (search_memory, list_memories, delete_all_memories,
+    memory_entities) all call this function, so a write under one casing and a
+    filter under another still land on the same normalized value.
+    """
     if not scope:
         return scope
     if "user_id" in scope:
@@ -509,6 +527,7 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
         raise _ScopeError(
             canonical_error("validation_error", f"Scope has too many keys (max {MAX_SCOPE_KEYS})")
         )
+    cleaned: dict[str, Any] = {}
     for k, v in scope.items():
         if len(k) > MAX_SCOPE_KEY_LENGTH:
             raise _ScopeError(
@@ -531,7 +550,19 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
                     f"Scope value too long for {k!r} (max {MAX_SCOPE_VALUE_LENGTH})",
                 )
             )
-    unknown = set(scope) - allowed_keys
+        if k == "agent_id" and isinstance(v, str):
+            normalized = _normalize_agent_id(v)
+            if not normalized:
+                raise _ScopeError(
+                    canonical_error(
+                        "validation_error",
+                        f"Scope value for 'agent_id' ({v!r}) has no characters left after "
+                        "normalization; use letters, digits, or hyphens.",
+                    )
+                )
+            v = normalized
+        cleaned[k] = v
+    unknown = set(cleaned) - allowed_keys
     if unknown:
         raise _ScopeError(
             canonical_error(
@@ -539,7 +570,7 @@ def _validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dic
                 f"Unknown scope keys: {sorted(unknown)}. Valid keys: {sorted(allowed_keys)}",
             )
         )
-    return scope
+    return cleaned
 
 
 def _strip_reserved_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
