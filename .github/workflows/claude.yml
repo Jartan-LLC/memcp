@@ -23,10 +23,13 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # JAR-687: issues/issue_comment/pull_request_review(_comment) content can be
+    # authored by any GitHub account or machine principal, so this run must not
+    # hold write capability — no association class discriminates that (JAR-681).
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
+      pull-requests: read
+      issues: read
       id-token: write
       actions: read
     steps:
@@ -36,6 +39,11 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
+          permission-issues: read
+          permission-pull-requests: read
 
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,4 +61,3 @@ jobs:
 
           claude_args: |
             --model claude-opus-4-6
-            --dangerously-skip-permissions
