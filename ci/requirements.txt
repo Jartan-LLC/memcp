@@ -7,4 +7,4 @@
 # pyright) stays in pyproject.toml's dev extras with a version bound, and CI
 # installs it with `uv pip install -e ".[dev]"`.
 
-uv==0.12.7  # installer, resolver, venv manager and build frontend
+uv==0.12.9  # installer, resolver, venv manager and build frontend
