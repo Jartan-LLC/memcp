@@ -4,7 +4,7 @@
 ARG PYTHON_IMAGE=python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a
 
 # Build stage, not an inline COPY --from: Dependabot only parses FROM lines.
-FROM ghcr.io/astral-sh/uv:0.12.13 AS uv-bin
+FROM ghcr.io/astral-sh/uv:0.12.17 AS uv-bin
 
 FROM ${PYTHON_IMAGE} AS build
 
