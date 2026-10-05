@@ -437,7 +437,7 @@ jobs:
             -p 8080:8080 \
             memcp:ci
           STATUS=""
-          for i in $(seq 1 15); do
+          for _ in $(seq 1 15); do
             STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health 2>/dev/null || true)
             if [ "$STATUS" = "503" ] || [ "$STATUS" = "200" ]; then break; fi
             sleep 1

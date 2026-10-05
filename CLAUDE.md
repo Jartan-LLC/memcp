@@ -34,8 +34,8 @@ When adding a new skill, add an entry here.
 
 ## Verify
 
-Run `make check` before declaring work done — it runs the CI checks that need no Docker
-(lint, typecheck, test, build, audit):
+Run `make check` before declaring work done — it runs CI's lint, typecheck, test, build
+and audit checks:
 
 ```bash
 make check

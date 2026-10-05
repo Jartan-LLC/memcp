@@ -1,7 +1,6 @@
 # Development
 
-Setup and the check loop (`make check`, everything CI gates on that needs no Docker) are
-in [CONTRIBUTING.md](../CONTRIBUTING.md).
+Setup and the check loop (`make check`) are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Backend conformance
 

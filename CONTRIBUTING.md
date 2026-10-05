@@ -21,10 +21,11 @@ Docker (actionlint, lychee) and Node (markdownlint) — the devcontainer has bot
 make check
 ```
 
-Runs the CI checks that need no Docker (CI also runs the tests on each supported Python);
-all must pass before merge. CI also runs the backend conformance suite against a real mem0
-and provisions stacks with `memcp up`; [docs/development.md](docs/development.md) covers
-running those locally.
+Runs CI's lint, typecheck, test, build and audit checks. CI also runs the tests on each
+supported Python, builds the Docker image and the dev container, runs the backend
+conformance suite against a real mem0 and provisions stacks with `memcp up`;
+[docs/development.md](docs/development.md) covers running the last two locally. All must
+pass before merge.
 
 ## Conventions
 
