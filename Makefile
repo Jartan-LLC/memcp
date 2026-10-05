@@ -44,7 +44,7 @@ install:  ## Install every tracked Python and Node manifest, then wire the pre-c
 	elif [ -n "$$(git config core.hooksPath)" ]; then echo "core.hooksPath is set; skipping pre-commit install"; \
 	else pre-commit install; fi
 
-lint:  ## Lint all files via pre-commit (ruff, codespell, shellcheck, markdownlint, lychee, actionlint, zizmor, hygiene)
+lint:  ## Lint all files via pre-commit
 	pre-commit run --all-files
 
 # A hook run that rewrites files exits 1; the rerun passes unless a finding or error remains.

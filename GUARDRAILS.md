@@ -4,7 +4,7 @@ The project rules, ranked by how firmly each holds. `CLAUDE.md` imports this fil
 every Claude Code session loads it; Liza agents also enforce the tiers (Liza's `CORE.md`).
 
 ## Tier 0 (Inviolable)
-<!-- Constraints that must NEVER be violated. Triggers mandatory halt (RESET). -->
+<!-- A violation halts the work (Liza's RESET state). -->
 
 - Never put secrets or credentials in tracked files.
 

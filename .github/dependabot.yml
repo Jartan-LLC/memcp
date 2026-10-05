@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    # "/" does not reach composite actions; the glob covers any a fork adds.
+    # "/" does not reach composite actions; the glob covers any added under .github/actions/.
     directories:
       - "/"
       - "/.github/actions/*"
@@ -94,8 +94,8 @@ updates:
       day: "monday"
     commit-message:
       prefix: "chore(deps)"
-    # A major changes the ":1" key, which a VS Code defaultFeatures entry for the same
-    # Feature must share; move both by hand.
+    # A major changes the ":1" key, which a dev.containers.defaultFeatures entry for the
+    # same Feature in VS Code's user settings must match; move both by hand.
     ignore:
       - dependency-name: "ghcr.io/jartan-llc/enchantments/*"
         update-types: ["version-update:semver-major"]

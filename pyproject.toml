@@ -66,6 +66,5 @@ pythonVersion = "3.12"
 typeCheckingMode = "basic"
 
 [tool.codespell]
-# Skip generated/legal/vendored text. Add false positives via:
-#   ignore-words-list = "word1,word2"
+# Skip generated, legal and vendored text.
 skip = "./.git,./.venv,./node_modules,./dist,./build,./docs/_build,*.egg-info,*.lock,*-lock.json,LICENSE*,./tests/mem0/.mem0"

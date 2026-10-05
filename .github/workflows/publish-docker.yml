@@ -15,7 +15,7 @@ jobs:
   publish:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    environment: ghcr # add required reviewers to gate image publishing (like pypi)
+    environment: ghcr
     env:
       IMAGE_NAME: "" # set (lowercased) by the "Compute lowercase image name" step
     permissions:

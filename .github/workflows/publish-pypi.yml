@@ -47,13 +47,11 @@ jobs:
             exit 1
           fi
 
-      # Publishes on any v* tag with no CI `needs:` gate — a broken tagged commit
-      # can ship. The `pypi` environment's deployment-protection approval is the
-      # release gate; add required reviewers to it.
       - run: uv pip install -r ci/requirements.txt
 
       - run: uv build
 
       - run: python -m twine check dist/*
 
+      # Any v* tag publishes with no CI needs: gate, so a broken tagged commit can ship.
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1

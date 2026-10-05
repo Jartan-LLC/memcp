@@ -1,4 +1,4 @@
-# Dependencies
+# Dependencies, caches and build artifacts
 node_modules/
 .pnpm-store/
 __pycache__/
@@ -41,9 +41,6 @@ htmlcov/
 
 # Docs build output (Sphinx)
 docs/_build/
-
-# Docker
-/data/
 
 # Conformance stack: the pinned mem0 checkout and the report it produces
 tests/mem0/.mem0/

@@ -15,16 +15,11 @@ else
     echo "Warning: no pinned uv in ci/requirements.txt; Python installs below will fail" >&2
 fi
 
-# Into the system Python: containerEnv sets UV_SYSTEM_PYTHON (Makefile, environment selection).
+# Into the system Python: containerEnv sets UV_SYSTEM_PYTHON, and the Makefile installs there
+# when no venv exists.
 echo "Installing project dependencies (make install)..."
 make_install_failed=false
 make install || make_install_failed=true
-
-# Optional: Headroom token compression proxy (https://github.com/chopratejas/headroom)
-# Reduces token usage 60-95% by compressing context sent to the LLM.
-# Uncomment to enable:
-# uv pip install --system "headroom-ai[proxy]"
-# headroom init claude
 
 # Reported here, at the end, so it survives the dependency-install output above
 # rather than scrolling away. Not fatal: a non-zero postCreateCommand makes the

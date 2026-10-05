@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "10 7 * * 1" # weekly, Monday 07:10 UTC (offset from scorecard/link-check)
+    - cron: "10 7 * * 1" # weekly, Monday 07:10 UTC (offset from the other weekly runs)
   workflow_dispatch:
     inputs:
       mem0_api_base:
@@ -51,9 +51,9 @@ jobs:
           version-file: ci/requirements.txt
           enable-cache: true
 
-      # All file linters live in .pre-commit-config.yaml (the single source, shared
-      # with `make lint`). pre-commit manages its own hook envs, so no
-      # pyproject/dev-extras, which keeps this job language-agnostic.
+      # The linters and their versions live in .pre-commit-config.yaml, shared with
+      # make lint; pre-commit builds its own hook envs, so this job installs no
+      # project extras.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pre-commit
@@ -85,8 +85,7 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # Add `needs: lint` to skip tests when lint fails — saves runner time on slow
-    # suites, at the cost of not seeing lint and test failures in a single run.
+    # No needs: lint, so one run reports lint and test failures together.
     strategy:
       fail-fast: false
       matrix:
@@ -363,7 +362,6 @@ jobs:
           docker rm -f fake-openai || true
           python -m memcp down --dir .memcp --volumes || true
 
-  # Docker build + health smoke test (pairs with publish-docker.yml).
   docker:
     needs: [lint, test]
     runs-on: ubuntu-24.04

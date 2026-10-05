@@ -3,11 +3,11 @@ name: External Link Check
 # Weekly check for dead external links in Markdown. Internal/relative links are gated
 # at commit time by the lychee pre-commit hook; external rot is non-deterministic, so
 # broken links open (or update) one tracking issue instead of blocking, and a clean run
-# closes it. A lychee error fails the run and leaves the issue alone. Delete if unwanted.
+# closes it. A lychee error fails the run and leaves the issue alone.
 
 on:
   schedule:
-    - cron: "30 6 * * 1" # weekly, Monday 06:30 UTC (offset from scorecard's 05:30)
+    - cron: "30 6 * * 1" # weekly, Monday 06:30 UTC (offset from the other weekly runs)
   workflow_dispatch:
 
 permissions: {}
@@ -16,7 +16,7 @@ permissions: {}
 # find-issue step and each open a duplicate tracking issue.
 concurrency:
   group: external-link-check
-  cancel-in-progress: false # queue an overlapping run, don't drop it
+  cancel-in-progress: false # a new run waits for the running one; a newer one replaces it while it waits
 
 jobs:
   link-check:
@@ -37,7 +37,7 @@ jobs:
         id: lychee
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          # Markdown only (#62). --hidden is load-bearing: the glob alone skips
+          # Markdown only. --hidden is load-bearing: the glob alone skips
           # dot-directories, so .github/ and .claude/ — the security policy among
           # them — would go unchecked. Link-scoped exemptions live in .lycheeignore,
           # which this action reads; there are no path exclusions.
@@ -61,7 +61,7 @@ jobs:
             *) echo "lychee failed with exit code '$EXIT_CODE'" >&2; exit 1 ;;
           esac
 
-      # Created by the run itself, so a fork needs no label setup.
+      # Created by the run itself, so the repo needs no manual label setup.
       - name: Ensure the tracking label
         env:
           GH_TOKEN: ${{ github.token }}

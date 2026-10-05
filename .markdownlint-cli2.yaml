@@ -1,11 +1,8 @@
-# markdownlint config — lints Markdown structure/consistency (Prettier is off for
-# Markdown; this does NOT reformat). Tune rules to taste.
 config:
   default: true
   MD013: false # line length — tables and prose legitimately run long
   MD024:
     siblings_only: true # Keep-a-Changelog repeats Added/Changed/Fixed headings
-  MD046: false # code-block style — an eval-rst block inside an HTML comment confuses it
   MD060: false # table-column-style — we deliberately don't auto-format tables
 ignores:
   - "node_modules"

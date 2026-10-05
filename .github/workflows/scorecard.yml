@@ -1,8 +1,7 @@
 name: Scorecard
 
-# OpenSSF Scorecard — scores the repo's supply-chain security posture and (for a
-# PUBLIC repo) publishes results + a badge. Results land in the Security tab.
-# Private forks skip automatically (the visibility gate below); delete if unwanted.
+# OpenSSF Scorecard: scores the repo's supply-chain security and publishes the results
+# and badge; findings land in the Security tab. Runs only while the repo is public.
 
 on:
   branch_protection_rule:
@@ -14,10 +13,8 @@ on:
 permissions: {}
 
 jobs:
-  # Publish + SARIF upload need a public repo. Resolve visibility via the API
-  # (works on every trigger, unlike the schedule event payload) so a private fork
-  # skips cleanly. Private repo with GitHub Advanced Security? Drop the gate and
-  # set publish_results: false below (publishing is a public-only path).
+  # Publishing and the SARIF upload need a public repo. Visibility comes from the API
+  # because the schedule event payload doesn't carry it.
   visibility:
     name: Check repo visibility
     runs-on: ubuntu-24.04
@@ -59,7 +56,6 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          # Publishes results + badge to OpenSSF.
           publish_results: true
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

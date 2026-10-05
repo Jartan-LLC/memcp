@@ -19,7 +19,7 @@ RUN uv pip install --system --no-cache .
 
 FROM ${PYTHON_IMAGE}
 
-# Unbuffered stdout/stderr so logs aren't lost to block-buffering on a hard crash.
+# Unbuffered stdout, so output reaches docker logs at once and a killed process loses none.
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app

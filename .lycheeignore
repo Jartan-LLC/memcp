@@ -2,6 +2,5 @@
 
 # The security policy's advisory-form link is a GitHub-web route, not a file on disk,
 # so offline resolution turns it into a file:// path that cannot exist. Anchored to that
-# resolution only, so the absolute https form stays checked. PERMANENT — not an ORG/REPO
-# placeholder, do not delete this at onboarding.
+# resolution only, so the absolute https form stays checked.
 ^file://.*/security/advisories/new$
