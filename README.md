@@ -2,6 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/memcp-server)](https://pypi.org/project/memcp-server/)
 [![CI](https://github.com/Jartan-LLC/memcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Jartan-LLC/memcp/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Jartan-LLC/memcp/badge)](https://scorecard.dev/viewer/?uri=github.com/Jartan-LLC/memcp)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](https://github.com/Jartan-LLC/memcp/blob/main/LICENSE)
 
 Backend-agnostic, multi-tenant MCP memory server. AI clients connect and get
