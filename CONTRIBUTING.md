@@ -21,12 +21,12 @@ Docker (actionlint, lychee) and Node (markdownlint) — the devcontainer has bot
 make check
 ```
 
-Runs CI's lint, typecheck, test, build and audit checks. CI also runs the tests on each
-supported Python, builds the Docker image and the dev container, runs the backend
-conformance suite against a real mem0 and provisions stacks with `memcp up`;
-[docs/development.md](docs/development.md) covers the conformance run and
-[docs/deployment.md](docs/deployment.md) covers `memcp up`. All but the audit, which is
-advisory, must pass before merge.
+Runs CI's lint, typecheck, test, build and audit checks; all but the advisory audit must
+pass before merge. CI also runs the tests on each supported Python, builds the Docker
+image, runs the backend conformance suite against a real mem0, provisions stacks with
+`memcp up`, and builds the dev container when its inputs change.
+[docs/development.md](docs/development.md) covers the conformance run, and
+[docs/deployment.md](docs/deployment.md) covers `memcp up`.
 
 ## Conventions
 

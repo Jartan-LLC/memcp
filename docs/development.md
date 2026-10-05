@@ -1,8 +1,6 @@
-# Development
+# Backend conformance
 
 Setup and the check loop (`make check`) are in [CONTRIBUTING.md](../CONTRIBUTING.md).
-
-## Backend conformance
 
 Any `MemoryBackend` implementation, in this repository or not, is held to one suite:
 
@@ -20,8 +18,8 @@ and retrieval by the original query all survive. What does not survive is writte
 down per pair in [portability.md](portability.md) and asserted against — an
 undocumented loss fails CI rather than passing quietly.
 
-Both run on every pull request against a real mem0, stood up locally with no API key
-(`tests/mem0/up.sh`).
+Both run on every pull request against a real mem0, stood up with no API key;
+[tests/mem0/README.md](../tests/mem0/README.md) has the commands to run them locally.
 
 [conformance.md](conformance.md) covers backend selection, out-of-tree adapters, and
 what the suite deliberately does not check.

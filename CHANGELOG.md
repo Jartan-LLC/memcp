@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every image a deployment pulls is pinned by digest, including the Dockerfile's Python base. Moving a pin is a commit in `memcp/deploy/images.py`.
 - The Docker image creates `/data` owned by the runtime user, so the sqlite backend can write to a mounted volume as a non-root process.
 - Import dedup is scope-aware: identical content in a different scope is a distinct memory, not a duplicate. Previously the same fact stored under two `agent_id` values collapsed to one on import. Tool names and argument shapes are unchanged; `import_memories`' behaviour and description are. (#30)
-- uv replaces pip as the installer everywhere — CI, the devcontainer and the Dockerfile — and `uv build` replaces `python -m build` on the publish path. One pin in `ci/requirements.txt`, read by every `setup-uv` step via `version-file` and grepped by `.devcontainer/post-create.sh`, so Dependabot's `/ci` entry moves every environment at once. No `uv.lock`, no `uv sync`: uv is the installer, not the project manager.
+- uv replaces pip as the installer everywhere — CI, the devcontainer and the Dockerfile — and `uv build` replaces `python -m build` on the publish path. One pin in `ci/requirements.txt`, read by every `setup-uv` step via `version-file` and grepped by `.devcontainer/post-create.sh`, so Dependabot's `/ci` entry moves CI and the dev container together; the Dockerfile pins its own, which Dependabot's `docker` entry moves. No `uv.lock`, no `uv sync`: uv is the installer, not the project manager.
 
 ### Fixed
 
@@ -63,11 +63,6 @@ install: `mcp` was declared `>=1.0` with no ceiling, so a fresh install resolves
 to `mcp` 2.x, which removed the `mcp.server.fastmcp` module that `memcp/server.py`
 imported. The server exits at import with `ModuleNotFoundError`.
 
-### Fixed
-
-- Migrated to MCP Python SDK 2.0: `mcp.server.fastmcp.FastMCP` → `mcp.server.mcpserver.MCPServer`. `host`/`stateless_http` moved from the constructor to `streamable_http_app()`; `port` was never used (uvicorn binds, in `__main__`).
-- Every dependency now carries an upper bound, runtime and dev. Installs are unpinned, so an unbounded floor let an upstream major break a build with no change here.
-
 ### Added
 
 - CI runs on push to `main` and `release/**`, on pull requests into either, and weekly on a schedule. Dependency drift is now found by CI rather than by a deploy.
@@ -77,6 +72,11 @@ imported. The server exits at import with `ModuleNotFoundError`.
 - **`docker-compose.yml` on `release/0.1.x` deploys the published release image** (`ghcr.io/jartan-llc/memcp:0.1.2`) rather than building the checkout. A release branch exists to be deployed, and an image built once at tag time cannot change what it runs on a re-pull; a rebuild of unchanged source can, which is how 0.1.1 broke. The tag is an exact version, never `:latest`. `docker-compose.build.yml` is the documented override for building this checkout instead, and it replaces the stale `ghcr.io/jartan-llc/mem0-mcp:latest` comment, which named a repository that no longer exists.
 - **`:latest` now follows the highest released version, not the most recent tag push.** `release/0.1.x` is maintained beside `main`, so a patch cut after a higher minor would have moved `:latest` backwards and downgraded anyone pulling it.
 - Both publish workflows pin every action by commit SHA and the build frontend by version, matching `main` (commit `93fc173`). These are the jobs a tag push runs with `packages: write` and PyPI trusted publishing, so a moved upstream tag reaches a release path.
+
+### Fixed
+
+- Migrated to MCP Python SDK 2.0: `mcp.server.fastmcp.FastMCP` → `mcp.server.mcpserver.MCPServer`. `host`/`stateless_http` moved from the constructor to `streamable_http_app()`; `port` was never used (uvicorn binds, in `__main__`).
+- Every dependency now carries an upper bound, runtime and dev. Installs are unpinned, so an unbounded floor let an upstream major break a build with no change here.
 
 ## [0.1.1] - 2026-06-14
 
