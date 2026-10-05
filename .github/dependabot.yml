@@ -53,22 +53,6 @@ updates:
       default-days: 7
       semver-major-days: 7
 
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    commit-message:
-      prefix: "chore(deps)"
-    groups:
-      minor-and-patch:
-        update-types:
-          - "minor"
-          - "patch"
-    cooldown:
-      default-days: 7
-      semver-major-days: 7
-
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

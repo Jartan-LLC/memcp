@@ -32,7 +32,6 @@ every Claude Code session loads it; Liza agents also enforce the tiers (Liza's `
 - Don't hardcode derived counts in comments — they drift silently.
 - Comments state only the load-bearing why. Rationale goes in the commit message; a PR
   body carries only the gotchas.
-- Don't put paragraph-length inline comments in CI/config files.
 
 ## Tier 3 (Preferences)
 <!-- Degraded gracefully. -->

@@ -62,28 +62,6 @@ jobs:
       - run: uv pip install -r ci/requirements.txt
       - run: pre-commit run --all-files --show-diff-on-failure
 
-      # Node/JS (secondary) — uncomment after adding package.json + committing a lockfile.
-      # Drop `version:` if package.json pins pnpm in `packageManager`: the action rejects both.
-      # The key names pnpm's major, which the store path and pnpm/setup's own `cache` key omit.
-      # - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024 # v3.0.0
-      #   with:
-      #     version: 12
-      #     runtime: node@22
-      #     install: false
-      # - id: pnpm-store
-      #   run: |
-      #     {
-      #       echo "path=$(pnpm store path)"
-      #       echo "major=$(pnpm --version | cut -d. -f1)"
-      #     } >> "$GITHUB_OUTPUT"
-      # - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      #   with:
-      #     path: ${{ steps.pnpm-store.outputs.path }}
-      #     key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.major }}-${{ hashFiles('pnpm-lock.yaml') }}
-      #     restore-keys: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.major }}-
-      # - run: pnpm install --frozen-lockfile
-      # - run: pnpm exec prettier --check .
-
   typecheck:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -130,7 +108,7 @@ jobs:
           cache-suffix: py${{ matrix.python-version }}
 
       - run: uv pip install -e '.[dev]'
-      - run: pytest -m "not integration"
+      - run: pytest
         env:
           MEM0_API_BASE: ${{ inputs.mem0_api_base || secrets.MEM0_API_BASE }}
           MEM0_API_KEY: ${{ inputs.mem0_api_key || secrets.MEM0_API_KEY }}
@@ -187,36 +165,6 @@ jobs:
       - run: uv pip install -e '.[dev]' -r ci/requirements.txt
       - name: Audit dependencies for known CVEs
         run: pip-audit
-
-  # Integration tests against a docker-compose stack, with coverage uploaded as an
-  # artifact. Uncomment once you add a docker-compose.test.yml (service `app`) and a
-  # Dockerfile test target, and add `pytest-cov` to the dev extras. Then add
-  # `integration-tests` to the `check` job's needs + results below.
-  # integration-tests:
-  #   runs-on: ubuntu-24.04
-  #   timeout-minutes: 20
-  #   steps:
-  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  #       with:
-  #         persist-credentials: false
-  #     - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-  #     - name: Start stack
-  #       run: docker compose -f docker-compose.test.yml up -d --build --wait
-  #     - name: Integration tests + coverage
-  #       run: docker compose -f docker-compose.test.yml exec -T app python -m pytest -m integration --cov=memcp --cov-report=xml:/app/coverage.xml
-  #     - name: Extract coverage
-  #       if: always()
-  #       run: docker compose -f docker-compose.test.yml cp app:/app/coverage.xml ./coverage.xml
-  #     - name: Upload coverage
-  #       if: always()
-  #       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-  #       with:
-  #         name: coverage-report
-  #         path: coverage.xml
-  #         if-no-files-found: warn
-  #     - name: Tear down
-  #       if: always()
-  #       run: docker compose -f docker-compose.test.yml down -v
 
   # A5: the conformance suite and the cross-backend round trip run against a real
   # mem0 on every pull request, with no external API secret. tests/mem0 explains how.
@@ -507,8 +455,6 @@ jobs:
 
   check:
     if: always()
-    # When you uncomment integration-tests above, add it to BOTH the needs list and
-    # the results array below.
     needs: [lint, typecheck, test, build, docker, conformance, provision, provision_unpublished, provision_mem0, changes, devcontainer]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
