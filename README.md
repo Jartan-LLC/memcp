@@ -109,7 +109,8 @@ find it. `mem0` is the backend that matches on meaning.
 | [deployment.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md) | `memcp up` in full — backends, the mem0 stack, credentials, running behind a platform that routes into the container, and running the server without provisioning at all |
 | [reference.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md) | Environment variables, the 12 MCP tools, and known limitations per backend |
 | [conformance.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/conformance.md) | Holding a `MemoryBackend` to the suite, including one in another repository |
-| [development.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/development.md) | Working on memcp itself — install, the check loop, the conformance run |
+| [CONTRIBUTING.md](https://github.com/Jartan-LLC/memcp/blob/main/CONTRIBUTING.md) | Working on memcp itself — setup and the check loop |
+| [development.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/development.md) | Running the conformance suite against a real mem0 |
 | [CHANGELOG.md](https://github.com/Jartan-LLC/memcp/blob/main/CHANGELOG.md) | What changed, per release |
 
 ## Status

@@ -1,10 +1,5 @@
 name: Create GitHub Release
 
-# Ported from Jartan-LLC/scaffold unchanged. memcp had no such workflow: a v* tag
-# published to PyPI and ghcr, and the GitHub release was a separate step somebody
-# remembered by hand. v0.1.0 and v0.1.1 were created that way; v0.1.2 was not, and
-# nothing noticed.
-
 on:
   push:
     tags:

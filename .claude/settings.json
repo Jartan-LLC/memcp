@@ -1,17 +1,17 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(gh *)",
-            "command": "printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Load the github-conventions skill before proceeding.\"}}'",
-            "statusMessage": "Checking GitHub conventions..."
-          }
-        ]
+  "enabledPlugins": {
+    "claudivis@grimoire": true,
+    "gitwise@grimoire": true,
+    "praxis@grimoire": true,
+    "pythonica@grimoire": true,
+    "recursio@grimoire": true
+  },
+  "extraKnownMarketplaces": {
+    "grimoire": {
+      "source": {
+        "source": "github",
+        "repo": "Jartan-LLC/grimoire"
       }
-    ]
+    }
   }
 }

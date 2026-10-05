@@ -1,17 +1,42 @@
+# Git / CI / tooling
 .git
+.gitignore
+.gitattributes
+.editorconfig
 .github
-.claude
+
+# Dev environment
 .devcontainer
+.claude
+.vscode
+.idea
+
+# Secrets / local env
 .env
 .env.*
-.pytest_cache
-.ruff_cache
-.mypy_cache
-__pycache__
-*.pyc
-tests/
-council-transcript-*
-council-report-*
 
+# Python caches / build artifacts (**/ so nested dirs like memcp/backend/__pycache__ match)
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+dist/
+build/
+**/*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+.pnpm-store/
+
+# Tests — not needed in the runtime image
+tests/
+
+# Docs — keep README.md (pyproject `readme` points at it). `*.md` only matches
+# the context root, so exclude the docs tree explicitly.
 *.md
+docs/
 !README.md

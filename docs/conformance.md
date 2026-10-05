@@ -12,7 +12,7 @@ result as JSON.
 
 ## The report
 
-```
+```text
 backend    capability          status  detail
 ---------  ------------------  ------  -----------------------------
 in_memory  (required methods)  PASS    16 passed
@@ -55,8 +55,7 @@ from memcp.backend.base import MemoryBackend
 from memcp.conformance.portability import IDENTITY_LOSSES, declare_pair
 
 
-class MyBackend(MemoryBackend):
-    ...
+class MyBackend(MemoryBackend): ...
 
 
 # Registered at import time, which is before the suite collects. Every pair you want

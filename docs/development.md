@@ -1,26 +1,7 @@
 # Development
 
-This project installs with [uv](https://docs.astral.sh/uv/getting-started/installation/)
-rather than pip — in CI, in the devcontainer and in the Docker image.
-
-```bash
-git clone https://github.com/Jartan-LLC/memcp.git
-cd memcp
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
-```
-
-## The check loop
-
-Everything CI gates on, in the order it fails fastest:
-
-```bash
-ruff check memcp/ tests/
-ruff format --check memcp/ tests/
-pyright
-python -c "import memcp"
-pytest -x
-```
+Setup and the check loop (`make check`, everything CI gates on that needs no Docker) are
+in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Backend conformance
 

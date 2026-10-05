@@ -1,0 +1,107 @@
+name: External Link Check
+
+# Weekly check for dead external links in Markdown. Internal/relative links are gated
+# at commit time by the lychee pre-commit hook; external rot is non-deterministic, so
+# broken links open (or update) one tracking issue instead of blocking, and a clean run
+# closes it. A lychee error fails the run and leaves the issue alone. Delete if unwanted.
+
+on:
+  schedule:
+    - cron: "30 6 * * 1" # weekly, Monday 06:30 UTC (offset from scorecard's 05:30)
+  workflow_dispatch:
+
+permissions: {}
+
+# Serialize runs so a manual dispatch overlapping the weekly run can't both clear the
+# find-issue step and each open a duplicate tracking issue.
+concurrency:
+  group: external-link-check
+  cancel-in-progress: false # queue an overlapping run, don't drop it
+
+jobs:
+  link-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ISSUE_TITLE: Broken links found by lychee
+      ISSUE_LABEL: broken-links # the lookup key, so the title can be edited
+    permissions:
+      contents: read # checkout
+      issues: write # label, find, open/update/close the tracking issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check links
+        id: lychee
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          # Markdown only (#62). --hidden is load-bearing: the glob alone skips
+          # dot-directories, so .github/ and .claude/ — the security policy among
+          # them — would go unchecked. Link-scoped exemptions live in .lycheeignore,
+          # which this action reads; there are no path exclusions.
+          args: "--no-progress --hidden './**/*.md'"
+          fail: false # the classify step decides; a lychee error still goes red
+          failIfEmpty: false # a 0-link tree shouldn't red the run
+          output: ./lychee/out.md # pin the report path the create-issue step reads
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # lifts GitHub's API rate limit
+
+      # lychee exits 0 when every link resolves and 2 when some are broken; any other
+      # code is a lychee error, which must neither file nor close an issue.
+      - name: Classify the result
+        id: classify
+        env:
+          EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+        run: |
+          case "$EXIT_CODE" in
+            0) echo "outcome=clean" >> "$GITHUB_OUTPUT" ;;
+            2) echo "outcome=findings" >> "$GITHUB_OUTPUT" ;;
+            *) echo "lychee failed with exit code '$EXIT_CODE'" >&2; exit 1 ;;
+          esac
+
+      # Created by the run itself, so a fork needs no label setup.
+      - name: Ensure the tracking label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          : "${ISSUE_LABEL:?}"
+          gh label create "$ISSUE_LABEL" --repo "$REPO" --force --color b60205 \
+            --description "Broken external links (external-link-check.yml)"
+
+      # Every open one: the label lookup goes through GitHub's search index, which can
+      # miss an issue the previous run just filed.
+      - name: Close the link-check issue
+        if: steps.classify.outputs.outcome == 'clean'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          numbers="$(gh issue list --repo "$REPO" --state open --label "$ISSUE_LABEL" \
+            --json number --jq '.[].number')"
+          for number in $numbers; do
+            gh issue close "$number" --repo "$REPO" --comment "No broken links as of $RUN_URL"
+          done
+
+      - name: Find the open link-check issue
+        id: existing
+        if: steps.classify.outputs.outcome == 'findings'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          number="$(gh issue list --repo "$REPO" --state open --label "$ISSUE_LABEL" \
+            --json number --jq '.[0].number // ""')"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the link-check issue
+        if: steps.classify.outputs.outcome == 'findings'
+        uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710 # v6.0.0
+        with:
+          title: ${{ env.ISSUE_TITLE }}
+          content-filepath: ./lychee/out.md
+          labels: ${{ env.ISSUE_LABEL }}
+          issue-number: ${{ steps.existing.outputs.number }} # empty = new issue; set = update in place

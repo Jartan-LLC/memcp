@@ -1,20 +1,22 @@
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" does not reach composite actions; the glob covers any a fork adds.
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
+      day: "monday"
     commit-message:
       prefix: "chore(deps)"
-    labels:
-      - "dependencies"
     groups:
       minor-and-patch:
         update-types:
           - "minor"
           - "patch"
     cooldown:
-      default-days: 3
+      default-days: 7
 
   - package-ecosystem: "pip"
     directory: "/"
@@ -23,15 +25,13 @@ updates:
       day: "monday"
     commit-message:
       prefix: "chore(deps)"
-    labels:
-      - "dependencies"
     groups:
       minor-and-patch:
         update-types:
           - "minor"
           - "patch"
     cooldown:
-      default-days: 3
+      default-days: 7
       semver-major-days: 7
 
   # The gate's own tools (ci/requirements.txt), exact-pinned. Separate from the
@@ -44,29 +44,97 @@ updates:
       day: "monday"
     commit-message:
       prefix: "chore(deps)"
-    labels:
-      - "dependencies"
     groups:
       minor-and-patch:
         update-types:
           - "minor"
           - "patch"
     cooldown:
-      default-days: 3
+      default-days: 7
+      semver-major-days: 7
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    cooldown:
+      default-days: 7
       semver-major-days: 7
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     commit-message:
       prefix: "chore(deps)"
-    labels:
-      - "dependencies"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        exclude-patterns:
+          - "python"
+    ignore:
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+    cooldown:
+      default-days: 7
+
+  # Its own entry, so a devcontainer base-image bump that breaks the container build never
+  # holds up the root Dockerfile's updates.
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "devcontainers"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+    # A major changes the ":1" key, which a VS Code defaultFeatures entry for the same
+    # Feature must share; move both by hand.
+    ignore:
+      - dependency-name: "ghcr.io/jartan-llc/enchantments/*"
+        update-types: ["version-update:semver-major"]
     groups:
       minor-and-patch:
         update-types:
           - "minor"
           - "patch"
     cooldown:
-      default-days: 3
+      default-days: 7
+
+  # Grouped by name, not update-types: with SHA-frozen revs an update-types group splits into
+  # one PR per hook (dependabot/dependabot-core#15266, open as of 2026-09-28).
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      hooks:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7

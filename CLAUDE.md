@@ -4,27 +4,10 @@ Backend-agnostic, multi-tenant MCP memory server. Python, MCP Python SDK 2.0, de
 
 ## Rules
 
-### Always
-- Read README.md and relevant docs before modifying unfamiliar code
-- Run Verify commands before declaring work done
-- Update docs and skills alongside code changes
-- Update CHANGELOG.md when adding features, fixing bugs, or making breaking changes
-- Write plans to `.claude/workspace/` in the project root for non-trivial changes
+The project rules live in `GUARDRAILS.md`, ranked by how firmly each holds; this import
+loads them into every session:
 
-### Anti-patterns
-- Don't wrap things the underlying library already expresses clearly
-- Don't speculate about fixes — investigate first, then propose
-- Don't hardcode derived counts in comments — they drift silently
-- Don't put paragraph-length inline comments in CI/config files
-
-### Ask first
-- Changing public API signatures or database schemas
-- Deleting files or removing features
-
-### Never
-- Commit or push unless explicitly asked or instructed by a command
-- Add dependencies without stating the reason
-- Put secrets or credentials in tracked files
+@GUARDRAILS.md
 
 ## Corrections
 
@@ -46,22 +29,17 @@ Backend-agnostic, multi-tenant MCP memory server. Python, MCP Python SDK 2.0, de
 Project conventions live in `.claude/skills/`. Check the relevant skill when working in an unfamiliar area:
 
 - **api-error-patterns** — MCP tool error format, canonical error codes
-- **claude-config** — agents vs skills vs commands
-- **docs-patterns** — writing style, structure, brevity
-- **frontend-patterns** — design tokens, mobile-first, component isolation
-- **github-conventions** — branches, commits, issue/PR templates
-- **llm-council** — multi-advisor decision council (Karpathy-style)
-- **logging-patterns** — log levels, formatting, structured output
-- **testing-patterns** — integration tests, fixture composition, canary markers
 
 When adding a new skill, add an entry here.
 
 ## Verify
 
+Run `make check` before declaring work done — it runs the CI checks that need no Docker
+(lint, typecheck, test, build, audit):
+
 ```bash
-ruff check memcp/ tests/
-ruff format --check memcp/ tests/
-pyright
-python -c "import memcp"
-pytest -x
+make check
 ```
+
+Individual targets (`make lint`, `make test`, …) speed up the inner loop; `make help`
+lists them. The conformance run against a real mem0 is in `docs/development.md`.

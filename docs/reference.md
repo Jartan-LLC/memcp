@@ -111,4 +111,4 @@ in [portability.md](portability.md) and asserted against.
 
 - [deployment.md](deployment.md) — `memcp up`, backends, credentials, reverse proxies
 - [conformance.md](conformance.md) — holding a backend to the suite, in this repository or out of it
-- [development.md](development.md) — the local check loop
+- [development.md](development.md) — the conformance run against a real mem0

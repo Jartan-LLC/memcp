@@ -3,13 +3,13 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # Dev extras, hook envs and the dev container Features' create-time downloads resolve
+  # at run time, so `main` can go red with no commit touching it; these catch that
+  # before the next PR does.
   push:
     branches: [main]
-  # Dependencies install unpinned on every run, so `main` can go red with no
-  # change to it. Without a build that runs on `main`, the next unrelated PR is
-  # what discovers the drift.
   schedule:
-    - cron: "17 6 * * 1"
+    - cron: "10 7 * * 1" # weekly, Monday 07:10 UTC (offset from scorecard/link-check)
   workflow_dispatch:
     inputs:
       mem0_api_base:
@@ -25,18 +25,24 @@ permissions:
 env:
   UV_SYSTEM_PYTHON: 1
 
+# A PR's new push cancels its old run; main's runs never cancel each other, so each
+# finishes its dev container image-cache export.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       # `version-file` is required: without it this action installs uv `latest`,
       # not the ci/requirements.txt pin.
@@ -45,26 +51,86 @@ jobs:
           version-file: ci/requirements.txt
           enable-cache: true
 
-      - run: uv pip install -e ".[dev]"
-      - run: ruff check memcp/ tests/
-      - run: ruff format --check memcp/ tests/
-      - run: pyright
+      # All file linters live in .pre-commit-config.yaml (the single source, shared
+      # with `make lint`). pre-commit manages its own hook envs, so no
+      # pyproject/dev-extras, which keeps this job language-agnostic.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: pre-commit-
+      - run: uv pip install -r ci/requirements.txt
+      - run: pre-commit run --all-files --show-diff-on-failure
 
-  test:
-    runs-on: ubuntu-latest
+      # Node/JS (secondary) — uncomment after adding package.json + committing a lockfile.
+      # Drop `version:` if package.json pins pnpm in `packageManager`: the action rejects both.
+      # The key names pnpm's major, which the store path and pnpm/setup's own `cache` key omit.
+      # - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024 # v3.0.0
+      #   with:
+      #     version: 12
+      #     runtime: node@22
+      #     install: false
+      # - id: pnpm-store
+      #   run: |
+      #     {
+      #       echo "path=$(pnpm store path)"
+      #       echo "major=$(pnpm --version | cut -d. -f1)"
+      #     } >> "$GITHUB_OUTPUT"
+      # - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      #   with:
+      #     path: ${{ steps.pnpm-store.outputs.path }}
+      #     key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.major }}-${{ hashFiles('pnpm-lock.yaml') }}
+      #     restore-keys: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.major }}-
+      # - run: pnpm install --frozen-lockfile
+      # - run: pnpm exec prettier --check .
+
+  typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: ci/requirements.txt
           enable-cache: true
 
-      - run: uv pip install -e ".[dev]"
-      - run: pytest -x
+      - run: uv pip install -e '.[dev]'
+      - run: pyright
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Add `needs: lint` to skip tests when lint fails — saves runner time on slow
+    # suites, at the cost of not seeing lint and test failures in a single run.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+          # One cache per interpreter: the matrix legs resolve different wheels.
+          cache-suffix: py${{ matrix.python-version }}
+
+      - run: uv pip install -e '.[dev]'
+      - run: pytest -m "not integration"
         env:
           MEM0_API_BASE: ${{ inputs.mem0_api_base || secrets.MEM0_API_BASE }}
           MEM0_API_KEY: ${{ inputs.mem0_api_key || secrets.MEM0_API_KEY }}
@@ -73,15 +139,96 @@ jobs:
           # result does not depend on whether a repository secret happens to be set.
           MEMCP_CONFORMANCE_BACKENDS: in_memory
 
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No dependency cache: this job only installs the pinned CI tools (nothing
+      # from pyproject), and `uv build` builds the project in its own isolated env.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: ci/requirements.txt
+
+      - run: uv pip install -r ci/requirements.txt
+      - run: uv build
+      - run: python -m twine check dist/*
+
+  # Advisory: an unfixable transitive advisory must not fail every run, so the job may
+  # fail and `check` deliberately does not gate on it. dependency-audit.yml tracks
+  # findings in an issue.
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+
+      # Audit the full installed environment — package deps plus the dev/CI tools —
+      # mirroring `make check`, not just the declared deps.
+      - run: uv pip install -e '.[dev]' -r ci/requirements.txt
+      - name: Audit dependencies for known CVEs
+        run: pip-audit
+
+  # Integration tests against a docker-compose stack, with coverage uploaded as an
+  # artifact. Uncomment once you add a docker-compose.test.yml (service `app`) and a
+  # Dockerfile test target, and add `pytest-cov` to the dev extras. Then add
+  # `integration-tests` to the `check` job's needs + results below.
+  # integration-tests:
+  #   runs-on: ubuntu-24.04
+  #   timeout-minutes: 20
+  #   steps:
+  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #       with:
+  #         persist-credentials: false
+  #     - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+  #     - name: Start stack
+  #       run: docker compose -f docker-compose.test.yml up -d --build --wait
+  #     - name: Integration tests + coverage
+  #       run: docker compose -f docker-compose.test.yml exec -T app python -m pytest -m integration --cov=memcp --cov-report=xml:/app/coverage.xml
+  #     - name: Extract coverage
+  #       if: always()
+  #       run: docker compose -f docker-compose.test.yml cp app:/app/coverage.xml ./coverage.xml
+  #     - name: Upload coverage
+  #       if: always()
+  #       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+  #       with:
+  #         name: coverage-report
+  #         path: coverage.xml
+  #         if-no-files-found: warn
+  #     - name: Tear down
+  #       if: always()
+  #       run: docker compose -f docker-compose.test.yml down -v
+
   # A5: the conformance suite and the cross-backend round trip run against a real
   # mem0 on every pull request, with no external API secret. tests/mem0 explains how.
   conformance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -131,16 +278,18 @@ jobs:
   # MCP is timed. This is the only place the workspace can execute it — no agent
   # runtime here has Docker access.
   provision:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         backend: [sqlite, in_memory]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -185,12 +334,14 @@ jobs:
   # absent, that the external network still reaches memcp through its bearer gate,
   # and that switching the flag keeps the memories.
   provision_unpublished:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -217,12 +368,14 @@ jobs:
   # proves is the provisioning path; what it does not prove is embedding quality or
   # fact extraction, which tests/mem0/README.md already states.
   provision_mem0:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -262,11 +415,14 @@ jobs:
           docker rm -f fake-openai || true
           python -m memcp down --dir .memcp --volumes || true
 
-  build:
+  # Docker build + health smoke test (pairs with publish-docker.yml).
+  docker:
     needs: [lint, test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -295,13 +451,70 @@ jobs:
             exit 1
           fi
 
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      devcontainer: ${{ steps.diff.outputs.devcontainer }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      # A PR's merge commit has its base as first parent. With no base (a scheduled or
+      # manual run, a failed fetch) the dev container job runs, rather than risk skipping a change.
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT" in
+            pull_request) base=HEAD^1 ;;
+            push) git fetch -q --depth=1 origin "$BEFORE" && base=$BEFORE ;;
+          esac
+          changed=$([ -z "${base:-}" ] || git diff --name-only "$base" HEAD)
+          # Everything the dev container build reads, make install's manifests included.
+          if [ -z "${base:-}" ] \
+              || grep -qE -e '^\.devcontainer/' -e '^\.github/workflows/ci\.yml$' -e '^Makefile$' -e '^\.claude/settings\.json$' \
+                -e '(^|/)(pyproject\.toml|requirements\.txt|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$' <<<"$changed"; then
+            echo devcontainer=true >>"$GITHUB_OUTPUT"
+          fi
+
+  devcontainer:
+    name: Dev container
+    needs: changes
+    if: needs.changes.outputs.devcontainer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # The gha cache backend reads these; devcontainers/ci doesn't pass them to buildx.
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            for (const name of ["ACTIONS_RUNTIME_TOKEN", "ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL", "ACTIONS_CACHE_SERVICE_V2"]) {
+              if (process.env[name]) core.exportVariable(name, process.env[name]);
+            }
+      - uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
+        with:
+          push: never
+          cacheFrom: type=gha,scope=devcontainer
+          cacheTo: type=gha,mode=max,scope=devcontainer
+          runCmd: bash .devcontainer/verify.sh
+
   check:
     if: always()
-    needs: [lint, test, conformance, provision, provision_unpublished, provision_mem0, build]
-    runs-on: ubuntu-latest
+    # When you uncomment integration-tests above, add it to BOTH the needs list and
+    # the results array below.
+    needs: [lint, typecheck, test, build, docker, conformance, provision, provision_unpublished, provision_mem0, changes, devcontainer]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
     steps:
       - run: |
-          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.conformance.result }}" "${{ needs.provision.result }}" "${{ needs.provision_unpublished.result }}" "${{ needs.provision_mem0.result }}" "${{ needs.build.result }}")
+          results=("${{ needs.lint.result }}" "${{ needs.typecheck.result }}" "${{ needs.test.result }}" "${{ needs.build.result }}" "${{ needs.docker.result }}" "${{ needs.conformance.result }}" "${{ needs.provision.result }}" "${{ needs.provision_unpublished.result }}" "${{ needs.provision_mem0.result }}" "${{ needs.changes.result }}" "${{ needs.devcontainer.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then
               echo "Check failed: $r"

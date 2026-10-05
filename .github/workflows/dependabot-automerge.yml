@@ -4,16 +4,24 @@ on:
   pull_request:
     branches: [main]
 
+permissions: {}
+
 jobs:
   automerge:
-    runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - uses: fastify/github-action-merge-dependabot@73ec4cbb5e56df5591eae286972d5b2201ffe90f # v3
+      - uses: fastify/github-action-merge-dependabot@73ec4cbb5e56df5591eae286972d5b2201ffe90f # v3.15.0
         with:
           target: minor
           merge-method: squash
           use-github-auto-merge: true
+          # python's base-image guard lives in dependabot.yml (it ignores
+          # semver-minor/major), so no python PR reaches here — this is a backstop.
+          # Comma form is required: the action splits `exclude` on commas/semicolons
+          # only, so a YAML block scalar collapses to one string that matches nothing,
+          # silently disabling every exclusion.
+          exclude: python
