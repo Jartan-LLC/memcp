@@ -4,11 +4,11 @@ Brings up mem0 with no external API key, so the mem0 half of the conformance sui
 runs on every pull request (GitHub #28).
 
 ```bash
-ci/mem0/up.sh                                  # clone, build, wait for health
+tests/mem0/up.sh                                  # clone, build, wait for health
 export MEM0_API_BASE=http://127.0.0.1:8888
 export MEM0_API_KEY=memcp-conformance-admin-key
 python -m memcp.conformance
-ci/mem0/down.sh
+tests/mem0/down.sh
 ```
 
 ## What runs

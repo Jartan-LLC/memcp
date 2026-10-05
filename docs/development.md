@@ -41,7 +41,7 @@ down per pair in [portability.md](portability.md) and asserted against — an
 undocumented loss fails CI rather than passing quietly.
 
 Both run on every pull request against a real mem0, stood up locally with no API key
-(`ci/mem0/up.sh`).
+(`tests/mem0/up.sh`).
 
 [conformance.md](conformance.md) covers backend selection, out-of-tree adapters, and
 what the suite deliberately does not check.

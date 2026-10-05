@@ -1,10 +1,10 @@
 # Self-contained mem0 for conformance runs — no external API secret (GitHub #28).
 #
-#   ci/mem0/up.sh          bring it up and print the adapter's environment
-#   ci/mem0/down.sh        tear it down, volumes included
+#   tests/mem0/up.sh          bring it up and print the adapter's environment
+#   tests/mem0/down.sh        tear it down, volumes included
 #
 # The mem0 service builds from a checkout of Jartan-LLC/mem0 at the SHA in
-# ci/mem0/mem0.pin, cloned to ci/mem0/.mem0. up.sh does the clone.
+# tests/mem0/mem0.pin, cloned to tests/mem0/.mem0. up.sh does the clone.
 #
 # Credentials below are fixed literals on purpose: this stack is disposable, listens
 # on localhost only, and holds nothing but test corpora. Nothing here is a secret and
@@ -43,7 +43,7 @@ services:
       retries: 20
 
   mem0:
-    image: memcp-ci/mem0-server:local
+    image: memcp-tests/mem0-server:local
     build:
       context: ./.mem0/server
       dockerfile: Dockerfile

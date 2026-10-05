@@ -40,8 +40,8 @@ memcp.conformance.suite` is the same run with pytest arguments of your choosing.
 | `MEMCP_CONFORMANCE_EXTRA` | Register out-of-tree adapters: `name=package.module:factory`, comma-separated. |
 | `MEM0_API_BASE`, `MEM0_API_KEY` | Required for the `mem0` backend. Without them it reports unavailable. |
 
-`mem0` needs a running server. `ci/mem0/up.sh` stands a disposable one up with no API
-key; see `ci/mem0/README.md`.
+`mem0` needs a running server. `tests/mem0/up.sh` stands a disposable one up with no API
+key; see `tests/mem0/README.md`.
 
 ## Testing your own adapter
 
@@ -111,7 +111,7 @@ from a scratch directory, so it stays true.
 
 - **Fact extraction quality.** `add(infer=True)` is checked for a well-formed return
   value only. What a backend chooses to extract is the backend's judgement, and it
-  needs a real LLM to exercise; CI has none by design (`ci/mem0/README.md`).
+  needs a real LLM to exercise; CI has none by design (`tests/mem0/README.md`).
 - **Ranking quality.** Retrieval is asserted as "the same query still returns this
   memory", not as an order or a score. The in-memory backend ranks by word overlap
   and the CI mem0 stack embeds token hashes, so neither would support a ranking
