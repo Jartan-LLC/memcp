@@ -2,7 +2,7 @@
 # pytest and pyright are versioned in pyproject.toml's dev extra; ruff, codespell and
 # the other lint tools by their hook revs in .pre-commit-config.yaml.
 
-uv==0.12.19         # installer, resolver, venv manager and build frontend
+uv==0.12.22         # installer, resolver, venv manager and build frontend
 pre-commit==4.6.2  # git hook runner; manages its own hook envs
 twine==7.0.0       # sdist/wheel metadata check before publish
 pip-audit==2.10.1  # CVE audit of the installed environment
