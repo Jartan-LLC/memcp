@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clone Jartan-LLC/mem0 at the pinned SHA into ci/mem0/.mem0. Public repository, so
+# Clone Jartan-LLC/mem0 at the pinned SHA into tests/mem0/.mem0. Public repository, so
 # no credential is involved.
 set -euo pipefail
 

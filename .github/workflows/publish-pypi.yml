@@ -5,32 +5,53 @@ on:
     tags:
       - "v*"
 
-permissions:
-  id-token: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
 
 env:
   UV_SYSTEM_PYTHON: 1
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     environment: pypi
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
-      # `enable-cache: false` stated, not defaulted: zizmor's cache-poisoning
-      # audit reads the literal value on a publish path. `version-file` also
-      # installs uv, which is all ci/requirements.txt pins here — so no separate
-      # install step follows; add one back if a gate tool joins that file.
+      # `enable-cache: false` stated, not left to the action's default: zizmor's
+      # cache-poisoning audit reads the literal value on a publish path.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: ci/requirements.txt
           enable-cache: false
 
+      - name: Verify tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
+          if [ "$tag" != "$ver" ]; then
+            echo "tag '$tag' does not match version '$ver'"
+            exit 1
+          fi
+
+      - run: uv pip install -r ci/requirements.txt
+
       - run: uv build
 
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - run: python -m twine check dist/*
+
+      # A v* tag publishes without waiting for CI, so a broken tagged commit can ship.
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1

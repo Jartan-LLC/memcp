@@ -1,0 +1,13 @@
+config:
+  default: true
+  MD013: false # line length: tables and prose run long
+  MD024:
+    siblings_only: true # Keep-a-Changelog repeats Added/Changed/Fixed headings
+  MD060: false # table-column-style: tables are hand-aligned, not auto-formatted
+ignores:
+  - "node_modules"
+  - ".venv" # a worktree's or bare host's venv; its packages ship .md files
+  - "docs/_build"
+  - ".claude/workspace"
+  - "AGENTS.md" # symlink to CLAUDE.md — lint the target, not the alias
+  - ".github/PULL_REQUEST_TEMPLATE.md" # a fragment; starts with ## by design (MD041)

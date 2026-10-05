@@ -138,7 +138,7 @@ class SqliteBackend(MemoryBackend):
                 # strictly worse than leaving one unreadable row exactly as it
                 # already was.
                 logger.warning(
-                    "Skipped unparseable metadata during reserved-key cleanse for row %s",
+                    "Skipped unparsable metadata during reserved-key cleanse for row %s",
                     row["id"],
                 )
                 continue

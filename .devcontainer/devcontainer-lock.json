@@ -1,34 +1,54 @@
 {
   "features": {
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {
-      "version": "1.0.5",
-      "resolved": "ghcr.io/anthropics/devcontainer-features/claude-code@sha256:cfc2e7d3e9fd3b9b01f8d5cb158508a884c8c0ede2e23ed10f32dea5d4ffe69a",
-      "integrity": "sha256:cfc2e7d3e9fd3b9b01f8d5cb158508a884c8c0ede2e23ed10f32dea5d4ffe69a"
-    },
     "ghcr.io/devcontainers/features/desktop-lite:1": {
-      "version": "1.2.9",
-      "resolved": "ghcr.io/devcontainers/features/desktop-lite@sha256:d8649bc8ca8e50a52fbee29d281739ea05dc1022905b185434d6bbe9afc8f221",
-      "integrity": "sha256:d8649bc8ca8e50a52fbee29d281739ea05dc1022905b185434d6bbe9afc8f221"
+      "version": "1.2.10",
+      "resolved": "ghcr.io/devcontainers/features/desktop-lite@sha256:3cfd1ed97b027614f3a56d53183d20ebf29e9c36ac58a3d669edf39890e3aec3",
+      "integrity": "sha256:3cfd1ed97b027614f3a56d53183d20ebf29e9c36ac58a3d669edf39890e3aec3"
     },
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-      "version": "1.10.0",
-      "resolved": "ghcr.io/devcontainers/features/docker-outside-of-docker@sha256:c2c2cf829505ead8e4892c88c31b6594ae94a2bbb209e16e1fac456c1a3a624e",
-      "integrity": "sha256:c2c2cf829505ead8e4892c88c31b6594ae94a2bbb209e16e1fac456c1a3a624e"
+      "version": "1.10.1",
+      "resolved": "ghcr.io/devcontainers/features/docker-outside-of-docker@sha256:698f5900fac471e046c6e9d4333fec88c0e8d952c713494fa0712dce80baeca0",
+      "integrity": "sha256:698f5900fac471e046c6e9d4333fec88c0e8d952c713494fa0712dce80baeca0"
     },
     "ghcr.io/devcontainers/features/github-cli:1": {
-      "version": "1.1.0",
-      "resolved": "ghcr.io/devcontainers/features/github-cli@sha256:d22f50b70ed75339b4eed1ba9ecde3a1791f90e88d37936517e3bace0bbad671",
-      "integrity": "sha256:d22f50b70ed75339b4eed1ba9ecde3a1791f90e88d37936517e3bace0bbad671"
+      "version": "1.1.3",
+      "resolved": "ghcr.io/devcontainers/features/github-cli@sha256:bd7ab48a832228f633239277552c30b353867fef2e5b037e064b4e64f0b843f2",
+      "integrity": "sha256:bd7ab48a832228f633239277552c30b353867fef2e5b037e064b4e64f0b843f2"
     },
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "1.7.1",
-      "resolved": "ghcr.io/devcontainers/features/node@sha256:8c0de46939b61958041700ee89e3493f3b2e4131a06dc46b4d9423427d06e5f6",
-      "integrity": "sha256:8c0de46939b61958041700ee89e3493f3b2e4131a06dc46b4d9423427d06e5f6"
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "2.1.0",
+      "resolved": "ghcr.io/devcontainers/features/node@sha256:586c9a6f7dd40bd3ba2cd41e7f2f88dcc31fbe5d1442afcbf07ffbc66b686857",
+      "integrity": "sha256:586c9a6f7dd40bd3ba2cd41e7f2f88dcc31fbe5d1442afcbf07ffbc66b686857"
     },
     "ghcr.io/devcontainers/features/python:1": {
       "version": "1.8.0",
       "resolved": "ghcr.io/devcontainers/features/python@sha256:fbcad6955caeecc5ad3f7886baf652e25cba5225a6c4c2287c536de2e5607511",
       "integrity": "sha256:fbcad6955caeecc5ad3f7886baf652e25cba5225a6c4c2287c536de2e5607511"
+    },
+    "ghcr.io/jartan-llc/enchantments/claude-code:1": {
+      "version": "1.0.1",
+      "resolved": "ghcr.io/jartan-llc/enchantments/claude-code@sha256:b5d88fabfb244ee83b6d7f82c8c81b39e193acc1fd3d9db57fdb084c434b9640",
+      "integrity": "sha256:b5d88fabfb244ee83b6d7f82c8c81b39e193acc1fd3d9db57fdb084c434b9640"
+    },
+    "ghcr.io/jartan-llc/enchantments/gh-config:1": {
+      "version": "1.0.0",
+      "resolved": "ghcr.io/jartan-llc/enchantments/gh-config@sha256:f18c0d5edf90a28050729baf2d9bfb8e32a47fb38eeaf812728c622a5aada248",
+      "integrity": "sha256:f18c0d5edf90a28050729baf2d9bfb8e32a47fb38eeaf812728c622a5aada248"
+    },
+    "ghcr.io/jartan-llc/enchantments/grimoire:1": {
+      "version": "1.0.1",
+      "resolved": "ghcr.io/jartan-llc/enchantments/grimoire@sha256:8425b5ced4c15a0e30075d61a1cd152e2d7c5491a8771a839da9e896afd4c2b0",
+      "integrity": "sha256:8425b5ced4c15a0e30075d61a1cd152e2d7c5491a8771a839da9e896afd4c2b0"
+    },
+    "ghcr.io/jartan-llc/enchantments/liza-toolchain:1": {
+      "version": "1.1.1",
+      "resolved": "ghcr.io/jartan-llc/enchantments/liza-toolchain@sha256:bb484959db9e538314bd2564b2e246cadfa799dd43d40bc40076a1cab4cdb5df",
+      "integrity": "sha256:bb484959db9e538314bd2564b2e246cadfa799dd43d40bc40076a1cab4cdb5df"
+    },
+    "ghcr.io/jartan-llc/enchantments/liza:1": {
+      "version": "1.0.2",
+      "resolved": "ghcr.io/jartan-llc/enchantments/liza@sha256:1e409bffdb1faa5ca43091b6277ff0ab242bf760d4bd06f3b9e05a76714de511",
+      "integrity": "sha256:1e409bffdb1faa5ca43091b6277ff0ab242bf760d4bd06f3b9e05a76714de511"
     }
   }
 }

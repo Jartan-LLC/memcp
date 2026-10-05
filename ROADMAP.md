@@ -93,12 +93,14 @@ The public release. Protocol stabilization and semver guarantee.
 ## Post-v1.0
 
 ### v1.1 — Admin & Dashboard
+
 - Admin REST API (stats, audit, token CRUD, bulk operations)
 - Server-rendered HTML dashboard (read-only)
 - TTL / expiration support
 - Self-service user signup (env-var gated)
 
 ### v1.2 — Enterprise
+
 - Pluggable auth middleware (JWT/OIDC)
 - Scoped permissions (read/write/delete/admin)
 - Interactive dashboard (token management, memory browser)

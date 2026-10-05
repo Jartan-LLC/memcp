@@ -17,5 +17,5 @@ mem0 is up. Point the conformance suite at it with:
   export MEM0_API_KEY=memcp-conformance-admin-key
   python -m memcp.conformance
 
-Tear it down with ci/mem0/down.sh.
+Tear it down with tests/mem0/down.sh.
 ENV

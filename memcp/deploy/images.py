@@ -47,7 +47,7 @@ PGVECTOR = PinnedImage(
 # mem0 publishes no image this repository is willing to depend on: the one on Docker
 # Hub last moved in September 2025 and is not the revision slice A's conformance run
 # proved the adapter against. So the mem0 service is built from the fork at the SHA
-# below — the same pin ci/mem0 uses, asserted equal by tests/test_deploy_plan.py.
+# below — the same pin tests/mem0 uses, asserted equal by tests/test_deploy_plan.py.
 MEM0_SOURCE_REPO = "https://github.com/Jartan-LLC/mem0.git"
 MEM0_SOURCE_PIN = "42fe3511615cb8aa8c12363b1c8733da9d51ac24"
 

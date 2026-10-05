@@ -39,8 +39,7 @@ dev = [
     "pytest>=9.0.3,<10",
     "pytest-asyncio>=1.4.0,<2",
     "respx>=0.22,<1",
-    "ruff>=0.15.16,<1",
-    "pyright>=1.1,<2",
+    "pyright==1.1.414", # exact pin: every release is 1.1.x, so a range bounds nothing
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -65,3 +64,7 @@ markers = ["slow: spawns a subprocess pytest run (out-of-tree conformance)"]
 include = ["memcp", "tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
+
+[tool.codespell]
+# Skip generated, legal and vendored text.
+skip = "./.git,./.venv,./node_modules,./dist,./build,./docs/_build,*.egg-info,*.lock,*-lock.json,LICENSE*,./tests/mem0/.mem0"

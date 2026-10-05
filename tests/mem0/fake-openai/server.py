@@ -79,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return {}
 
-    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming
+    def do_GET(self) -> None:
         if self.path in ("/health", "/healthz"):
             self._send(200, {"status": "ok"})
             return
@@ -97,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(404, {"error": {"message": f"no such path {self.path}", "type": "not_found"}})
 
-    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming
+    def do_POST(self) -> None:
         payload = self._read()
         path = self.path.rstrip("/")
         if path == "/v1/embeddings":
@@ -143,7 +143,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     port = int(os.environ.get("PORT", "8000"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)  # noqa: S104 - container-local
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"fake-openai listening on :{port}, {DIMENSIONS} dimensions", flush=True)
     server.serve_forever()
 

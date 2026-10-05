@@ -1,20 +1,23 @@
-# Python
+# Dependencies, caches and build artifacts
+node_modules/
+.pnpm-store/
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
+# Leading / matches the root only, so same-named source dirs elsewhere are tracked and packaged
+/.eggs/
+/dist/
+/build/
 *.egg
-.eggs/
-dist/
-build/
 *.whl
-.venv/
-venv/
 
 # Environment
 .env
 .env.*
 !.env.example
+.venv/
+venv/
 
 # IDE
 .idea/
@@ -29,26 +32,39 @@ Thumbs.db
 
 # Testing / Coverage
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-# Docker
-data/
+# Docs build output (Sphinx)
+docs/_build/
 
 # Conformance stack: the pinned mem0 checkout and the report it produces
-ci/mem0/.mem0/
+tests/mem0/.mem0/
 conformance-report.json
 
 # Logs
 *.log
-logs/
+/logs/
 
 # Claude workspace (plans, scratch files)
 .claude/workspace/*
 !.claude/workspace/.gitkeep
 
-# Council session artifacts
-council-transcript-*
-council-report-*
+# Claude local settings (user-specific)
+.claude/settings.local.*
+
+# Liza: runtime state, the local contract link, provider key files, and the indexes its
+# git hooks regenerate after each commit
+.liza/
+.worktrees/
+.adversarial/
+CLAUDE.local.md
+stacklit.json
+/*.scip
+functional-clusters.json
+claude.env
+pi.env

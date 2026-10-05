@@ -1,0 +1,110 @@
+name: Dependency Audit
+
+# Weekly pip-audit of the environment ci.yml's audit job installs: the project's
+# dependencies and the gate tools. The PR-time audit is advisory, so findings are tracked
+# here: they open (or update) one issue, and a clean run closes it. A tool, install or
+# network error fails the run and leaves the issue alone.
+
+on:
+  schedule:
+    - cron: "20 8 * * 1" # weekly, Monday 08:20 UTC (offset from the other weekly runs)
+  workflow_dispatch:
+
+permissions: {}
+
+# Serialize runs so an overlapping dispatch can't open a duplicate tracking issue.
+concurrency:
+  group: dependency-audit
+  cancel-in-progress: false # an overlapping run queues; a newer one replaces it
+
+env:
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ISSUE_TITLE: Known vulnerabilities found by pip-audit
+      ISSUE_LABEL: dependency-audit # the lookup key, so the title can be edited
+      REPORT: pip-audit-report.md
+    permissions:
+      contents: read # checkout
+      issues: write # label, find, open/update/close the tracking issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      # No uv cache, unlike ci.yml's audit job: a weekly run gains little from one.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: ci/requirements.txt
+
+      - run: uv pip install -e '.[dev]' -r ci/requirements.txt
+
+      # pip-audit exits 1 both for findings and for a fatal error, but writes the report
+      # only when the audit completes, so a non-empty report separates the two.
+      - name: Audit dependencies and classify the result
+        id: classify
+        run: |
+          rm -f "$REPORT"
+          status=0
+          pip-audit --format markdown --output "$REPORT" || status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "outcome=clean" >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 1 ] && [ -s "$REPORT" ]; then
+            echo "outcome=findings" >> "$GITHUB_OUTPUT"
+          else
+            echo "pip-audit failed with exit code $status and no report" >&2
+            exit 1
+          fi
+
+      # Created by the run itself, so the repo needs no manual label setup.
+      - name: Ensure the tracking label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          : "${ISSUE_LABEL:?}"
+          gh label create "$ISSUE_LABEL" --repo "$REPO" --force --color d93f0b \
+            --description "Known vulnerabilities (dependency-audit.yml)"
+
+      # Every open one: the label lookup goes through GitHub's search index, which can
+      # miss an issue the previous run just filed.
+      - name: Close the audit issue
+        if: steps.classify.outputs.outcome == 'clean'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          numbers="$(gh issue list --repo "$REPO" --state open --label "$ISSUE_LABEL" \
+            --json number --jq '.[].number')"
+          for number in $numbers; do
+            gh issue close "$number" --repo "$REPO" --comment "No known vulnerabilities as of $RUN_URL"
+          done
+
+      - name: Find the open audit issue
+        id: existing
+        if: steps.classify.outputs.outcome == 'findings'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          number="$(gh issue list --repo "$REPO" --state open --label "$ISSUE_LABEL" \
+            --json number --jq '.[0].number // ""')"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the audit issue
+        if: steps.classify.outputs.outcome == 'findings'
+        uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710 # v6.0.0
+        with:
+          title: ${{ env.ISSUE_TITLE }}
+          content-filepath: ${{ env.REPORT }}
+          labels: ${{ env.ISSUE_LABEL }}
+          issue-number: ${{ steps.existing.outputs.number }} # empty = new issue; set = update in place

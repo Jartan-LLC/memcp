@@ -1,12 +1,12 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/base:debian-12",
-  "mounts": [
-    "source=claude-data,target=/home/vscode/.claude,type=volume"
-  ],
+  "build": { "dockerfile": "Dockerfile" },
   "features": {
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "lts",
+      "pnpmVersion": "12"
     },
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false
@@ -15,11 +15,17 @@
     "ghcr.io/devcontainers/features/desktop-lite:1": {
       "password": "mem0mcp",
       "webPort": "6080"
-    }
+    },
+    "ghcr.io/jartan-llc/enchantments/claude-code:1": {},
+    "ghcr.io/jartan-llc/enchantments/grimoire:1": {},
+    "ghcr.io/jartan-llc/enchantments/liza:1": {},
+    "ghcr.io/jartan-llc/enchantments/liza-toolchain:1": {},
+    "ghcr.io/jartan-llc/enchantments/gh-config:1": {}
   },
   "containerEnv": {
     "HOST_PROJECT_PATH": "${localWorkspaceFolder}",
-    "CONTAINER_WORKSPACE_FOLDER": "${containerWorkspaceFolder}"
+    "CONTAINER_WORKSPACE_FOLDER": "${containerWorkspaceFolder}",
+    "UV_SYSTEM_PYTHON": "1"
   },
   "forwardPorts": [6080, 8080],
   "portsAttributes": {
@@ -37,14 +43,16 @@
         "ms-python.vscode-pylance",
         "ms-python.debugpy",
         "charliermarsh.ruff",
-        "GitHub.copilot",
         "GitHub.vscode-github-actions",
         "GitHub.vscode-pull-request-github",
         "ms-azuretools.vscode-docker",
+        "esbenp.prettier-vscode",
+        "DavidAnson.vscode-markdownlint",
         "eamodio.gitlens"
       ],
       "settings": {
         "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
         "python.analysis.typeCheckingMode": "basic",
         "python.analysis.autoFormatStrings": true,
         "[python]": {
@@ -57,6 +65,7 @@
       }
     }
   },
-  "postCreateCommand": "bash .devcontainer/setup.sh",
-  "postStartCommand": "sudo chmod 666 /var/run/docker-host.sock 2>/dev/null || true"
+  "waitFor": "postCreateCommand",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "bash .devcontainer/post-start.sh"
 }

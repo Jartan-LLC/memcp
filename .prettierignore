@@ -1,0 +1,9 @@
+# Markdown is hand-authored (tables, checklists); Prettier realigns tables and
+# reindents lists, which mangles them.
+*.md
+
+# Build output
+docs/_build/
+
+# A worktree's or bare host's venv — third-party package files, not ours to format.
+.venv/

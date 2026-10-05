@@ -19,6 +19,9 @@ RUN uv pip install --system --no-cache .
 
 FROM ${PYTHON_IMAGE}
 
+# Unbuffered stdout, so output reaches docker logs at once and a killed process loses none.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # /data exists and is owned by the runtime user before any volume is mounted over it:

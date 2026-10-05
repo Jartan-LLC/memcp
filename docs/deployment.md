@@ -85,7 +85,7 @@ well with local models — only that it connects to them.
 
 `memcp plan` is the authority, and it is worth reading before the first `up`:
 
-```
+```text
 $ memcp plan --backend mem0
 CONTAINERS
   postgres    pgvector — mem0's vector store and application database
@@ -129,7 +129,7 @@ memcp up \
 
 `memcp plan` says the port is absent because you asked, not because the plan forgot:
 
-```
+```text
 PUBLISHED PORTS
   (none — publishing is off, because you asked for it: --no-publish)
   memcp listens on container port 8080, reachable only from inside Docker,

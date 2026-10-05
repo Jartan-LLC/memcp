@@ -5,11 +5,10 @@ on:
     branches: [main]
   push:
     branches: [main]
-  # Dependencies install unpinned on every run, so `main` can go red with no
-  # change to it. Without a build that runs on `main`, the next unrelated PR is
-  # what discovers the drift.
+  # Dev extras, hook envs and the dev container Features' downloads resolve at run time,
+  # so main can go red with no commit; the weekly run catches that before the next PR.
   schedule:
-    - cron: "17 6 * * 1"
+    - cron: "10 7 * * 1" # weekly, Monday 07:10 UTC (offset from the other weekly runs)
   workflow_dispatch:
     inputs:
       mem0_api_base:
@@ -25,18 +24,24 @@ permissions:
 env:
   UV_SYSTEM_PYTHON: 1
 
+# A PR's new push cancels its old run; main's runs never cancel each other, so each
+# finishes its dev container image-cache export.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       # `version-file` is required: without it this action installs uv `latest`,
       # not the ci/requirements.txt pin.
@@ -45,26 +50,63 @@ jobs:
           version-file: ci/requirements.txt
           enable-cache: true
 
-      - run: uv pip install -e ".[dev]"
-      - run: ruff check memcp/ tests/
-      - run: ruff format --check memcp/ tests/
-      - run: pyright
+      # The linters and their versions live in .pre-commit-config.yaml, shared with
+      # make lint; pre-commit builds its own hook envs, so this job installs no
+      # project extras.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: pre-commit-
+      - run: uv pip install -r ci/requirements.txt
+      - run: pre-commit run --all-files --show-diff-on-failure
 
-  test:
-    runs-on: ubuntu-latest
+  typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: ci/requirements.txt
           enable-cache: true
 
-      - run: uv pip install -e ".[dev]"
-      - run: pytest -x
+      - run: uv pip install -e '.[dev]'
+      - run: pyright
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # No needs: lint, so one run reports lint and test failures together.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+          # One cache per interpreter: the matrix legs resolve different wheels.
+          cache-suffix: py${{ matrix.python-version }}
+
+      - run: uv pip install -e '.[dev]'
+      - run: pytest
         env:
           MEM0_API_BASE: ${{ inputs.mem0_api_base || secrets.MEM0_API_BASE }}
           MEM0_API_KEY: ${{ inputs.mem0_api_key || secrets.MEM0_API_KEY }}
@@ -73,15 +115,64 @@ jobs:
           # result does not depend on whether a repository secret happens to be set.
           MEMCP_CONFORMANCE_BACKENDS: in_memory
 
-  # A5: the conformance suite and the cross-backend round trip run against a real
-  # mem0 on every pull request, with no external API secret. ci/mem0 explains how.
-  conformance:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
+
+      # No enable-cache: this job installs only the pinned CI tools, and uv build builds
+      # in its own isolated env.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: ci/requirements.txt
+
+      - run: uv pip install -r ci/requirements.txt
+      - run: uv build
+      - run: python -m twine check dist/*
+
+  # Advisory: an unfixable transitive advisory must not fail every run, so `check`
+  # doesn't gate on this job; dependency-audit.yml tracks findings in an issue.
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: ci/requirements.txt
+          enable-cache: true
+
+      # Audit everything installed, dev and CI tools included, as `make check` does.
+      - run: uv pip install -e '.[dev]' -r ci/requirements.txt
+      - name: Audit dependencies for known CVEs
+        run: pip-audit
+
+  # A5: the conformance suite and the cross-backend round trip run against a real
+  # mem0 on every pull request, with no external API secret. tests/mem0 explains how.
+  conformance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -91,7 +182,7 @@ jobs:
       - run: uv pip install -e ".[dev]"
 
       - name: Stand up a self-contained mem0
-        run: ci/mem0/up.sh
+        run: tests/mem0/up.sh
 
       - name: Conformance suite — in_memory and mem0
         env:
@@ -113,7 +204,7 @@ jobs:
 
       - name: mem0 stack logs
         if: failure()
-        run: docker compose -f ci/mem0/docker-compose.yml logs --tail=300
+        run: docker compose -f tests/mem0/docker-compose.yml logs --tail=300
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -124,23 +215,25 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: ci/mem0/down.sh
+        run: tests/mem0/down.sh
 
   # C1 and C2: one command brings up memcp plus a backend on a machine with nothing
   # running, fails non-zero if it does not become healthy, and the first memory over
   # MCP is timed. This is the only place the workspace can execute it — no agent
   # runtime here has Docker access.
   provision:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         backend: [sqlite, in_memory]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -165,10 +258,10 @@ jobs:
           cat timing.txt
 
       - name: Re-running up is idempotent and keeps the memories
-        run: ci/provision/idempotency.sh ${{ matrix.backend }}
+        run: tests/provision/idempotency.sh ${{ matrix.backend }}
 
       - name: No secret reached a tracked file
-        run: ci/provision/no-secret-leak.sh
+        run: tests/provision/no-secret-leak.sh
 
       - name: Logs on failure
         if: failure()
@@ -185,12 +278,14 @@ jobs:
   # absent, that the external network still reaches memcp through its bearer gate,
   # and that switching the flag keeps the memories.
   provision_unpublished:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -205,24 +300,26 @@ jobs:
             --network memcp-ci-edge --external-url http://memcp:8080
 
       - name: A deployment nothing on the host can reach
-        run: ci/provision/unpublished.sh
+        run: tests/provision/unpublished.sh
 
       - name: Logs on failure
         if: failure()
         run: docker compose -f .memcp-unpublished/docker-compose.yml logs --tail=300
 
   # C1's mem0 half. Nobody in this workspace holds an OpenAI key, so the stack is
-  # pointed at the same standard-library stand-in ci/mem0 uses via --llm-base-url —
+  # pointed at the same standard-library stand-in tests/mem0 uses via --llm-base-url —
   # the option that exists so a local endpoint can replace a paid account. What this
   # proves is the provisioning path; what it does not prove is embedding quality or
-  # fact extraction, which ci/mem0/README.md already states.
+  # fact extraction, which tests/mem0/README.md already states.
   provision_mem0:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version-file: .python-version
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -232,11 +329,11 @@ jobs:
       - run: uv pip install -e ".[dev]"
 
       - name: A missing provider key stops the run and names it
-        run: ci/provision/refuses-without-key.sh
+        run: tests/provision/refuses-without-key.sh
 
       - name: Stand the keyless LLM endpoint up on the host
         run: |
-          docker build -t memcp-ci/fake-openai:local ci/mem0/fake-openai
+          docker build -t memcp-ci/fake-openai:local tests/mem0/fake-openai
           docker run -d --name fake-openai -p 8000:8000 memcp-ci/fake-openai:local
           gateway="$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}')"
           echo "LLM_BASE_URL=http://${gateway}:8000/v1" >> "$GITHUB_ENV"
@@ -262,11 +359,13 @@ jobs:
           docker rm -f fake-openai || true
           python -m memcp down --dir .memcp --volumes || true
 
-  build:
+  docker:
     needs: [lint, test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -281,7 +380,7 @@ jobs:
             -p 8080:8080 \
             memcp:ci
           STATUS=""
-          for i in $(seq 1 15); do
+          for _ in $(seq 1 15); do
             STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health 2>/dev/null || true)
             if [ "$STATUS" = "503" ] || [ "$STATUS" = "200" ]; then break; fi
             sleep 1
@@ -295,13 +394,68 @@ jobs:
             exit 1
           fi
 
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      devcontainer: ${{ steps.diff.outputs.devcontainer }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      # A PR's merge commit has its base as first parent. With no base (a scheduled or
+      # manual run, a failed fetch) the dev container job runs, rather than risk skipping a change.
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT" in
+            pull_request) base=HEAD^1 ;;
+            push) git fetch -q --depth=1 origin "$BEFORE" && base=$BEFORE ;;
+          esac
+          changed=$([ -z "${base:-}" ] || git diff --name-only "$base" HEAD)
+          # Everything the dev container build reads, make install's manifests included.
+          if [ -z "${base:-}" ] \
+              || grep -qE -e '^\.devcontainer/' -e '^\.github/workflows/ci\.yml$' -e '^Makefile$' -e '^\.claude/settings\.json$' \
+                -e '(^|/)(pyproject\.toml|requirements\.txt|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$' <<<"$changed"; then
+            echo devcontainer=true >>"$GITHUB_OUTPUT"
+          fi
+
+  devcontainer:
+    name: Dev container
+    needs: changes
+    if: needs.changes.outputs.devcontainer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # The gha cache backend reads these; devcontainers/ci doesn't pass them to buildx.
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            for (const name of ["ACTIONS_RUNTIME_TOKEN", "ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL", "ACTIONS_CACHE_SERVICE_V2"]) {
+              if (process.env[name]) core.exportVariable(name, process.env[name]);
+            }
+      - uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
+        with:
+          push: never
+          cacheFrom: type=gha,scope=devcontainer
+          cacheTo: type=gha,mode=max,scope=devcontainer
+          runCmd: bash .devcontainer/verify.sh
+
   check:
     if: always()
-    needs: [lint, test, conformance, provision, provision_unpublished, provision_mem0, build]
-    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, build, docker, conformance, provision, provision_unpublished, provision_mem0, changes, devcontainer]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
     steps:
       - run: |
-          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.conformance.result }}" "${{ needs.provision.result }}" "${{ needs.provision_unpublished.result }}" "${{ needs.provision_mem0.result }}" "${{ needs.build.result }}")
+          results=("${{ needs.lint.result }}" "${{ needs.typecheck.result }}" "${{ needs.test.result }}" "${{ needs.build.result }}" "${{ needs.docker.result }}" "${{ needs.conformance.result }}" "${{ needs.provision.result }}" "${{ needs.provision_unpublished.result }}" "${{ needs.provision_mem0.result }}" "${{ needs.changes.result }}" "${{ needs.devcontainer.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then
               echo "Check failed: $r"

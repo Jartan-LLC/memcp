@@ -2,6 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/memcp-server)](https://pypi.org/project/memcp-server/)
 [![CI](https://github.com/Jartan-LLC/memcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Jartan-LLC/memcp/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Jartan-LLC/memcp/badge)](https://scorecard.dev/viewer/?uri=github.com/Jartan-LLC/memcp)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](https://github.com/Jartan-LLC/memcp/blob/main/LICENSE)
 
 Backend-agnostic, multi-tenant MCP memory server. AI clients connect and get
@@ -109,7 +110,8 @@ find it. `mem0` is the backend that matches on meaning.
 | [deployment.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md) | `memcp up` in full — backends, the mem0 stack, credentials, running behind a platform that routes into the container, and running the server without provisioning at all |
 | [reference.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md) | Environment variables, the 12 MCP tools, and known limitations per backend |
 | [conformance.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/conformance.md) | Holding a `MemoryBackend` to the suite, including one in another repository |
-| [development.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/development.md) | Working on memcp itself — install, the check loop, the conformance run |
+| [CONTRIBUTING.md](https://github.com/Jartan-LLC/memcp/blob/main/CONTRIBUTING.md) | Working on memcp itself — setup and the check loop |
+| [tests/mem0/README.md](https://github.com/Jartan-LLC/memcp/blob/main/tests/mem0/README.md) | Running the conformance suite against a real mem0 |
 | [CHANGELOG.md](https://github.com/Jartan-LLC/memcp/blob/main/CHANGELOG.md) | What changed, per release |
 
 ## Status

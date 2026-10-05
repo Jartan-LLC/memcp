@@ -134,10 +134,10 @@ def test_g6_pins_are_well_formed():
 def test_mem0_pin_matches_the_conformance_stack():
     """One pin for the mem0 fork, in two places that must not drift.
 
-    ci/mem0 proved the adapter against this revision; provisioning must stand up the
+    tests/mem0 proved the adapter against this revision; provisioning must stand up the
     same one, or `memcp up` ships something CI never exercised.
     """
-    ci_pin = (REPO_ROOT / "ci" / "mem0" / "mem0.pin").read_text().strip()
+    ci_pin = (REPO_ROOT / "tests" / "mem0" / "mem0.pin").read_text().strip()
     assert ci_pin == MEM0_SOURCE_PIN
 
 

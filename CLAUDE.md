@@ -4,33 +4,14 @@ Backend-agnostic, multi-tenant MCP memory server. Python, MCP Python SDK 2.0, de
 
 ## Rules
 
-### Always
-- Read README.md and relevant docs before modifying unfamiliar code
-- Run Verify commands before declaring work done
-- Update docs and skills alongside code changes
-- Update CHANGELOG.md when adding features, fixing bugs, or making breaking changes
-- Write plans to `.claude/workspace/` in the project root for non-trivial changes
+The project rules are in `GUARDRAILS.md`:
 
-### Anti-patterns
-- Don't wrap things the underlying library already expresses clearly
-- Don't speculate about fixes — investigate first, then propose
-- Don't hardcode derived counts in comments — they drift silently
-- Don't put paragraph-length inline comments in CI/config files
-
-### Ask first
-- Changing public API signatures or database schemas
-- Deleting files or removing features
-
-### Never
-- Commit or push unless explicitly asked or instructed by a command
-- Add dependencies without stating the reason
-- Put secrets or credentials in tracked files
+@GUARDRAILS.md
 
 ## Corrections
 
 - The server class is `mcp.server.mcpserver.MCPServer` (SDK 2.0). It was `mcp.server.fastmcp.FastMCP` on SDK 1.x — that module is gone in 2.0, and the standalone `fastmcp` package was never what this uses
 - Every dependency in `pyproject.toml` carries an upper bound. CI installs unpinned, so an unbounded floor lets an upstream major redden `main` on its release day
-- `actions/checkout@v6` DOES exist (v6.0.3 is latest) — reviewers repeatedly flag this as non-existent but it works
 - mem0 self-hosted REST API does NOT support nested boolean filters (AND/OR/NOT) — they 502
 - mem0 self-hosted list endpoint does NOT filter by metadata and does NOT paginate
 - mem0 PUT /memories/{id} returns `{"message": "..."}`, not the memory — must GET after PUT
@@ -46,22 +27,17 @@ Backend-agnostic, multi-tenant MCP memory server. Python, MCP Python SDK 2.0, de
 Project conventions live in `.claude/skills/`. Check the relevant skill when working in an unfamiliar area:
 
 - **api-error-patterns** — MCP tool error format, canonical error codes
-- **claude-config** — agents vs skills vs commands
-- **docs-patterns** — writing style, structure, brevity
-- **frontend-patterns** — design tokens, mobile-first, component isolation
-- **github-conventions** — branches, commits, issue/PR templates
-- **llm-council** — multi-advisor decision council (Karpathy-style)
-- **logging-patterns** — log levels, formatting, structured output
-- **testing-patterns** — integration tests, fixture composition, canary markers
 
 When adding a new skill, add an entry here.
 
 ## Verify
 
+Run `make check` before declaring work done — it runs CI's lint, typecheck, test, build
+and audit checks:
+
 ```bash
-ruff check memcp/ tests/
-ruff format --check memcp/ tests/
-pyright
-python -c "import memcp"
-pytest -x
+make check
 ```
+
+Individual targets (`make lint`, `make test`, …) speed up the inner loop; `make help`
+lists them. `tests/mem0/README.md` runs the conformance suite against a real mem0.
