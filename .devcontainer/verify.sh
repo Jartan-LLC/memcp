@@ -1,8 +1,7 @@
 #!/bin/bash
-# Checks that the Features and post-create.sh set this container up; both only report
-# their failures. CI runs it in a fresh container. A Feature's checks run only when its
-# image marker exists, so removing a Feature's entry, together with the entries of the
-# Features that need it, keeps this passing.
+# Checks that the Features and post-create.sh set this container up (both only report
+# failures); CI runs it in a fresh container. A Feature's checks need its image marker,
+# so dropping a Feature and its dependents keeps this passing.
 
 set -uo pipefail
 failures=0
@@ -15,8 +14,8 @@ has() { test -d "/usr/local/share/enchantments/$1"; }  # id
 while read -r id; do
     check "$id applied" has "$id"
 done < <(grep -o 'ghcr\.io/jartan-llc/enchantments/[a-z0-9-]*' .devcontainer/devcontainer.json | sed 's|.*/||')
-# Covers every Feature hook, grimoire's plugin install included. CI's gh isn't logged in,
-# which gh-config records.
+# Every Feature hook, grimoire's plugin install included. gh-config is exempt: CI's gh
+# isn't logged in, which it records as a failure.
 failed=
 for f in "$HOME"/.cache/enchantments/*.failures*; do
     [ -e "$f" ] && [[ $f != */gh-config.failures* ]] && failed+=" ${f##*/}"
@@ -26,8 +25,7 @@ check "pre-commit hook wired" test -f "$(git rev-parse --git-path hooks)/pre-com
 # Liza sets core.hooksPath in task worktrees; set here, make install skips pre-commit.
 check "core.hooksPath unset" test -z "$(git config core.hooksPath)"
 check "pnpm available" pnpm --version
-# make install put the project into this Python; the package name comes from
-# [tool.hatch.build.targets.wheel] packages.
+# make install put the project into this Python.
 if [ -f pyproject.toml ]; then
     pkg=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"][0].rpartition("/")[2])')
     check "package $pkg imports" python -c "import $pkg"

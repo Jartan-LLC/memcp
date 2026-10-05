@@ -39,10 +39,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ghcr requires a lowercase image path, but github.repository keeps the
-      # owner/repo casing. Lowercase once and reuse it for both the pushed image
-      # and the attestation subject so they always match — a mismatch makes
-      # `gh attestation verify` fail to find the attestation.
+      # ghcr needs a lowercase path; github.repository keeps the owner's casing. The image
+      # and the attestation subject share this value, or `gh attestation verify` can't
+      # find the attestation.
       - name: Compute lowercase image name
         run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 

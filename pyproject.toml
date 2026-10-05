@@ -39,7 +39,7 @@ dev = [
     "pytest>=9.0.3,<10",
     "pytest-asyncio>=1.4.0,<2",
     "respx>=0.22,<1",
-    "pyright==1.1.414", # static type checker; every release is 1.1.x, so pinned exactly
+    "pyright==1.1.414", # exact pin: every release is 1.1.x, so a range bounds nothing
 ]
 
 [tool.hatch.build.targets.wheel]

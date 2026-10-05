@@ -3,11 +3,10 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  # Dev extras, hook envs and the dev container Features' create-time downloads resolve
-  # at run time, so `main` can go red with no commit touching it; these catch that
-  # before the next PR does.
   push:
     branches: [main]
+  # Dev extras, hook envs and the dev container Features' downloads resolve at run time,
+  # so main can go red with no commit; the weekly run catches that before the next PR.
   schedule:
     - cron: "10 7 * * 1" # weekly, Monday 07:10 UTC (offset from the other weekly runs)
   workflow_dispatch:
@@ -124,12 +123,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # No dependency cache: this job only installs the pinned CI tools (nothing
-      # from pyproject), and `uv build` builds the project in its own isolated env.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version-file: .python-version
 
+      # No enable-cache: this job installs only the pinned CI tools, and uv build builds
+      # in its own isolated env.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: ci/requirements.txt
@@ -138,9 +137,8 @@ jobs:
       - run: uv build
       - run: python -m twine check dist/*
 
-  # Advisory: an unfixable transitive advisory must not fail every run, so the job may
-  # fail and `check` deliberately does not gate on it. dependency-audit.yml tracks
-  # findings in an issue.
+  # Advisory: an unfixable transitive advisory must not fail every run, so `check`
+  # doesn't gate on this job; dependency-audit.yml tracks findings in an issue.
   audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -159,8 +157,7 @@ jobs:
           version-file: ci/requirements.txt
           enable-cache: true
 
-      # Audit the full installed environment — package deps plus the dev/CI tools —
-      # mirroring `make check`, not just the declared deps.
+      # Audit everything installed, dev and CI tools included, as `make check` does.
       - run: uv pip install -e '.[dev]' -r ci/requirements.txt
       - name: Audit dependencies for known CVEs
         run: pip-audit

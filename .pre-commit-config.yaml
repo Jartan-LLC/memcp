@@ -1,6 +1,5 @@
-# The single source of truth for file-level linting — run by `make lint` and CI
-# (`pre-commit run --all-files`) as well as on commit (after `pre-commit install`).
-# Its revs are the only ruff and codespell versions; `make fix` runs the ruff hooks.
+# All file-level linting, run on commit, by `make lint` and in CI. Its revs are the only
+# ruff and codespell versions.
 # Checks that need the project's environment live in the Makefile.
 #
 # Revs are pinned to commit SHAs (# frozen: vX.Y.Z); Dependabot's pre-commit entry bumps

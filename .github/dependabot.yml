@@ -94,9 +94,8 @@ updates:
       day: "monday"
     commit-message:
       prefix: "chore(deps)"
-    # A major changes the ":1" key. A dev.containers.defaultFeatures entry for the same
-    # Feature in VS Code's user settings must use the same key, or the Feature runs twice;
-    # move both by hand.
+    # A major changes the ":1" key, which a dev.containers.defaultFeatures entry in VS
+    # Code's user settings must match, or the Feature runs twice; move both by hand.
     ignore:
       - dependency-name: "ghcr.io/jartan-llc/enchantments/*"
         update-types: ["version-update:semver-major"]

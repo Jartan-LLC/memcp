@@ -4,8 +4,7 @@ Backend-agnostic, multi-tenant MCP memory server. Python, MCP Python SDK 2.0, de
 
 ## Rules
 
-The project rules live in `GUARDRAILS.md`, ranked by how firmly each holds; this import
-loads them into every session:
+The project rules are in `GUARDRAILS.md`:
 
 @GUARDRAILS.md
 

@@ -21,10 +21,9 @@ echo "Installing project dependencies (make install)..."
 make_install_failed=false
 make install || make_install_failed=true
 
-# Reported here, at the end, so it survives the dependency-install output above
-# rather than scrolling away. Not fatal: a non-zero postCreateCommand makes the
-# spec skip postStart and postAttach, losing the Docker socket fix and the
-# Codespaces path override.
+# Reported last so the install output doesn't scroll it away. Not fatal: a failed
+# postCreateCommand skips postStart, which fixes the Docker socket and the Codespaces
+# path.
 if $make_install_failed; then
     echo "ERROR: Project dependency install failed (see make's output above). Run 'make install' to retry." >&2
 fi

@@ -12,11 +12,10 @@ on:
 
 permissions: {}
 
-# Serialize runs so a manual dispatch overlapping the weekly run can't both clear the
-# find-issue step and each open a duplicate tracking issue.
+# Serialize runs so an overlapping dispatch can't open a duplicate tracking issue.
 concurrency:
   group: external-link-check
-  cancel-in-progress: false # a new run waits for the running one; a newer one replaces it while it waits
+  cancel-in-progress: false # an overlapping run queues; a newer one replaces it
 
 jobs:
   link-check:
@@ -37,10 +36,9 @@ jobs:
         id: lychee
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          # Markdown only. --hidden is load-bearing: the glob alone skips
-          # dot-directories, so .github/ and .claude/ — the security policy among
-          # them — would go unchecked. Link-scoped exemptions live in .lycheeignore,
-          # which this action reads; there are no path exclusions.
+          # Markdown only. --hidden is load-bearing: the glob alone skips dot-directories,
+          # so .github/ (SECURITY.md) and .claude/ would go unchecked. Exemptions live in
+          # .lycheeignore.
           args: "--no-progress --hidden './**/*.md'"
           fail: false # the classify step decides; a lychee error still goes red
           failIfEmpty: false # a 0-link tree shouldn't red the run
