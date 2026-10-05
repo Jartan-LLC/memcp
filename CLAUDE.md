@@ -40,4 +40,4 @@ make check
 ```
 
 Individual targets (`make lint`, `make test`, …) speed up the inner loop; `make help`
-lists them. The conformance run against a real mem0 is in `docs/development.md`.
+lists them. `tests/mem0/README.md` runs the conformance suite against a real mem0.

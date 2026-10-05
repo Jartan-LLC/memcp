@@ -111,7 +111,7 @@ find it. `mem0` is the backend that matches on meaning.
 | [reference.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md) | Environment variables, the 12 MCP tools, and known limitations per backend |
 | [conformance.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/conformance.md) | Holding a `MemoryBackend` to the suite, including one in another repository |
 | [CONTRIBUTING.md](https://github.com/Jartan-LLC/memcp/blob/main/CONTRIBUTING.md) | Working on memcp itself — setup and the check loop |
-| [development.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/development.md) | Running the conformance suite against a real mem0 |
+| [tests/mem0/README.md](https://github.com/Jartan-LLC/memcp/blob/main/tests/mem0/README.md) | Running the conformance suite against a real mem0 |
 | [CHANGELOG.md](https://github.com/Jartan-LLC/memcp/blob/main/CHANGELOG.md) | What changed, per release |
 
 ## Status

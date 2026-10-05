@@ -23,7 +23,7 @@ make check
 
 Runs CI's lint, typecheck, test, build and audit checks. CI also runs the tests on each
 supported Python, builds the Docker image, runs the conformance suite against a real mem0
-([docs/development.md](docs/development.md)), provisions stacks with `memcp up`
+([tests/mem0/README.md](tests/mem0/README.md)), provisions stacks with `memcp up`
 ([docs/deployment.md](docs/deployment.md)), and builds the dev container when its inputs
 change. Everything but the advisory audit must pass before merge.
 
