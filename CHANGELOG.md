@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Docker image is also published for `linux/arm64`, and each published image carries a build-provenance attestation.
+- A `v*` tag whose version does not match `version` in `pyproject.toml` fails before anything is published.
 - **Image tags come from `docker/metadata-action`**, converging with scaffold: `{{version}}` and `{{major}}.{{minor}}` instead of one hardcoded pair. `{{major}}` is deliberately absent — pre-1.0 it is an alias for "any version at all", and across minor lines it carries the same ordering defect `latest` had. `flavor: latest=false` turns off metadata-action's own `latest=auto`, which excludes pre-releases but does **not** check whether the tag is the highest version; the explicit guard added earlier makes that decision instead.
 - The README's time-to-first-memory figures are a table, one row per backend, so a new backend is a new row. Same numbers, same statement of what CI measures.
 - **The README is 115 lines instead of 249, and points at documents rather than restating them.** It answers what memcp is, how one command gets you a running one, how a client connects, and where everything else lives. The environment-variable table, the 12-tool surface and the per-backend limitations moved to `docs/reference.md`; the check loop moved to `CONTRIBUTING.md` and the conformance run to `docs/development.md`; running the server without provisioning moved into `docs/deployment.md`, which already had a stub for it. Links out of the README are absolute, because PyPI renders it as the package page and does not resolve relative paths.
@@ -73,7 +75,7 @@ imported. The server exits at import with `ModuleNotFoundError`.
 ### Changed
 
 - **`docker-compose.yml` on `release/0.1.x` deploys the published release image** (`ghcr.io/jartan-llc/memcp:0.1.2`) rather than building the checkout. A release branch exists to be deployed, and an image built once at tag time cannot change what it runs on a re-pull; a rebuild of unchanged source can, which is how 0.1.1 broke. The tag is an exact version, never `:latest`. `docker-compose.build.yml` is the documented override for building this checkout instead, and it replaces the stale `ghcr.io/jartan-llc/mem0-mcp:latest` comment, which named a repository that no longer exists.
-- **`:latest` now follows the highest released version, not the most recent tag push.** This branch is maintained beside `main`, so a patch cut after a higher minor would have moved `:latest` backwards and downgraded anyone pulling it.
+- **`:latest` now follows the highest released version, not the most recent tag push.** `release/0.1.x` is maintained beside `main`, so a patch cut after a higher minor would have moved `:latest` backwards and downgraded anyone pulling it.
 - Both publish workflows pin every action by commit SHA and the build frontend by version, matching `main` (commit `93fc173`). These are the jobs a tag push runs with `packages: write` and PyPI trusted publishing, so a moved upstream tag reaches a release path.
 
 ## [0.1.1] - 2026-06-14

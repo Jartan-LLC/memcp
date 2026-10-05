@@ -43,7 +43,7 @@ services:
       retries: 20
 
   mem0:
-    image: memcp-tests/mem0-server:local
+    image: memcp-ci/mem0-server:local
     build:
       context: ./.mem0/server
       dockerfile: Dockerfile

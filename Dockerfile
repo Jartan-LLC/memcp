@@ -19,6 +19,9 @@ RUN uv pip install --system --no-cache .
 
 FROM ${PYTHON_IMAGE}
 
+# Unbuffered stdout/stderr so logs aren't lost to block-buffering on a hard crash.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # /data exists and is owned by the runtime user before any volume is mounted over it:
