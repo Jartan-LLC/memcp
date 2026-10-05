@@ -53,5 +53,5 @@ jobs:
 
       - run: python -m twine check dist/*
 
-      # Any v* tag publishes with no CI needs: gate, so a broken tagged commit can ship.
+      # A v* tag publishes without waiting for CI, so a broken tagged commit can ship.
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1

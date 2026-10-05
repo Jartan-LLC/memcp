@@ -5,7 +5,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
-# Leading / matches the root only, so same-named source dirs (memcp/data/) are tracked and packaged
+# Leading / matches the root only, so same-named source dirs elsewhere are tracked and packaged
 /.eggs/
 /dist/
 /build/
