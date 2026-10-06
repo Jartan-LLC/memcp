@@ -1,18 +1,20 @@
 """Mem0Backend mock tests — covers all mem0-specific logic without a live server.
 
 Uses respx to mock httpx requests. Tests the adapter's quirk handling:
-fetch-then-verify ownership, GET-after-PUT, tenant post-filtering,
+fetch-then-verify ownership, GET-after-PUT, entities from the tenant's own memories,
 error mapping, network error wrapping.
 """
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
 
-from memcp.backend.mem0 import LIST_CEILING, Mem0Backend
-from memcp.types import MemoryAPIError
+from memcp.backend.mem0 import LIST_CEILING, Mem0Backend, _entity_rows
+from memcp.types import Memory, MemoryAPIError
 
 BASE = "https://mem0.test"
 KEY = "test-key"
@@ -165,38 +167,226 @@ async def test_update_wrong_user_raises(backend):
 
 
 # ---------------------------------------------------------------------------
-# entities — tenant post-filter
+# entities — built from the tenant's own memories
 # ---------------------------------------------------------------------------
 
+# One store, three tenants. mallory writes under agent_id "alice" (a tenant's name)
+# and bob under "claude-code" (an agent alice also uses); mem0's GET /entities shows
+# mallory's write as an "alice" row and counts bob's in the "claude-code" row.
+SHARED_STORE = [
+    {
+        "id": "m1",
+        "memory": "a",
+        "user_id": "alice",
+        "agent_id": "claude-code",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": None,
+    },
+    {
+        "id": "m2",
+        "memory": "b",
+        "user_id": "alice",
+        "agent_id": "claude-code",
+        "run_id": "r1",
+        "created_at": "2026-01-02T00:00:00Z",
+        "updated_at": "2026-01-05T00:00:00Z",
+    },
+    {
+        "id": "m3",
+        "memory": "c",
+        "user_id": "mallory",
+        "agent_id": "alice",
+        "created_at": "2026-01-03T00:00:00Z",
+        "updated_at": None,
+    },
+    {
+        "id": "m4",
+        "memory": "d",
+        "user_id": "bob",
+        "agent_id": "claude-code",
+        "created_at": "2026-01-04T00:00:00Z",
+        "updated_at": None,
+    },
+]
+
+
+# What GET /entities reports for SHARED_STORE: every tenant's values, bucketed.
+SHARED_STORE_ENTITIES = [
+    {"id": "alice", "type": "agent", "total_memories": 1},
+    {"id": "claude-code", "type": "agent", "total_memories": 3},
+    {"id": "r1", "type": "run", "total_memories": 1},
+    {"id": "alice", "type": "user", "total_memories": 2},
+    {"id": "bob", "type": "user", "total_memories": 1},
+    {"id": "mallory", "type": "user", "total_memories": 1},
+]
+
+
+def _list_shared_store(request: httpx.Request) -> httpx.Response:
+    params = request.url.params
+    rows = [
+        row
+        for row in SHARED_STORE
+        if all(row.get(k) == params[k] for k in ("user_id", "agent_id", "run_id") if k in params)
+    ]
+    return httpx.Response(200, json={"results": rows})
+
+
+@pytest.fixture
+def shared_store():
+    with respx.mock:
+        global_entities = respx.get(f"{BASE}/entities").mock(
+            return_value=httpx.Response(200, json=SHARED_STORE_ENTITIES)
+        )
+        respx.get(f"{BASE}/memories").mock(side_effect=_list_shared_store)
+        yield global_entities
+
+
+async def test_entities_count_only_the_callers_memories(backend, shared_store):
+    result = await backend.entities(USER)
+    assert result.entities == [
+        {
+            "id": "alice",
+            "type": "user",
+            "total_memories": 2,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-05T00:00:00Z",
+        },
+        {
+            "id": "claude-code",
+            "type": "agent",
+            "total_memories": 2,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-05T00:00:00Z",
+        },
+        {
+            "id": "r1",
+            "type": "run",
+            "total_memories": 1,
+            "created_at": "2026-01-02T00:00:00Z",
+            "updated_at": "2026-01-05T00:00:00Z",
+        },
+    ]
+    assert shared_store.call_count == 0, "GET /entities mixes every tenant's values"
+
+
+async def test_entities_never_show_another_tenants_memories(backend, shared_store):
+    # A tenant whose name another tenant used as an agent_id sees none of it.
+    result = await backend.entities("claude-code")
+    assert result.entities == []
+
+
+async def test_entities_limit_keeps_the_user_row(backend, shared_store):
+    result = await backend.entities(USER, limit=1)
+    assert [(e["type"], e["id"]) for e in result.entities] == [("user", "alice")]
+
+
+def test_entity_rows_put_the_user_first_then_sort_by_type_and_id():
+    memories = [
+        Memory(id="m1", content="a", scope={"run_id": "r2", "agent_id": "b"}),
+        Memory(id="m2", content="b", scope={"run_id": "r1", "agent_id": "a"}),
+    ]
+    assert [(e["type"], e["id"]) for e in _entity_rows(USER, memories)] == [
+        ("user", "alice"),
+        ("agent", "a"),
+        ("agent", "b"),
+        ("run", "r1"),
+        ("run", "r2"),
+    ]
+
 
 @respx.mock
-async def test_entities_filters_by_user(backend):
-    respx.get(f"{BASE}/entities").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {"id": "alice", "type": "user", "total_memories": 3},
-                {"id": "bob", "type": "user", "total_memories": 5},
-            ],
-        )
+async def test_scope_user_id_never_replaces_the_tenant(backend):
+    listed = respx.get(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json={"results": []})
     )
-    result = await backend.entities(USER)
-    assert len(result.entities) == 1
-    assert result.entities[0]["id"] == "alice"
+    searched = respx.post(f"{BASE}/search").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    added = respx.post(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    scope = {"user_id": OTHER, "agent_id": "a"}
+
+    await backend.list_memories(USER, scope=scope)
+    await backend.search(USER, "q", scope=scope)
+    await backend.add(USER, "fact", scope=scope, infer=False)
+
+    assert listed.calls.last.request.url.params["user_id"] == USER
+    assert json.loads(searched.calls.last.request.content)["filters"]["user_id"] == USER
+    assert json.loads(added.calls.last.request.content)["user_id"] == USER
 
 
 @respx.mock
-async def test_entities_no_match_returns_empty(backend):
-    respx.get(f"{BASE}/entities").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {"id": "bob", "type": "user", "total_memories": 5},
-            ],
-        )
+@pytest.mark.parametrize("scope", [{"user_id": OTHER}, {"foo": "x"}])
+async def test_delete_all_refuses_a_key_mem0_would_ignore(backend, scope):
+    route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    with pytest.raises(MemoryAPIError) as exc:
+        await backend.delete_all(USER, scope)
+    assert exc.value.status == 400
+    assert route.call_count == 0
+
+
+def test_entity_rows_compare_naive_timestamps_as_utc():
+    memories = [
+        Memory(id="m1", content="a", created_at="2026-01-02T00:00:00", updated_at=None),
+        Memory(id="m2", content="b", created_at="2026-01-01T00:00:00Z", updated_at=None),
+    ]
+    [row] = _entity_rows(USER, memories)
+    assert (row["created_at"], row["updated_at"]) == (
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00",
     )
-    result = await backend.entities(USER)
-    assert len(result.entities) == 0
+
+
+def test_entity_rows_skip_missing_and_invalid_timestamps():
+    memories = [
+        Memory(id="m1", content="a", created_at="", updated_at=None),
+        Memory(id="m2", content="b", created_at="not a date", updated_at=None),
+        Memory(id="m3", content="c", created_at="2026-01-02T00:00:00Z", updated_at=None),
+    ]
+    [row] = _entity_rows(USER, memories)
+    assert row["total_memories"] == 3
+    assert (row["created_at"], row["updated_at"]) == (
+        "2026-01-02T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+    )
+
+
+@respx.mock
+@pytest.mark.parametrize("value", ["*", "", None, [], [""]])
+async def test_delete_all_refuses_a_value_the_adapter_would_drop(backend, value):
+    route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    with pytest.raises(MemoryAPIError) as exc:
+        await backend.delete_all(USER, {"run_id": value})
+    assert exc.value.status == 400
+    assert route.call_count == 0
+
+
+@respx.mock
+async def test_delete_all_sends_a_concrete_scope(backend):
+    route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    await backend.delete_all(USER, {"agent_id": "a", "run_id": "r1"})
+    assert dict(route.calls.last.request.url.params) == {
+        "user_id": USER,
+        "agent_id": "a",
+        "run_id": "r1",
+    }
+
+
+@respx.mock
+async def test_delete_all_with_no_scope_deletes_the_tenant(backend):
+    route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    await backend.delete_all(USER, {})
+    assert dict(route.calls.last.request.url.params) == {"user_id": USER}
+
+
+async def test_entities_respect_scope(backend, shared_store):
+    result = await backend.entities(USER, scope={"run_id": "r1"})
+    assert [(e["type"], e["id"], e["total_memories"]) for e in result.entities] == [
+        ("user", "alice", 1),
+        ("agent", "claude-code", 1),
+        ("run", "r1", 1),
+    ]
 
 
 # ---------------------------------------------------------------------------

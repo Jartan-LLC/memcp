@@ -15,7 +15,7 @@ The project rules are in `GUARDRAILS.md`:
 - mem0 self-hosted REST API does NOT support nested boolean filters (AND/OR/NOT) — they 502
 - mem0 self-hosted list endpoint does NOT filter by metadata and does NOT paginate
 - mem0 PUT /memories/{id} returns `{"message": "..."}`, not the memory — must GET after PUT
-- mem0 GET /entities does NOT filter by user_id — server post-filters for tenant isolation
+- mem0 GET /entities mixes every tenant's user, agent and run values — `entities()` counts the tenant's own `GET /memories` instead
 - mem0 single-ID endpoints (GET/PUT/DELETE/history) are global — adapter does fetch-then-verify for ownership
 - The MCP SDK enables DNS-rebinding protection only when the `host` passed to `streamable_http_app` is `127.0.0.1`, `localhost` or `::1`. Every other value, including `0.0.0.0`, leaves Host and Origin unvalidated — set `MEMCP_ALLOWED_HOSTS` to turn it on
 - `memcp up` is an operator command, never something the running server does. Nothing it generates may mount the Docker socket

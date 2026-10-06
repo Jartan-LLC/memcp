@@ -25,6 +25,7 @@ from memcp.types import (
     NOT_FOUND_MSG,
     MemoryAPIError,
     canonical_error,
+    is_wildcard,
     reject_nested_filters,
     serialize_memory,
     strip_reserved_metadata,
@@ -200,7 +201,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
         description=(
             "Bulk-delete memories matching a scope (e.g. agent_id, run_id). "
             "Deletes by scope structure, not content. Requires at least one scope "
-            "key. Confirm with user first."
+            "key, each with a concrete value. Confirm with user first."
         ),
     )
     async def delete_all_memories(scope: dict[str, Any]) -> Any:
@@ -213,6 +214,14 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             return canonical_error(
                 "scope_required",
                 "delete_all_memories requires at least one scope key.",
+            )
+        # An empty, "*" or null value means "any" to mem0's adapter; refuse it here so
+        # no backend widens a scoped delete.
+        if any(is_wildcard(v) for v in cleaned.values()):
+            return canonical_error(
+                "validation_error",
+                "delete_all_memories needs a concrete value for each scope key, "
+                "not empty, '*' or null.",
             )
         try:
             count = await backend.delete_all(user_id, cleaned)

@@ -63,7 +63,7 @@ pre-existing row will read as attributed when it never was.
 | `add_memory` | Store a fact/preference/decision. On `mem0`, extracts facts by default (may store nothing) and `infer=false` stores verbatim. On `sqlite` and `in_memory` there is no model, so content is always stored verbatim and `infer` has no effect — the tool's own description says which, per deployment. Bulk: use `import_memories` |
 | `search_memory` | Ranked search — semantic on `mem0`, keyword on `sqlite` and `in_memory`. `threshold` filters by minimum score (0-1). For browsing: `list_memories` |
 | `delete_memory` | Delete one memory by ID. Confirm with user first |
-| `delete_all_memories` | Bulk-delete by scope (e.g. agent_id, run_id), not content. Requires at least one scope key. Confirm first |
+| `delete_all_memories` | Bulk-delete by scope (e.g. agent_id, run_id), not content. Requires at least one scope key, each with a concrete value (not empty, `*` or null). Confirm first |
 | `memory_status` | Returns server version, backend type, capabilities, valid scope keys, whether the backend extracts facts, and whether retrieval is semantic or keyword. No memory content |
 
 ### Optional — registered only by a backend that implements them
@@ -86,7 +86,7 @@ pre-existing row will read as attributed when it never was.
 - List endpoint does not paginate server-side — full dataset loaded per request
 - List returns at most 1000 memories per call (mem0's own ceiling), so an export of a tenant above that is incomplete and does not say so
 - List endpoint does not filter by metadata
-- Entities endpoint does not filter by user — post-filtered client-side
+- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, at most 1000 (the list ceiling)
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 - `memory_history` entries carry `author: null` for every event — mem0's history log is entirely upstream-managed and has no field to record it in. A memory's current `author` (from `search_memory`, `get_memory`, `list_memories`) is unaffected; only the event-by-event trail cannot be attributed
 

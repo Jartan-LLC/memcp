@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -21,6 +22,7 @@ from memcp.types import (
     ListResult,
     Memory,
     MemoryAPIError,
+    is_wildcard,
     paginate,
     reject_nested_filters,
     split_author,
@@ -39,9 +41,13 @@ LIST_CEILING = 1000
 
 def _norm(value: Any) -> Any:
     """Return None for wildcard/empty sentinels; pass through otherwise."""
-    if isinstance(value, str) and value.strip() in ("", "*"):
-        return None
-    return value
+    return None if is_wildcard(value) else value
+
+
+def _scope_items(scope: dict[str, Any]) -> list[tuple[str, Any]]:
+    """A scope's keys and values minus user_id, which comes from the token; raises on nesting."""
+    reject_nested_filters(scope)
+    return [(key, val) for key, val in scope.items() if key != "user_id"]
 
 
 def _build_search_filters(
@@ -51,8 +57,7 @@ def _build_search_filters(
     """Flat filter dict for POST /search."""
     filters: dict[str, Any] = {"user_id": user_id}
     if scope:
-        reject_nested_filters(scope)
-        for key, val in scope.items():
+        for key, val in _scope_items(scope):
             val = _norm(val) if isinstance(val, str) else val
             if val is not None:
                 filters[key] = val
@@ -66,8 +71,7 @@ def _build_identifier_params(
     """Query params for GET /memories and DELETE /memories."""
     params: dict[str, Any] = {"user_id": user_id}
     if scope:
-        reject_nested_filters(scope)
-        for key, val in scope.items():
+        for key, val in _scope_items(scope):
             val = _norm(val)
             if val is not None:
                 params[key] = val
@@ -87,6 +91,46 @@ def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
         created_at=raw.get("created_at", ""),
         updated_at=raw.get("updated_at"),
     )
+
+
+def _earliest_and_latest(values: list[str | None]) -> tuple[str | None, str | None]:
+    """The earliest and latest of some mem0 timestamps, skipping missing or invalid ones."""
+    dated: list[tuple[datetime, str]] = []
+    for value in values:
+        try:
+            parsed = datetime.fromisoformat(value or "")
+        except ValueError:
+            continue
+        dated.append((parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC), value or ""))
+    if not dated:
+        return None, None
+    return min(dated)[1], max(dated)[1]
+
+
+def _entity_rows(user_id: str, memories: list[Memory]) -> list[dict[str, Any]]:
+    """Count one tenant's memories per user, agent and run, in mem0's entity row shape."""
+    groups: dict[tuple[str, str], list[Memory]] = {}
+    for memory in memories:
+        groups.setdefault(("user", user_id), []).append(memory)
+        for entity_type, key in (("agent", "agent_id"), ("run", "run_id")):
+            if memory.scope.get(key):
+                groups.setdefault((entity_type, str(memory.scope[key])), []).append(memory)
+    rows: list[dict[str, Any]] = []
+    # The user row first, so a `limit` cuts agent and run rows before it.
+    for entity_type, entity_id in sorted(groups, key=lambda k: (k[0] != "user", k)):
+        group = groups[(entity_type, entity_id)]
+        created_at, _ = _earliest_and_latest([m.created_at for m in group])
+        _, updated_at = _earliest_and_latest([m.updated_at or m.created_at for m in group])
+        rows.append(
+            {
+                "id": entity_id,
+                "type": entity_type,
+                "total_memories": len(group),
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
+    return rows
 
 
 class Mem0Backend(MemoryBackend):
@@ -152,8 +196,7 @@ class Mem0Backend(MemoryBackend):
             "infer": infer,
         }
         if scope:
-            reject_nested_filters(scope)
-            for key, val in scope.items():
+            for key, val in _scope_items(scope):
                 normed = _norm(val)
                 if normed is not None:
                     payload[key] = normed
@@ -209,6 +252,18 @@ class Mem0Backend(MemoryBackend):
         return True
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
+        # mem0 ignores a key it doesn't filter on, the adapter drops a wildcard value,
+        # and httpx sends an empty list as nothing. Each widens the delete past the
+        # scope asked for; only an empty scope may reach the whole tenant.
+        if any(
+            k not in self.scope_keys() or not isinstance(v, (str, int, float)) or is_wildcard(v)
+            for k, v in scope.items()
+        ):
+            raise MemoryAPIError(
+                400,
+                f"delete_all scope keys must be among {self.scope_keys()}, "
+                "with single values that are not empty, '*' or null",
+            )
         params = _build_identifier_params(user_id, scope)
         await self._request("DELETE", "/memories", params=params)
         return None  # mem0 doesn't return a count
@@ -298,7 +353,7 @@ class Mem0Backend(MemoryBackend):
         if len(raw) >= LIST_CEILING:
             logger.warning(
                 "mem0 returned its ceiling of %d memories for user %s; anything beyond "
-                "it is not listed, so an export of this tenant is incomplete",
+                "it is missing from list, export, import dedup and memory_entities",
                 LIST_CEILING,
                 user_id,
             )
@@ -336,17 +391,10 @@ class Mem0Backend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        result = await self._request("GET", "/entities")
-        raw = result if isinstance(result, list) else []
-        # mem0 /entities ignores user_id param — post-filter for tenant isolation
-        filtered = [e for e in raw if e.get("id") == user_id]
-        if raw and not filtered:
-            logger.warning(
-                "Entities post-filter returned empty for user %s (%d raw entities)",
-                user_id,
-                len(raw),
-            )
-        return EntitiesResult(entities=filtered[:limit])
+        # Not mem0's GET /entities: it counts every tenant's user, agent and run
+        # values together, so another tenant's writes would show up here.
+        listed = await self.list_memories(user_id, scope=scope, limit=LIST_CEILING)
+        return EntitiesResult(entities=_entity_rows(user_id, listed.memories)[:limit])
 
     # --- lifecycle ---
 

@@ -136,43 +136,48 @@ class StaticResolver:
         `MEMCP_AUTH_SEATS` keeps its seat mirroring its tenant, as it always
         has.
         """
+        # Errors name an entry by position, never by content: an entry holds a token,
+        # and these messages are logged.
         mapping: dict[str, str] = {}
-        for pair in raw.split(","):
+        for n, pair in enumerate(raw.split(","), 1):
             pair = pair.strip()
             if not pair:
                 continue
             if ":" not in pair:
                 raise ValueError(
-                    f"Invalid token mapping: {pair!r}. Expected format: token:user_id"
+                    f"Invalid token mapping: MEMCP_AUTH_TOKENS entry {n}. "
+                    "Expected format: token:user_id"
                 )
             token, user_id = pair.split(":", 1)
             token, user_id = token.strip(), user_id.strip()
             if not token or not user_id:
-                raise ValueError(f"Empty token or user_id in mapping: {pair!r}")
+                raise ValueError(f"Empty token or user_id in MEMCP_AUTH_TOKENS entry {n}")
             mapping[token] = user_id
         if not mapping:
             raise ValueError("MEMCP_AUTH_TOKENS is set but contains no valid mappings")
 
         seats: dict[str, str] = {}
-        for pair in (seats_raw or "").split(","):
+        for n, pair in enumerate((seats_raw or "").split(","), 1):
             pair = pair.strip()
             if not pair:
                 continue
             if ":" not in pair:
-                raise ValueError(f"Invalid seat mapping: {pair!r}. Expected format: token:seat")
+                raise ValueError(
+                    f"Invalid seat mapping: MEMCP_AUTH_SEATS entry {n}. "
+                    "Expected format: token:seat"
+                )
             token, seat = pair.split(":", 1)
             token, seat = token.strip(), seat.strip()
             if not token or not seat:
-                raise ValueError(f"Empty token or seat in MEMCP_AUTH_SEATS mapping: {pair!r}")
+                raise ValueError(f"Empty token or seat in MEMCP_AUTH_SEATS entry {n}")
             if not _SEAT_RE.match(seat):
                 raise ValueError(
-                    f"Invalid seat label in MEMCP_AUTH_SEATS for token {token!r}: {seat!r}. "
+                    f"Invalid seat label in MEMCP_AUTH_SEATS entry {n}. "
                     f"Seat must match {_SEAT_RE.pattern!r}."
                 )
             if token not in mapping:
                 raise ValueError(
-                    f"MEMCP_AUTH_SEATS names token {token!r}, which has no "
-                    "MEMCP_AUTH_TOKENS mapping."
+                    f"MEMCP_AUTH_SEATS entry {n} names a token with no MEMCP_AUTH_TOKENS mapping."
                 )
             seats[token] = seat
 

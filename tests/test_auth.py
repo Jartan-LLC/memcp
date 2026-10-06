@@ -198,6 +198,24 @@ def test_static_resolver_from_env_seats_empty_token_or_seat():
         StaticResolver.from_env("tok:alice", "tok:")
 
 
+@pytest.mark.parametrize(
+    ("tokens", "seats", "entry"),
+    [
+        ("ok:alice,s3cr3t-tok", None, "MEMCP_AUTH_TOKENS entry 2"),
+        ("s3cr3t-tok:", None, "MEMCP_AUTH_TOKENS entry 1"),
+        ("ok:alice", "s3cr3t-tok", "MEMCP_AUTH_SEATS entry 1"),
+        ("ok:alice", "ok:one,s3cr3t-tok:", "MEMCP_AUTH_SEATS entry 2"),
+        ("s3cr3t-tok:alice", "s3cr3t-tok:not a seat", "MEMCP_AUTH_SEATS entry 1"),
+        ("s3cr3t-tok/x+y=:alice", "alice:s3cr3t-tok/x+y=", "MEMCP_AUTH_SEATS entry 1"),
+        ("ok:alice", "s3cr3t-tok:agent-one", "MEMCP_AUTH_SEATS entry 1"),
+    ],
+)
+def test_static_resolver_from_env_errors_name_the_entry_not_the_token(tokens, seats, entry):
+    with pytest.raises(ValueError, match=entry) as excinfo:
+        StaticResolver.from_env(tokens, seats)
+    assert "s3cr3t-tok" not in str(excinfo.value)
+
+
 def test_static_resolver_from_env_seats_none_is_the_same_as_absent():
     resolver_none = StaticResolver.from_env("tok:alice", None)
     resolver_omitted = StaticResolver.from_env("tok:alice")
