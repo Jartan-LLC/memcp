@@ -278,6 +278,15 @@ async def test_delete_all_memories_user_id_stripped(mcp_with_tools):
     assert result["error"]["code"] == "scope_required"
 
 
+@pytest.mark.parametrize("value", ["*", "", "  ", None])
+async def test_delete_all_memories_rejects_a_value_that_matches_anything(mcp_with_tools, value):
+    """mem0 reads these as "any run", so the delete would cover every run of a1."""
+    mcp, _ = mcp_with_tools
+    result = await mcp.call("delete_all_memories", scope={"agent_id": "a1", "run_id": value})
+    assert result["error"]["code"] == "scope_required"
+    assert "concrete value" in result["error"]["message"]
+
+
 # ---------------------------------------------------------------------------
 # memory_status
 # ---------------------------------------------------------------------------

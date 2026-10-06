@@ -214,6 +214,16 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                 "scope_required",
                 "delete_all_memories requires at least one scope key.",
             )
+        # mem0 reads an empty or "*" value as "any", which would turn a scoped
+        # delete into one of every memory the tenant has.
+        if any(
+            v is None or (isinstance(v, str) and v.strip() in ("", "*")) for v in cleaned.values()
+        ):
+            return canonical_error(
+                "scope_required",
+                "delete_all_memories needs a concrete value for each scope key, "
+                "not an empty value or '*'.",
+            )
         try:
             count = await backend.delete_all(user_id, cleaned)
         except MemoryAPIError as e:
