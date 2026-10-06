@@ -1,7 +1,7 @@
 """Mem0Backend mock tests — covers all mem0-specific logic without a live server.
 
 Uses respx to mock httpx requests. Tests the adapter's quirk handling:
-fetch-then-verify ownership, GET-after-PUT, tenant post-filtering,
+fetch-then-verify ownership, GET-after-PUT, entities from the tenant's own memories,
 error mapping, network error wrapping.
 """
 
@@ -165,38 +165,121 @@ async def test_update_wrong_user_raises(backend):
 
 
 # ---------------------------------------------------------------------------
-# entities — tenant post-filter
+# entities — built from the tenant's own memories
 # ---------------------------------------------------------------------------
 
+# One store shared by two tenants. Mallory has written under agent_id "alice",
+# and bob under "claude-code"; mem0's GET /entities would count both against
+# whichever tenant shares that name.
+SHARED_STORE = [
+    {
+        "id": "m1",
+        "memory": "a",
+        "user_id": "alice",
+        "agent_id": "claude-code",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": None,
+    },
+    {
+        "id": "m2",
+        "memory": "b",
+        "user_id": "alice",
+        "agent_id": "claude-code",
+        "run_id": "r1",
+        "created_at": "2026-01-02T00:00:00Z",
+        "updated_at": "2026-01-05T00:00:00Z",
+    },
+    {
+        "id": "m3",
+        "memory": "c",
+        "user_id": "mallory",
+        "agent_id": "alice",
+        "created_at": "2026-01-03T00:00:00Z",
+        "updated_at": None,
+    },
+    {
+        "id": "m4",
+        "memory": "d",
+        "user_id": "bob",
+        "agent_id": "claude-code",
+        "created_at": "2026-01-04T00:00:00Z",
+        "updated_at": None,
+    },
+]
 
-@respx.mock
-async def test_entities_filters_by_user(backend):
-    respx.get(f"{BASE}/entities").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {"id": "alice", "type": "user", "total_memories": 3},
-                {"id": "bob", "type": "user", "total_memories": 5},
-            ],
+
+# What GET /entities reports for SHARED_STORE: every tenant's values, bucketed.
+SHARED_STORE_ENTITIES = [
+    {"id": "alice", "type": "agent", "total_memories": 1},
+    {"id": "claude-code", "type": "agent", "total_memories": 3},
+    {"id": "r1", "type": "run", "total_memories": 1},
+    {"id": "alice", "type": "user", "total_memories": 2},
+    {"id": "bob", "type": "user", "total_memories": 1},
+    {"id": "mallory", "type": "user", "total_memories": 1},
+]
+
+
+def _list_shared_store(request: httpx.Request) -> httpx.Response:
+    params = request.url.params
+    rows = [
+        row
+        for row in SHARED_STORE
+        if all(row.get(k) == params[k] for k in ("user_id", "agent_id", "run_id") if k in params)
+    ]
+    return httpx.Response(200, json={"results": rows})
+
+
+@pytest.fixture
+def shared_store():
+    with respx.mock:
+        global_entities = respx.get(f"{BASE}/entities").mock(
+            return_value=httpx.Response(200, json=SHARED_STORE_ENTITIES)
         )
-    )
-    result = await backend.entities(USER)
-    assert len(result.entities) == 1
-    assert result.entities[0]["id"] == "alice"
+        respx.get(f"{BASE}/memories").mock(side_effect=_list_shared_store)
+        yield global_entities
 
 
-@respx.mock
-async def test_entities_no_match_returns_empty(backend):
-    respx.get(f"{BASE}/entities").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {"id": "bob", "type": "user", "total_memories": 5},
-            ],
-        )
-    )
+async def test_entities_count_only_the_callers_memories(backend, shared_store):
     result = await backend.entities(USER)
-    assert len(result.entities) == 0
+    assert result.entities == [
+        {
+            "id": "alice",
+            "type": "user",
+            "total_memories": 2,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-05T00:00:00Z",
+        },
+        {
+            "id": "claude-code",
+            "type": "agent",
+            "total_memories": 2,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-05T00:00:00Z",
+        },
+        {
+            "id": "r1",
+            "type": "run",
+            "total_memories": 1,
+            "created_at": "2026-01-02T00:00:00Z",
+            "updated_at": "2026-01-05T00:00:00Z",
+        },
+    ]
+    assert shared_store.call_count == 0, "GET /entities mixes every tenant's values"
+
+
+async def test_entities_never_show_another_tenants_memories(backend, shared_store):
+    # A tenant whose name another tenant used as an agent_id sees none of it.
+    result = await backend.entities("claude-code")
+    assert result.entities == []
+
+
+async def test_entities_respect_scope(backend, shared_store):
+    result = await backend.entities(USER, scope={"run_id": "r1"})
+    assert [(e["type"], e["id"], e["total_memories"]) for e in result.entities] == [
+        ("user", "alice", 1),
+        ("agent", "claude-code", 1),
+        ("run", "r1", 1),
+    ]
 
 
 # ---------------------------------------------------------------------------

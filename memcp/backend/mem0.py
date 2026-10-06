@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -87,6 +88,36 @@ def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
         created_at=raw.get("created_at", ""),
         updated_at=raw.get("updated_at"),
     )
+
+
+def _timestamp(value: str | None) -> datetime:
+    """Parse a mem0 timestamp for ordering; a missing or invalid one sorts first."""
+    try:
+        parsed = datetime.fromisoformat(value or "")
+    except ValueError:
+        return datetime.min.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _entity_rows(user_id: str, memories: list[Memory]) -> list[dict[str, Any]]:
+    """Count one tenant's memories per user, agent and run, in mem0's entity row shape."""
+    groups: dict[tuple[str, str], list[Memory]] = {}
+    for memory in memories:
+        groups.setdefault(("user", user_id), []).append(memory)
+        for entity_type, key in (("agent", "agent_id"), ("run", "run_id")):
+            if memory.scope.get(key):
+                groups.setdefault((entity_type, str(memory.scope[key])), []).append(memory)
+    return [
+        {
+            "id": entity_id,
+            "type": entity_type,
+            "total_memories": len(group),
+            "created_at": min((m.created_at for m in group), key=_timestamp) or None,
+            "updated_at": max((m.updated_at or m.created_at for m in group), key=_timestamp)
+            or None,
+        }
+        for (entity_type, entity_id), group in groups.items()
+    ]
 
 
 class Mem0Backend(MemoryBackend):
@@ -336,17 +367,10 @@ class Mem0Backend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        result = await self._request("GET", "/entities")
-        raw = result if isinstance(result, list) else []
-        # mem0 /entities ignores user_id param — post-filter for tenant isolation
-        filtered = [e for e in raw if e.get("id") == user_id]
-        if raw and not filtered:
-            logger.warning(
-                "Entities post-filter returned empty for user %s (%d raw entities)",
-                user_id,
-                len(raw),
-            )
-        return EntitiesResult(entities=filtered[:limit])
+        # Not mem0's GET /entities: it counts every tenant's user, agent and run
+        # values together, so another tenant's writes would show up here.
+        listed = await self.list_memories(user_id, scope=scope, limit=LIST_CEILING)
+        return EntitiesResult(entities=_entity_rows(user_id, listed.memories)[:limit])
 
     # --- lifecycle ---
 

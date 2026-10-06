@@ -14,9 +14,9 @@ a new adapter inherits the check rather than needing its own.
 `mem0` is included when `MEM0_API_BASE`/`MEM0_API_KEY` are set (skipped otherwise —
 see `tests/test_backend_mem0.py` for the same gate). It is the one backend where
 isolation is not structural: `in_memory` and `sqlite` scope every query by `user_id`
-in the query itself, but mem0's single-ID endpoints (GET/PUT/DELETE/history) and
-`GET /entities` are global on the wire, so the adapter does fetch-then-verify and
-post-filtering instead (`memcp/backend/mem0.py`). That is a correct design and also
+in the query itself, but mem0's single-ID endpoints (GET/PUT/DELETE/history) are
+global on the wire, so the adapter does fetch-then-verify instead
+(`memcp/backend/mem0.py`). That is a correct design and also
 the kind that fails silently when one call site forgets the check — JAR-452.
 """
 
