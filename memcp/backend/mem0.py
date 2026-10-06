@@ -252,9 +252,9 @@ class Mem0Backend(MemoryBackend):
         return True
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
-        # mem0 ignores a key it doesn't filter on and the adapter drops a wildcard
-        # value, so either would widen the delete to the whole tenant; only an empty
-        # scope may ask for that. A list is not a value mem0 filters on either.
+        # mem0 ignores a key it doesn't filter on, the adapter drops a wildcard value,
+        # and httpx sends an empty list as nothing. Each would widen the delete to the
+        # whole tenant, which only an empty scope may ask for.
         if any(
             k not in self.scope_keys() or not isinstance(v, (str, int, float)) or is_wildcard(v)
             for k, v in scope.items()
