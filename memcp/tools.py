@@ -221,7 +221,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             return canonical_error(
                 "validation_error",
                 "delete_all_memories needs a concrete value for each scope key, "
-                "not an empty value or '*'.",
+                "not empty, '*' or null.",
             )
         try:
             count = await backend.delete_all(user_id, cleaned)
