@@ -252,10 +252,15 @@ class Mem0Backend(MemoryBackend):
         return True
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
-        # A dropped wildcard would widen the delete to the whole tenant; only an
-        # empty scope may ask for that.
-        if any(is_wildcard(v) for v in scope.values()):
-            raise MemoryAPIError(400, "delete_all scope values must be concrete, not empty or '*'")
+        # mem0 ignores a key it doesn't filter on and the adapter drops a wildcard
+        # value, so either would widen the delete to the whole tenant; only an empty
+        # scope may ask for that.
+        if any(k not in self.scope_keys() or is_wildcard(v) for k, v in scope.items()):
+            raise MemoryAPIError(
+                400,
+                f"delete_all scope keys must be among {self.scope_keys()}, "
+                "with values that are not empty or '*'",
+            )
         params = _build_identifier_params(user_id, scope)
         await self._request("DELETE", "/memories", params=params)
         return None  # mem0 doesn't return a count

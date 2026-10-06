@@ -7,6 +7,8 @@ error mapping, network error wrapping.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -294,9 +296,34 @@ def test_entity_rows_put_the_user_first_then_sort_by_type_and_id():
 
 @respx.mock
 async def test_scope_user_id_never_replaces_the_tenant(backend):
+    listed = respx.get(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    searched = respx.post(f"{BASE}/search").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    added = respx.post(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    scope = {"user_id": OTHER, "agent_id": "a"}
+
+    await backend.list_memories(USER, scope=scope)
+    await backend.search(USER, "q", scope=scope)
+    await backend.add(USER, "fact", scope=scope, infer=False)
+
+    assert listed.calls.last.request.url.params["user_id"] == USER
+    assert json.loads(searched.calls.last.request.content)["filters"]["user_id"] == USER
+    assert json.loads(added.calls.last.request.content)["user_id"] == USER
+
+
+@respx.mock
+@pytest.mark.parametrize("scope", [{"user_id": OTHER}, {"foo": "x"}])
+async def test_delete_all_refuses_a_key_mem0_would_ignore(backend, scope):
     route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
-    await backend.delete_all(USER, {"user_id": OTHER, "agent_id": "a"})
-    assert dict(route.calls.last.request.url.params) == {"user_id": USER, "agent_id": "a"}
+    with pytest.raises(MemoryAPIError) as exc:
+        await backend.delete_all(USER, scope)
+    assert exc.value.status == 400
+    assert route.call_count == 0
 
 
 def test_entity_rows_skip_missing_and_invalid_timestamps():

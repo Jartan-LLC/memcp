@@ -191,11 +191,9 @@ jobs:
           MEMCP_CONFORMANCE_BACKENDS: in_memory,mem0
         run: python -m memcp.conformance -q --conformance-report=conformance-report.json
 
-      # JAR-452: G7's tenant-isolation assertions and the mem0 adapter's own live
-      # tests, run against the real mem0 this job already stands up. mem0 is the one
-      # backend where isolation is not structural — its single-ID endpoints and
-      # /entities are global on the wire, so the adapter compensates in code
-      # (fetch-then-verify, post-filtering) in a way nothing else here exercises.
+      # The tenant-isolation tests and the mem0 adapter's live tests, against the mem0
+      # this job stands up. mem0's single-ID endpoints are global on the wire, so the
+      # adapter checks ownership in code, which nothing else here exercises.
       - name: Tenant isolation — mem0
         env:
           MEM0_API_BASE: http://127.0.0.1:8888
