@@ -11,8 +11,8 @@ import httpx
 import pytest
 import respx
 
-from memcp.backend.mem0 import LIST_CEILING, Mem0Backend
-from memcp.types import MemoryAPIError
+from memcp.backend.mem0 import LIST_CEILING, Mem0Backend, _entity_rows
+from memcp.types import Memory, MemoryAPIError
 
 BASE = "https://mem0.test"
 KEY = "test-key"
@@ -271,6 +271,42 @@ async def test_entities_never_show_another_tenants_memories(backend, shared_stor
     # A tenant whose name another tenant used as an agent_id sees none of it.
     result = await backend.entities("claude-code")
     assert result.entities == []
+
+
+async def test_entities_limit_keeps_the_user_row(backend, shared_store):
+    result = await backend.entities(USER, limit=1)
+    assert [(e["type"], e["id"]) for e in result.entities] == [("user", "alice")]
+
+
+def test_entity_rows_skip_missing_and_invalid_timestamps():
+    memories = [
+        Memory(id="m1", content="a", created_at="", updated_at=None),
+        Memory(id="m2", content="b", created_at="not a date", updated_at=None),
+        Memory(id="m3", content="c", created_at="2026-01-02T00:00:00Z", updated_at=None),
+    ]
+    [row] = _entity_rows(USER, memories)
+    assert row["total_memories"] == 3
+    assert (row["created_at"], row["updated_at"]) == (
+        "2026-01-02T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+    )
+
+
+@respx.mock
+@pytest.mark.parametrize("value", ["*", "", None])
+async def test_delete_all_refuses_a_value_the_adapter_would_drop(backend, value):
+    route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    with pytest.raises(MemoryAPIError) as exc:
+        await backend.delete_all(USER, {"run_id": value})
+    assert exc.value.status == 400
+    assert route.call_count == 0
+
+
+@respx.mock
+async def test_delete_all_with_no_scope_deletes_the_tenant(backend):
+    route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    await backend.delete_all(USER, {})
+    assert dict(route.calls.last.request.url.params) == {"user_id": USER}
 
 
 async def test_entities_respect_scope(backend, shared_store):

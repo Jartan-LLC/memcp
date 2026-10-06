@@ -22,6 +22,7 @@ from memcp.types import (
     ListResult,
     Memory,
     MemoryAPIError,
+    is_wildcard,
     paginate,
     reject_nested_filters,
     split_author,
@@ -40,9 +41,7 @@ LIST_CEILING = 1000
 
 def _norm(value: Any) -> Any:
     """Return None for wildcard/empty sentinels; pass through otherwise."""
-    if isinstance(value, str) and value.strip() in ("", "*"):
-        return None
-    return value
+    return None if is_wildcard(value) else value
 
 
 def _build_search_filters(
@@ -90,13 +89,18 @@ def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
     )
 
 
-def _timestamp(value: str | None) -> datetime:
-    """Parse a mem0 timestamp for ordering; a missing or invalid one sorts first."""
-    try:
-        parsed = datetime.fromisoformat(value or "")
-    except ValueError:
-        return datetime.min.replace(tzinfo=UTC)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+def _earliest_and_latest(values: list[str | None]) -> tuple[str | None, str | None]:
+    """The earliest and latest of some mem0 timestamps, skipping missing or invalid ones."""
+    dated: list[tuple[datetime, str]] = []
+    for value in values:
+        try:
+            parsed = datetime.fromisoformat(value or "")
+        except ValueError:
+            continue
+        dated.append((parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC), value or ""))
+    if not dated:
+        return None, None
+    return min(dated)[1], max(dated)[1]
 
 
 def _entity_rows(user_id: str, memories: list[Memory]) -> list[dict[str, Any]]:
@@ -107,17 +111,22 @@ def _entity_rows(user_id: str, memories: list[Memory]) -> list[dict[str, Any]]:
         for entity_type, key in (("agent", "agent_id"), ("run", "run_id")):
             if memory.scope.get(key):
                 groups.setdefault((entity_type, str(memory.scope[key])), []).append(memory)
-    return [
-        {
-            "id": entity_id,
-            "type": entity_type,
-            "total_memories": len(group),
-            "created_at": min((m.created_at for m in group), key=_timestamp) or None,
-            "updated_at": max((m.updated_at or m.created_at for m in group), key=_timestamp)
-            or None,
-        }
-        for (entity_type, entity_id), group in groups.items()
-    ]
+    rows: list[dict[str, Any]] = []
+    # The user row first, so a `limit` cuts agent and run rows before it.
+    for entity_type, entity_id in sorted(groups, key=lambda k: (k[0] != "user", k)):
+        group = groups[(entity_type, entity_id)]
+        created_at, _ = _earliest_and_latest([m.created_at for m in group])
+        _, updated_at = _earliest_and_latest([m.updated_at or m.created_at for m in group])
+        rows.append(
+            {
+                "id": entity_id,
+                "type": entity_type,
+                "total_memories": len(group),
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
+    return rows
 
 
 class Mem0Backend(MemoryBackend):
@@ -240,6 +249,10 @@ class Mem0Backend(MemoryBackend):
         return True
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
+        # A dropped wildcard would widen the delete to the whole tenant; only an
+        # empty scope may ask for that.
+        if any(is_wildcard(v) for v in scope.values()):
+            raise MemoryAPIError(400, "delete_all scope values must be concrete, not empty or '*'")
         params = _build_identifier_params(user_id, scope)
         await self._request("DELETE", "/memories", params=params)
         return None  # mem0 doesn't return a count
@@ -329,7 +342,7 @@ class Mem0Backend(MemoryBackend):
         if len(raw) >= LIST_CEILING:
             logger.warning(
                 "mem0 returned its ceiling of %d memories for user %s; anything beyond "
-                "it is not listed, so an export of this tenant is incomplete",
+                "it is not listed, exported or counted in memory_entities",
                 LIST_CEILING,
                 user_id,
             )

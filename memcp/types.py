@@ -60,6 +60,11 @@ def validate_limit(limit: int) -> None:
         raise ValueError(f"limit exceeds maximum of {MAX_LIMIT}")
 
 
+def is_wildcard(value: Any) -> bool:
+    """Whether a scope value is one the mem0 adapter drops as "any": null, empty or "*"."""
+    return value is None or (isinstance(value, str) and value.strip() in ("", "*"))
+
+
 def reject_nested_filters(d: dict[str, Any]) -> None:
     bad = _NESTED_FILTER_KEYS & set(d)
     if bad:
