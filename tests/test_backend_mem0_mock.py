@@ -278,6 +278,27 @@ async def test_entities_limit_keeps_the_user_row(backend, shared_store):
     assert [(e["type"], e["id"]) for e in result.entities] == [("user", "alice")]
 
 
+def test_entity_rows_put_the_user_first_then_sort_by_type_and_id():
+    memories = [
+        Memory(id="m1", content="a", scope={"run_id": "r2", "agent_id": "b"}),
+        Memory(id="m2", content="b", scope={"run_id": "r1", "agent_id": "a"}),
+    ]
+    assert [(e["type"], e["id"]) for e in _entity_rows(USER, memories)] == [
+        ("user", "alice"),
+        ("agent", "a"),
+        ("agent", "b"),
+        ("run", "r1"),
+        ("run", "r2"),
+    ]
+
+
+@respx.mock
+async def test_scope_user_id_never_replaces_the_tenant(backend):
+    route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    await backend.delete_all(USER, {"user_id": OTHER, "agent_id": "a"})
+    assert dict(route.calls.last.request.url.params) == {"user_id": USER, "agent_id": "a"}
+
+
 def test_entity_rows_skip_missing_and_invalid_timestamps():
     memories = [
         Memory(id="m1", content="a", created_at="", updated_at=None),

@@ -206,6 +206,7 @@ def test_static_resolver_from_env_seats_empty_token_or_seat():
         ("ok:alice", "s3cr3t-tok", "MEMCP_AUTH_SEATS entry 1"),
         ("ok:alice", "ok:one,s3cr3t-tok:", "MEMCP_AUTH_SEATS entry 2"),
         ("s3cr3t-tok:alice", "s3cr3t-tok:not a seat", "MEMCP_AUTH_SEATS entry 1"),
+        ("s3cr3t-tok/x+y=:alice", "alice:s3cr3t-tok/x+y=", "MEMCP_AUTH_SEATS entry 1"),
         ("ok:alice", "s3cr3t-tok:agent-one", "MEMCP_AUTH_SEATS entry 1"),
     ],
 )

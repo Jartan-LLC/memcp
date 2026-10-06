@@ -172,7 +172,7 @@ class StaticResolver:
                 raise ValueError(f"Empty token or seat in MEMCP_AUTH_SEATS entry {n}")
             if not _SEAT_RE.match(seat):
                 raise ValueError(
-                    f"Invalid seat label in MEMCP_AUTH_SEATS entry {n}: {seat!r}. "
+                    f"Invalid seat label in MEMCP_AUTH_SEATS entry {n}. "
                     f"Seat must match {_SEAT_RE.pattern!r}."
                 )
             if token not in mapping:

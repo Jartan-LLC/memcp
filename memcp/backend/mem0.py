@@ -44,6 +44,12 @@ def _norm(value: Any) -> Any:
     return None if is_wildcard(value) else value
 
 
+def _scope_items(scope: dict[str, Any]) -> list[tuple[str, Any]]:
+    """A scope's keys and values, minus user_id: the tenant comes from the token."""
+    reject_nested_filters(scope)
+    return [(key, val) for key, val in scope.items() if key != "user_id"]
+
+
 def _build_search_filters(
     user_id: str,
     scope: dict[str, Any] | None,
@@ -51,8 +57,7 @@ def _build_search_filters(
     """Flat filter dict for POST /search."""
     filters: dict[str, Any] = {"user_id": user_id}
     if scope:
-        reject_nested_filters(scope)
-        for key, val in scope.items():
+        for key, val in _scope_items(scope):
             val = _norm(val) if isinstance(val, str) else val
             if val is not None:
                 filters[key] = val
@@ -66,8 +71,7 @@ def _build_identifier_params(
     """Query params for GET /memories and DELETE /memories."""
     params: dict[str, Any] = {"user_id": user_id}
     if scope:
-        reject_nested_filters(scope)
-        for key, val in scope.items():
+        for key, val in _scope_items(scope):
             val = _norm(val)
             if val is not None:
                 params[key] = val
@@ -192,8 +196,7 @@ class Mem0Backend(MemoryBackend):
             "infer": infer,
         }
         if scope:
-            reject_nested_filters(scope)
-            for key, val in scope.items():
+            for key, val in _scope_items(scope):
                 normed = _norm(val)
                 if normed is not None:
                     payload[key] = normed
