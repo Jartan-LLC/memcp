@@ -215,8 +215,8 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                 "scope_required",
                 "delete_all_memories requires at least one scope key.",
             )
-        # The mem0 adapter drops such a value as "any", which would turn a scoped
-        # delete into one of every memory the tenant has.
+        # An empty, "*" or null value means "any" to mem0's adapter; refuse it here so
+        # no backend widens a scoped delete.
         if any(is_wildcard(v) for v in cleaned.values()):
             return canonical_error(
                 "validation_error",

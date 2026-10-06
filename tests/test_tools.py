@@ -283,7 +283,7 @@ async def test_delete_all_memories_user_id_stripped(mcp_with_tools):
 async def test_delete_all_memories_rejects_a_value_that_matches_anything(
     mcp_with_tools, value, others
 ):
-    """The mem0 adapter drops these as "any run", which would widen the delete."""
+    """The tool refuses these on every backend; mem0's adapter would read them as "any"."""
     mcp, _ = mcp_with_tools
     result = await mcp.call("delete_all_memories", scope={**others, "run_id": value})
     assert result["error"]["code"] == "validation_error"

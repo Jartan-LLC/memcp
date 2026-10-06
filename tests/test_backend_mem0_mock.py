@@ -170,9 +170,9 @@ async def test_update_wrong_user_raises(backend):
 # entities — built from the tenant's own memories
 # ---------------------------------------------------------------------------
 
-# One store shared by two tenants. Mallory has written under agent_id "alice",
-# and bob under "claude-code"; mem0's GET /entities would count both against
-# whichever tenant shares that name.
+# One store, three tenants. mallory writes under agent_id "alice" (a tenant's name)
+# and bob under "claude-code" (an agent alice also uses); mem0's GET /entities shows
+# mallory's write as an "alice" row and counts bob's in the "claude-code" row.
 SHARED_STORE = [
     {
         "id": "m1",

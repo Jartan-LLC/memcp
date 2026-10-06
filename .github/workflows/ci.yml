@@ -191,9 +191,8 @@ jobs:
           MEMCP_CONFORMANCE_BACKENDS: in_memory,mem0
         run: python -m memcp.conformance -q --conformance-report=conformance-report.json
 
-      # The tenant-isolation tests and the mem0 adapter's live tests, against the mem0
-      # this job stands up. mem0's single-ID endpoints are global on the wire, so the
-      # adapter checks ownership in code, which nothing else here exercises.
+      # Both files skip unless MEM0_API_BASE and MEM0_API_KEY are set, so their mem0
+      # cases run only here.
       - name: Tenant isolation — mem0
         env:
           MEM0_API_BASE: http://127.0.0.1:8888

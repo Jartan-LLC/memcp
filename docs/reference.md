@@ -86,7 +86,7 @@ pre-existing row will read as attributed when it never was.
 - List endpoint does not paginate server-side — full dataset loaded per request
 - List returns at most 1000 memories per call (mem0's own ceiling), so an export of a tenant above that is incomplete and does not say so
 - List endpoint does not filter by metadata
-- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, up to the same 1000
+- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, at most 1000 (the list ceiling)
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 - `memory_history` entries carry `author: null` for every event — mem0's history log is entirely upstream-managed and has no field to record it in. A memory's current `author` (from `search_memory`, `get_memory`, `list_memories`) is unaffected; only the event-by-event trail cannot be attributed
 

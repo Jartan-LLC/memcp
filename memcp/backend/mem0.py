@@ -45,7 +45,7 @@ def _norm(value: Any) -> Any:
 
 
 def _scope_items(scope: dict[str, Any]) -> list[tuple[str, Any]]:
-    """A scope's keys and values, minus user_id: the tenant comes from the token."""
+    """A scope's keys and values minus user_id, which comes from the token; raises on nesting."""
     reject_nested_filters(scope)
     return [(key, val) for key, val in scope.items() if key != "user_id"]
 
@@ -253,8 +253,8 @@ class Mem0Backend(MemoryBackend):
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
         # mem0 ignores a key it doesn't filter on, the adapter drops a wildcard value,
-        # and httpx sends an empty list as nothing. Each would widen the delete to the
-        # whole tenant, which only an empty scope may ask for.
+        # and httpx sends an empty list as nothing. Each widens the delete past the
+        # scope asked for; only an empty scope may reach the whole tenant.
         if any(
             k not in self.scope_keys() or not isinstance(v, (str, int, float)) or is_wildcard(v)
             for k, v in scope.items()
@@ -353,7 +353,7 @@ class Mem0Backend(MemoryBackend):
         if len(raw) >= LIST_CEILING:
             logger.warning(
                 "mem0 returned its ceiling of %d memories for user %s; anything beyond "
-                "it is not listed, exported or counted in memory_entities",
+                "it is missing from list, export, import dedup and memory_entities",
                 LIST_CEILING,
                 user_id,
             )
