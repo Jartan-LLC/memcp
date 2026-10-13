@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -11,15 +12,21 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 TAKES_LATEST = REPO_ROOT / ".github" / "scripts" / "takes-latest.sh"
 
 
+# A developer's global git config (tag signing, hooks) must not reach the scratch repos.
+GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull}
+
+
 def _takes_latest(repo: Path, tag: str) -> str:
-    out = subprocess.run([TAKES_LATEST, tag], cwd=repo, capture_output=True, text=True, check=True)
+    out = subprocess.run(
+        [TAKES_LATEST, tag], cwd=repo, capture_output=True, text=True, check=True, env=GIT_ENV
+    )
     return out.stdout.strip()
 
 
 @pytest.fixture
 def tagged_repo(tmp_path: Path) -> Path:
     def git(*args: str) -> None:
-        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, env=GIT_ENV)
 
     git("init", "-q")
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x")
@@ -42,5 +49,5 @@ def test_only_the_highest_stable_tag_takes_latest(tagged_repo: Path, tag: str, e
 
 
 def test_no_stable_tag_answers_false(tmp_path: Path):
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=GIT_ENV)
     assert _takes_latest(tmp_path, "v0.1.0rc1") == "false"

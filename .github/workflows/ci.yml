@@ -255,6 +255,12 @@ jobs:
         run: |
           cp .env.example .env
           sed -i 's/^MEMCP_AUTH_TOKENS=.*/MEMCP_AUTH_TOKENS=ci-token:ci-user/' .env
+          for required in MEMCP_BACKEND MEMCP_AUTH_TOKENS; do
+            grep -v "^$required=" .env > env.partial
+            if docker compose --env-file env.partial config -q 2>/dev/null; then
+              echo "docker-compose.yml accepted a missing $required"; exit 1
+            fi
+          done
           docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
           init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
           mcp() {

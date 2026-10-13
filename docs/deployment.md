@@ -54,14 +54,37 @@ memcp supports mem0's REST server at release v2.2.1, built from mem0's source.
    git clone --depth 1 --branch v2.2.1 https://github.com/mem0ai/mem0.git
    ```
 
-2. In `mem0/server`, set it up and start it with mem0's
-   [Self-Hosted Setup](https://docs.mem0.ai/open-source/setup) guide. In its `.env`, also
-   set `ADMIN_API_KEY` to a long random value (`openssl rand -hex 32`): memcp
-   authenticates with it, and deleting all of a scope's memories needs the admin key.
-3. mem0's compose file publishes the API (port 8888) and Postgres (port 8432) on every
-   interface. Keep clients off both, with a firewall or by removing those `ports:`
-   entries once setup is done: memcp enforces tenant isolation, and mem0 doesn't.
-4. In the memcp directory, create `docker-compose.override.yml` to join mem0's network:
+2. In `mem0/server`, create `.env` as in the "Configure the environment" step of mem0's
+   [Self-Hosted Setup](https://docs.mem0.ai/open-source/setup) guide. Also set
+   `ADMIN_API_KEY` to a long random value (`openssl rand -hex 32`): memcp authenticates
+   with it, and deleting all of a scope's memories needs the admin key.
+3. mem0's compose file publishes its API, dashboard and Postgres on every interface, and
+   a host firewall such as ufw doesn't filter Docker's published ports. In `mem0/server`,
+   create `docker-compose.override.yaml` to keep them on this machine and restart them
+   after a reboot:
+
+   ```yaml
+   services:
+     mem0:
+       ports: !override
+         - "127.0.0.1:8888:8000"
+       restart: unless-stopped
+     mem0-dashboard:
+       ports: !override
+         - "127.0.0.1:3000:3000"
+       restart: unless-stopped
+     postgres:
+       ports: !reset []
+       restart: unless-stopped
+   ```
+
+4. Start mem0 and create its admin account, which closes its open sign-up:
+
+   ```bash
+   make bootstrap
+   ```
+
+5. In the memcp directory, create `docker-compose.override.yml` to join mem0's network:
 
    ```yaml
    services:
@@ -73,7 +96,7 @@ memcp supports mem0's REST server at release v2.2.1, built from mem0's source.
        external: true
    ```
 
-5. In memcp's `.env`, set:
+6. In memcp's `.env`, set:
 
    ```text
    MEMCP_BACKEND=mem0
@@ -134,7 +157,8 @@ survives a restart.
 
 The compose file runs the latest release. To stay on one, name it in
 `docker-compose.override.yml`, using a version from
-[Releases](https://github.com/Jartan-LLC/memcp/releases):
+[Releases](https://github.com/Jartan-LLC/memcp/releases) without its leading `v` (for
+example `0.2.0`):
 
 ```yaml
 services:
@@ -150,7 +174,9 @@ When a proxy or platform (Traefik, Caddy, nginx, Dokploy, Coolify) routes to mem
    `MEMCP_ALLOWED_HOSTS=memory.example.com`. It replaces the compose file's default,
    which admits only `127.0.0.1` and `localhost`.
 2. If the proxy runs in Docker, add to `docker-compose.override.yml`, naming the
-   proxy's network (`!reset` needs Compose 2.24 or later):
+   proxy's network (`!reset` needs Compose 2.24 or later). If the file already has a
+   `memcp` service, as with mem0, merge into it: one `memcp` entry, with every network in
+   its `networks:` list and each network declared once under the top-level `networks:`.
 
    ```yaml
    services:

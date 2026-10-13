@@ -28,9 +28,8 @@ inputs change. Everything but the advisory audit must pass before merge.
 
 ## Run memcp from a checkout
 
-`docker-compose.build.yml` builds the image from the working tree instead of pulling a
-release. It runs as its own Compose project, `memcp-checkout`, so it leaves a release
-deployment's container and memories alone, but it uses the same port.
+`docker-compose.build.yml` builds the image from the working tree. It uses the same port
+as a release deployment.
 
 1. Stop any running release deployment.
 2. Create `.env`:
