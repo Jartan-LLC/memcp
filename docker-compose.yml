@@ -12,7 +12,7 @@ services:
     env_file:
       - .env
     environment:
-      MEMCP_BACKEND: ${MEMCP_BACKEND:-sqlite}
+      MEMCP_BACKEND: ${MEMCP_BACKEND:?set MEMCP_BACKEND in .env}
       MEMCP_SQLITE_PATH: /data/memcp.sqlite3
       MEMCP_HOST: 0.0.0.0
       MEMCP_PORT: "8080"

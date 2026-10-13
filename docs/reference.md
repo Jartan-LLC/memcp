@@ -14,7 +14,7 @@ mid-task rather than read through. For getting a deployment running, see
 
 | Variable | Required | Description |
 |---|---|---|
-| `MEMCP_BACKEND` | No | Backend for the server itself: `mem0`, `sqlite` or `in_memory`. Defaults to `mem0` when you run the server directly; `docker-compose.yml` defaults it to `sqlite` |
+| `MEMCP_BACKEND` | Yes | Backend: `mem0`, `sqlite` or `in_memory`. memcp refuses to start without it |
 | `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |

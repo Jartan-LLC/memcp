@@ -229,6 +229,7 @@ jobs:
       - name: Verify container starts and health endpoint responds
         run: |
           docker run -d --name memcp-ci \
+            -e MEMCP_BACKEND=mem0 \
             -e MEM0_API_BASE=http://localhost:9999 \
             -e MEM0_API_KEY=fake \
             -e MEMCP_AUTH_TOKENS=ci-token:ci-user \

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def serve() -> None:
     try:
-        config = Config()
+        config = Config()  # pyright: ignore[reportCallIssue]  # fields come from the environment
     except ValidationError as e:
         print(f"Configuration error:\n{e}", file=sys.stderr)
         raise SystemExit(1) from None

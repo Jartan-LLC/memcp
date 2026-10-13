@@ -29,9 +29,7 @@ class Config(BaseSettings):
 
     model_config = {"env_prefix": "", "populate_by_name": True}
 
-    memcp_backend: Literal["mem0", "in_memory", "sqlite"] = Field(
-        default="mem0", alias="MEMCP_BACKEND"
-    )
+    memcp_backend: Literal["mem0", "in_memory", "sqlite"] = Field(alias="MEMCP_BACKEND")
 
     # mem0 backend config (required when MEMCP_BACKEND=mem0)
     mem0_api_base: str | None = None
