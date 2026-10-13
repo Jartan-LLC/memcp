@@ -1,4 +1,4 @@
-"""Cross-backend round trip, asserted against the losses docs/reference.md lists.
+"""Cross-backend round trip, asserted against the losses a migration is allowed.
 
 Writes the corpus into the source, migrates it, and checks per memory that content
 and scope survived and that the query which found it in the source still finds it
@@ -23,7 +23,8 @@ SEARCH_LIMIT = 3
 LIST_LIMIT = 200
 
 # Import calls add() on the target, which mints a new id and timestamps, and export
-# carries current content only, not the change log.
+# carries current content only, not the change log. docs/reference.md lists these, plus
+# `author`, which the corpus doesn't set (tests/test_attribution.py covers it).
 LOSSES = frozenset({"memory_id", "created_at", "updated_at", "history"})
 
 

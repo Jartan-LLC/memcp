@@ -58,8 +58,8 @@ local one first ([tests/mem0/README.md](tests/mem0/README.md)).
 A new backend needs an entry in each of:
 
 - `BACKENDS` and `_open` in `tests/conformance/conftest.py`
-- `BACKEND_PARAMS` in `tests/test_tenant_isolation.py`
-- `EXPECTED_TOOLS` in `tests/test_tool_surface.py`
+- `BACKEND_PARAMS` and `_config` in `tests/test_tenant_isolation.py`
+- `EXPECTED_TOOLS` and the `builders` in `_registered_tools` in `tests/test_tool_surface.py`
 
 ## Conventions
 

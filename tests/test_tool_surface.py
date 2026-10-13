@@ -85,7 +85,7 @@ EXPECTED_TOOLS: dict[str, set[str]] = {
         "export_memories",
         "import_memories",
     },
-    # The one with a knowledge graph: all twelve.
+    # The one with a knowledge graph: every tool.
     "mem0": UNIVERSAL_TOOLS
     | {
         "get_memory",

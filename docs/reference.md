@@ -107,7 +107,8 @@ pre-existing row will read as attributed when it never was.
 ## Moving memories between backends
 
 `export_memories` and `import_memories` move a tenant's memories from one backend to
-another. Content, scope and metadata survive. These do not, for any pair of backends:
+another; `import_memories` takes at most 1,000 memories per call. Content, scope and
+metadata survive. These do not, for any pair of backends:
 
 | Lost | Why |
 |---|---|
