@@ -16,13 +16,23 @@ tests/mem0/down.sh
 | Service | What it is |
 | --- | --- |
 | `postgres` | `pgvector/pgvector:pg17` — mem0's real vector store and app database |
-| `fake-openai` | A standard-library server serving `/v1/embeddings` and `/v1/chat/completions` |
-| `mem0` | mem0's REST server, built from `mem0ai/mem0` at the SHA in `mem0.pin`, with the `mem0ai` engine pinned to that commit's version |
+| `fake-openai` | A small standard-library stand-in for OpenAI's `/v1/embeddings` and `/v1/chat/completions` |
+| `mem0` | mem0's REST server, built from `mem0ai/mem0` at the SHA in `mem0.pin`, with the `mem0ai` package pinned to the version that commit's `pyproject.toml` declares |
 
-mem0 is pinned rather than tracked: an upstream push should not turn this repository's
-`main` red without a commit here. To move it, set `mem0.pin` to a release tag's commit,
-and expect the conformance suite to tell you whether it still honours the adapter's
-contract.
+mem0 is pinned rather than tracked, so an upstream push can't turn this repository's
+`main` red without a commit here.
+
+## Moving the pin
+
+1. Get the release's commit:
+
+   ```bash
+   git ls-remote https://github.com/mem0ai/mem0.git refs/tags/vX.Y.Z
+   ```
+
+2. Put that SHA in `mem0.pin`.
+3. Run the commands at the top of this file; the conformance suite says whether the
+   release still honours the adapter's contract.
 
 ## What it proves, and what it does not
 

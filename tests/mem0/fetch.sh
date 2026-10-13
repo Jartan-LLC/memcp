@@ -18,14 +18,14 @@ git -C .mem0 checkout --force "$pin"
 
 engine="$(sed -n '/^\[project\]$/,/^\[/s/^version = "\(.*\)"$/\1/p' .mem0/pyproject.toml)"
 if [ -z "$engine" ]; then
-  echo "no version in .mem0/pyproject.toml at $pin" >&2
+  echo "no [project] version in .mem0/pyproject.toml at $pin, so the mem0ai engine can't be pinned" >&2
   exit 1
 fi
 reqs=.mem0/server/requirements.txt
 sed "s/^mem0ai>=.*/mem0ai==$engine/" "$reqs" > "$reqs.tmp"
 mv "$reqs.tmp" "$reqs"
 if ! grep -qx "mem0ai==$engine" "$reqs"; then
-  echo "could not pin mem0ai in $reqs: its mem0ai line changed upstream" >&2
+  echo "no 'mem0ai>=' line to pin in $reqs at $pin" >&2
   exit 1
 fi
 echo "mem0 checked out at $pin, engine mem0ai==$engine"
