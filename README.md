@@ -14,8 +14,8 @@ Needs Docker. memcp runs on `127.0.0.1:8080` with the `sqlite` backend.
 
 ```bash
 mkdir memcp && cd memcp &&
-  curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml &&
-  curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example &&
+  curl -fsSLO https://raw.githubusercontent.com/Jartan-LLC/memcp/main/docker-compose.yml &&
+  curl -fsSL -o .env https://raw.githubusercontent.com/Jartan-LLC/memcp/main/.env.example &&
   chmod 600 .env &&
   openssl rand -hex 32
 ```

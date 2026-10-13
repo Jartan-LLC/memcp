@@ -1,4 +1,4 @@
-"""Inputs to publish-docker.yml: the stable-tag rule and the compose line `attach` rewrites."""
+"""The rule publish-docker.yml uses to decide which tag takes `:latest`."""
 
 from __future__ import annotations
 
@@ -44,9 +44,3 @@ def test_only_the_highest_stable_tag_takes_latest(tagged_repo: Path, tag: str, e
 def test_no_stable_tag_answers_false(tmp_path: Path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     assert _takes_latest(tmp_path, "v0.1.0rc1") == "false"
-
-
-def test_compose_image_line_matches_the_release_rewrite():
-    """publish-docker.yml's attach job rewrites this exact text to the release's version."""
-    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    assert compose.count("${MEMCP_VERSION:-latest}") == 1

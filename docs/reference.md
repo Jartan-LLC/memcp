@@ -23,7 +23,6 @@ mid-task rather than read through. For getting a deployment running, see
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
 | `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. Unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
-| `MEMCP_VERSION` | No | Release `docker-compose.yml` runs, 0.2.0 or later (default: the release the compose file came from). Read by Compose, not the server |
 | `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
 | `MEMCP_LOG_FORMAT` | No | Log format: `json` or `plain` (default: `json`) |
 

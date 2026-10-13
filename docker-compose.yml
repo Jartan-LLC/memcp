@@ -1,13 +1,12 @@
-# memcp with the sqlite backend: durable, no API key, no other service.
-# Set MEMCP_AUTH_TOKENS in .env, then run `docker compose up -d --wait`.
-# MEMCP_VERSION in .env picks another release, 0.2.0 or later.
+# memcp, running the latest release. Set MEMCP_BACKEND and MEMCP_AUTH_TOKENS in .env,
+# then run `docker compose up -d --wait`.
 # Guide: https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md
 
 name: memcp
 
 services:
   memcp:
-    image: ghcr.io/jartan-llc/memcp:${MEMCP_VERSION:-latest}
+    image: ghcr.io/jartan-llc/memcp:latest
     restart: unless-stopped
     env_file:
       - .env

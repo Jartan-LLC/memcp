@@ -18,17 +18,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      # No checkout: gh resolves the repo from GH_REPO. The view-or-create guard keeps re-runs
-      # on the same tag idempotent instead of failing with "release already exists".
-      # publish-docker.yml marks the release latest once its image is published.
+      # No checkout needed: gh talks to the API and resolves the repo from
+      # GH_REPO. The view-or-create guard keeps re-runs on the same tag
+      # idempotent instead of failing with "release already exists".
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          # Stable means vX.Y.Z, the same rule as .github/scripts/takes-latest.sh.
-          prerelease=()
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || prerelease=(--prerelease)
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag \
-              --latest=false "${prerelease[@]}"
+            || gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
