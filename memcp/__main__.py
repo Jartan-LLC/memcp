@@ -1,4 +1,7 @@
-"""python -m memcp entrypoint: runs the MCP server, configured from the environment."""
+"""Entrypoint for `memcp` and `python -m memcp`.
+
+Runs the MCP server, configured from the environment.
+"""
 
 from __future__ import annotations
 

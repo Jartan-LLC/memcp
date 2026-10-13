@@ -1,4 +1,4 @@
-"""`python -m memcp` is the Docker image's entrypoint: it must start the server."""
+"""`memcp` and `python -m memcp` (the Docker image's entrypoint) must start the server."""
 
 from __future__ import annotations
 

@@ -44,7 +44,7 @@ restart.
 | Stop and delete memories | `docker compose down --volumes` |
 | Replace a token | Edit `MEMCP_AUTH_TOKENS` in `.env`, then `docker compose up -d --wait` |
 
-## Upgrade
+## Upgrade a Compose deployment
 
 1. In the memcp directory, download the new compose file:
 
@@ -78,7 +78,7 @@ restart.
 
 To use mem0:
 
-1. Run mem0 in Docker, on a network only memcp joins.
+1. Run mem0 in Docker, on a network that only mem0, its own services and memcp join.
 2. Create `docker-compose.override.yml` beside `docker-compose.yml`, naming mem0's
    network:
 
@@ -93,8 +93,8 @@ To use mem0:
    ```
 
 3. In `.env`, set `MEMCP_BACKEND=mem0`, `MEM0_API_KEY`, and `MEM0_API_BASE` to mem0's
-   address on that network (memcp resolves it from inside its container, where
-   `localhost` is memcp itself).
+   address on that network, such as `http://<mem0-container>:<port>` (memcp resolves it
+   from inside its container, where `localhost` is memcp itself).
 4. Apply it with `docker compose up -d --wait`.
 
 ### What `sqlite` doesn't do
@@ -149,7 +149,7 @@ list, comma-separated.
 - **Host headers are checked.** Only the loopback names are admitted unless
   `MEMCP_ALLOWED_HOSTS` says otherwise.
 
-## Running without Docker
+## Run memcp without Docker
 
 ```bash
 pipx install memcp-server
@@ -159,7 +159,7 @@ MEMCP_BACKEND=sqlite MEMCP_SQLITE_PATH="$HOME/.memcp/memcp.sqlite3" MEMCP_HOST=1
 The server listens on `http://localhost:8080`. [reference.md](reference.md) lists every
 variable.
 
-## Running a checkout
+## Run memcp from a checkout
 
 From a clone, `docker-compose.build.yml` builds the image from the working tree instead
 of pulling a release. It runs as its own Compose project, `memcp-checkout`, so it leaves a

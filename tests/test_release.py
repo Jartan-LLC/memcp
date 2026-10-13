@@ -1,4 +1,4 @@
-"""The release job's inputs: the stable-tag rule and the compose line it rewrites."""
+"""Inputs to publish-docker.yml: the stable-tag rule and the compose line `attach` rewrites."""
 
 from __future__ import annotations
 

@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      # gh resolves the repo from GH_REPO. The view-or-create guard keeps re-runs
+      # No checkout: gh resolves the repo from GH_REPO. The view-or-create guard keeps re-runs
       # on the same tag idempotent instead of failing with "release already exists".
       # publish-docker.yml marks the release latest once its image is published.
       - name: Create GitHub Release
