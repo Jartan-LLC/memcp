@@ -8,69 +8,36 @@
 Backend-agnostic, multi-tenant MCP memory server. AI clients connect and get
 persistent long-term memory over streamable HTTP.
 
-One command provisions the memory backend too — you do not stand up a memory engine
-first and then wire memcp to it.
-
 ## Quickstart
 
 ```bash
-pipx install memcp-server
-memcp up
+curl -fsSLO https://raw.githubusercontent.com/Jartan-LLC/memcp/main/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/Jartan-LLC/memcp/main/.env.example
+# In .env, set MEMCP_AUTH_TOKENS=<token>:<your-name>; generate a token with
+#   python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+docker compose up -d --wait
 ```
 
-Needs Docker and nothing else. It creates the stack, waits until it is healthy,
-prints a bearer token once, and prints the MCP client snippet containing it.
+Needs Docker. memcp runs on `127.0.0.1:8080` with the `sqlite` backend.
 
-### Time to first memory
-
-| Backend | Up and healthy | Then store + retrieve one memory | Total |
-|---|---|---|---|
-| `sqlite` (default) | 18.3–19.1s | 0.11s | **18.4s, 18.5s, 19.2s** across three runs |
-| `mem0` | 54–56s | 2.4–3.1s | 56–59s |
-
-Measured from `memcp up` starting to `add_memory` then `search_memory` both
-succeeding over MCP, on a clean GitHub-hosted runner with an empty image cache.
-Nearly all of it is building and starting containers: `mem0` is slower because it
-builds mem0 from source and starts pgvector beside it. The `provision` job runs this
-on every pull request and publishes `TIME_TO_FIRST_MEMORY_SECONDS` to its summary, so
-these are numbers this repository ran rather than ones it estimated.
-
-**No account, no API key.** The default backend is `sqlite`. Memories go to a file on
-disk and survive a restart. Search is keyword matching, so it finds a memory when your
-question reuses its words and misses one phrased differently, and it stores what you
-give it word for word instead of pulling facts out of it. Semantic search and the
-knowledge graph need mem0 and a key. A client does not have to guess which it is
-talking to: `memory_status` says.
-
-```bash
-memcp plan          # everything it will create, before it creates any of it
-memcp up --smoke    # create it, then store and retrieve one memory over MCP
-memcp down          # stop it, keep the memories
-```
+**No account, no API key.** Memories go to a file on disk and survive a restart.
+Search is keyword matching, so it finds a memory when your question reuses its words
+and misses one phrased differently, and it stores what you give it word for word
+instead of pulling facts out of it. Semantic search and the knowledge graph need mem0
+and a key. A client does not have to guess which it is talking to: `memory_status`
+says.
 
 ## Connect from Claude Code
 
-Add to your MCP settings (Claude Code → Settings → MCP Servers):
+Add to your MCP settings (Claude Code → Settings → MCP Servers), with the token from
+`.env`:
 
 ```json
 {
   "mcpServers": {
     "memcp": {
       "type": "streamable-http",
-      "url": "http://localhost:8080/mcp"
-    }
-  }
-}
-```
-
-For an authenticated deployment, add the token `memcp up` printed:
-
-```json
-{
-  "mcpServers": {
-    "memcp": {
-      "type": "streamable-http",
-      "url": "https://your-host/mcp",
+      "url": "http://localhost:8080/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN"
       }
@@ -78,6 +45,9 @@ For an authenticated deployment, add the token `memcp up` printed:
   }
 }
 ```
+
+Behind a reverse proxy, the URL is `https://<your-host>/mcp`. A server run on loopback
+without `MEMCP_AUTH_TOKENS` takes no `headers`.
 
 ## Try it
 
@@ -96,7 +66,6 @@ find it. `mem0` is the backend that matches on meaning.
 
 ## What it does
 
-- One-command deployment that provisions memcp **and** its memory backend
 - Durable, keyless local storage (`sqlite`), or mem0 on pgvector for semantic search and a knowledge graph
 - Add, search, list, update and delete memories over MCP — 12 tools, frozen surface
 - Flat scope-based filtering (`agent_id`, `run_id`)
@@ -107,7 +76,7 @@ find it. `mem0` is the backend that matches on meaning.
 
 | Document | What it covers |
 |---|---|
-| [deployment.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md) | `memcp up` in full — backends, the mem0 stack, credentials, running behind a platform that routes into the container, and running the server without provisioning at all |
+| [deployment.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md) | Running memcp with Docker Compose — backends, tokens, reverse proxies, and running the server without Docker |
 | [reference.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md) | Environment variables, the 12 MCP tools, and known limitations per backend |
 | [conformance.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/conformance.md) | Holding a `MemoryBackend` to the suite, including one in another repository |
 | [CONTRIBUTING.md](https://github.com/Jartan-LLC/memcp/blob/main/CONTRIBUTING.md) | Working on memcp itself — setup and the check loop |

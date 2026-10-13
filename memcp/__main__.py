@@ -1,9 +1,4 @@
-"""python -m memcp entrypoint.
-
-With no subcommand, or with `serve`, this runs the MCP server — unchanged, so the
-Docker image's entrypoint and every existing deployment keep working. The
-provisioning subcommands live in memcp.deploy and never run inside the server.
-"""
+"""python -m memcp entrypoint: runs the MCP server, configured from the environment."""
 
 from __future__ import annotations
 
@@ -18,8 +13,6 @@ from memcp.logging import setup_logging
 from memcp.server import create_app
 
 logger = logging.getLogger(__name__)
-
-DEPLOY_COMMANDS = ("up", "down", "plan", "status", "verify", "rotate-token")
 
 
 def serve() -> None:
@@ -52,18 +45,10 @@ def serve() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     args = sys.argv[1:] if argv is None else argv
-    first = args[0] if args else ""
-
-    if first in DEPLOY_COMMANDS or first in ("-h", "--help"):
-        from memcp.deploy.cli import main as deploy_main
-
-        raise SystemExit(deploy_main(args))
-    if first == "serve":
-        args = args[1:]
     if args:
         print(
-            f"Unknown argument: {args[0]!r}. Run `memcp --help` for the commands this "
-            "supports; the server itself is configured through environment variables.",
+            f"Unknown argument: {args[0]!r}. memcp takes no arguments; it is configured "
+            "through environment variables (docs/reference.md).",
             file=sys.stderr,
         )
         raise SystemExit(2)

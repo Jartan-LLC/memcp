@@ -1,7 +1,6 @@
 """SQLite backend — durable local storage with no API key and no signup.
 
-This is the keyless half of memcp's position: `memcp up` reaches a backend that
-survives a restart without anyone holding an LLM provider account. It stores the
+It survives a restart without anyone holding an LLM provider account. It stores the
 same shapes `in_memory` does, in a file, so the two are interchangeable and the
 round trip between them loses nothing but identity.
 

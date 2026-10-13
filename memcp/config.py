@@ -119,8 +119,7 @@ class Config(BaseSettings):
                 "machines and MEMCP_AUTH_TOKENS is unset, so every request would be "
                 "served as one unauthenticated tenant.\n"
                 "  Set MEMCP_AUTH_TOKENS=<token>:<user_id> to serve it authenticated, "
-                "or MEMCP_HOST=127.0.0.1 to keep it on this machine.\n"
-                "  `memcp up` mints a token for you and does neither by accident."
+                "or MEMCP_HOST=127.0.0.1 to keep it on this machine."
             )
         return self
 

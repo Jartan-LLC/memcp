@@ -1,0 +1,12 @@
+# Runs the code in this checkout instead of a release:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
+#
+# Its own image name keeps the build from replacing a pulled release under the
+# release's tag, and `pull_policy: build` keeps compose from reusing a stale local image.
+
+services:
+  memcp:
+    image: memcp:checkout
+    build: .
+    pull_policy: build

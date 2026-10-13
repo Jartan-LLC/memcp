@@ -6,15 +6,15 @@ mid-task rather than read through. For getting a deployment running, see
 
 ## Requirements
 
-- Docker, for `memcp up`
+- Docker, for `docker-compose.yml`
 - Python 3.12+, to run the server directly
-- For `MEMCP_BACKEND=mem0`: a running [mem0](https://github.com/mem0ai/mem0) instance — or let `memcp up --backend mem0` provision one
+- For `MEMCP_BACKEND=mem0`: a running [mem0](https://github.com/mem0ai/mem0) instance
 
 ## Environment variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `MEMCP_BACKEND` | No | Backend for the server itself: `mem0`, `sqlite` or `in_memory`. Defaults to `mem0` when you run the server directly; `memcp up` provisions `sqlite` unless you pass `--backend` |
+| `MEMCP_BACKEND` | No | Backend for the server itself: `mem0`, `sqlite` or `in_memory`. Defaults to `mem0` when you run the server directly; `docker-compose.yml` sets `sqlite` |
 | `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
@@ -109,6 +109,6 @@ in [portability.md](portability.md) and asserted against.
 
 ## See also
 
-- [deployment.md](deployment.md) — `memcp up`, backends, credentials, reverse proxies
+- [deployment.md](deployment.md) — Docker Compose, backends, tokens, reverse proxies
 - [conformance.md](conformance.md) — holding a backend to the suite, in this repository or out of it
 - [tests/mem0/README.md](../tests/mem0/README.md) — the conformance run against a real mem0
