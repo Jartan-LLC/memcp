@@ -16,8 +16,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: ghcr
-    outputs:
-      latest: ${{ steps.latest.outputs.take }}
     env:
       IMAGE_NAME: "" # set (lowercased) by the "Compute lowercase image name" step
     permissions:
@@ -52,14 +50,10 @@ jobs:
       - name: Decide whether this tag takes `latest`
         id: latest
         run: |
-          version="${GITHUB_REF#refs/tags/v}"
-          # sort -V orders 1.0.0 before 1.0.0-rc1, so drop pre-releases first.
-          highest="$(git tag -l 'v*' | sed 's/^v//' | grep -v -- '-' | sort -V | tail -1)"
-          if [ "$version" = "$highest" ]; then
-            echo "take=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "take=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::v$version is not the highest release (v$highest); leaving :latest alone"
+          take="$(.github/scripts/takes-latest.sh "$GITHUB_REF_NAME")"
+          echo "take=$take" >> "$GITHUB_OUTPUT"
+          if [ "$take" = false ]; then
+            echo "::notice::$GITHUB_REF_NAME is not the highest stable release; leaving :latest alone"
           fi
 
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -102,13 +96,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # takes-latest.sh compares against every tag
 
+      # Pre-releases get no attachments: the docs never download them, and a
+      # non-semver tag like 1.0.0rc1 gets no matching image tag from metadata-action.
+      # takes-latest.sh runs here rather than reusing publish's answer, so a re-run
+      # after a newer release can't move the latest release backwards.
       - name: Attach the compose file and environment template
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAKE_LATEST: ${{ needs.publish.outputs.latest }}
         run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::$GITHUB_REF_NAME is a pre-release; nothing to attach"
+            exit 0
+          fi
           version="${GITHUB_REF_NAME#v}"
           sed "s/\${MEMCP_VERSION:-latest}/\${MEMCP_VERSION:-$version}/" docker-compose.yml \
             > "$RUNNER_TEMP/docker-compose.yml"
@@ -116,4 +118,6 @@ jobs:
           cp .env.example "$RUNNER_TEMP/env.example"
           gh release upload "$GITHUB_REF_NAME" --clobber \
             "$RUNNER_TEMP/docker-compose.yml" "$RUNNER_TEMP/env.example"
-          if [ "$TAKE_LATEST" = true ]; then gh release edit "$GITHUB_REF_NAME" --latest; fi
+          if [ "$(.github/scripts/takes-latest.sh "$GITHUB_REF_NAME")" = true ]; then
+            gh release edit "$GITHUB_REF_NAME" --latest
+          fi

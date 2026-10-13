@@ -27,7 +27,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           prerelease=()
-          case "$GITHUB_REF_NAME" in *-*) prerelease=(--prerelease) ;; esac
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || prerelease=(--prerelease)
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag \
               --latest=false "${prerelease[@]}"

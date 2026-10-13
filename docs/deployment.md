@@ -1,8 +1,8 @@
 # Deployment
 
 memcp ships as a Docker image, `ghcr.io/jartan-llc/memcp`, and as the `memcp-server`
-package on PyPI. The repository's `docker-compose.yml` runs the image with the `sqlite`
-backend: one container, one database file, no API key.
+package on PyPI. Each release's `docker-compose.yml` runs that release's image with the
+`sqlite` backend: one container, one database file, no API key.
 
 ## Run it with Docker Compose
 
@@ -11,6 +11,7 @@ backend: one container, one database file, no API key.
    ```bash
    curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
    curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example
+   chmod 600 .env
    ```
 
 2. Generate a token:
@@ -35,12 +36,32 @@ restart.
 
 | Task | Command |
 |---|---|
-| Upgrade | Download the new release's `docker-compose.yml` (step 1, first command) and add any new settings from its `env.example` to `.env`, then `docker compose up -d --wait`. With `MEMCP_VERSION` set, change that instead. |
 | Run a different release | Set `MEMCP_VERSION=<version>` in `.env`, 0.2.0 or later |
 | Change the compose settings | Put the changes in `docker-compose.override.yml`, which an upgrade doesn't overwrite |
 | Stop, keeping memories | `docker compose down` |
 | Stop and delete memories | `docker compose down --volumes` |
 | Replace a token | Edit `MEMCP_AUTH_TOKENS` in `.env`, then `docker compose up -d --wait` |
+
+## Upgrade
+
+1. Download the new compose file:
+
+   ```bash
+   curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
+   ```
+
+2. List settings the new template has that `.env` lacks, and add the ones you need:
+
+   ```bash
+   curl -fsSL https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example | diff .env -
+   ```
+
+3. If `.env` sets `MEMCP_VERSION`, change it to the new version or remove it.
+4. Restart:
+
+   ```bash
+   docker compose up -d --wait
+   ```
 
 ## Backends
 
@@ -94,7 +115,8 @@ When a proxy or platform (Traefik, Caddy, nginx, Dokploy, Coolify) routes to mem
 **A 421 response ("Invalid Host header")** means the Host header the request arrived
 with isn't in `MEMCP_ALLOWED_HOSTS`. Some proxies rewrite it to the upstream address
 (nginx's `proxy_set_header Host $proxy_host` does; Traefik doesn't), so requests arrive
-as `memcp:8080`. Add that name to the list, comma-separated.
+as `memcp:8080`, or `127.0.0.1:8080` from a proxy on the host. Add that name to the
+list, comma-separated.
 
 ## How it is secured
 

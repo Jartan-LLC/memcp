@@ -19,7 +19,7 @@ services:
       MEMCP_AUTH_TOKENS: ${MEMCP_AUTH_TOKENS:?set MEMCP_AUTH_TOKENS in .env}
       # DNS-rebinding protection; the SDK leaves it off on a 0.0.0.0 bind.
       MEMCP_ALLOWED_HOSTS: ${MEMCP_ALLOWED_HOSTS:-127.0.0.1:*,localhost:*}
-    # Loopback: unreachable from another machine unless you change this deliberately.
+    # Loopback: unreachable from another machine.
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
