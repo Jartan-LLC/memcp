@@ -16,13 +16,13 @@ tests/mem0/down.sh
 | Service | What it is |
 | --- | --- |
 | `postgres` | `pgvector/pgvector:pg17` — mem0's real vector store and app database |
-| `fake-openai` | ~150 lines of standard library serving `/v1/embeddings` and `/v1/chat/completions` |
-| `mem0` | mem0's REST server, built from `mem0ai/mem0` at the SHA in `mem0.pin` (release v2.2.1), with the `mem0ai` engine pinned to the same release |
+| `fake-openai` | A standard-library server serving `/v1/embeddings` and `/v1/chat/completions` |
+| `mem0` | mem0's REST server, built from `mem0ai/mem0` at the SHA in `mem0.pin`, with the `mem0ai` engine pinned to that commit's version |
 
 mem0 is pinned rather than tracked: an upstream push should not turn this repository's
-`main` red without a commit here. To move it, change `mem0.pin` and `engine` in
-`fetch.sh` to the same release, and expect the conformance suite to tell you whether
-it still honours the adapter's contract.
+`main` red without a commit here. To move it, set `mem0.pin` to a release tag's commit,
+and expect the conformance suite to tell you whether it still honours the adapter's
+contract.
 
 ## What it proves, and what it does not
 
