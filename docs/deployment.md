@@ -22,7 +22,7 @@ memcp.
 
 ## Set up with Docker Compose
 
-### Get the files
+### Get memcp's compose files
 
 1. In a new directory, download the compose file and the settings template:
 
@@ -46,22 +46,23 @@ Then configure the backend you chose.
 
 ### Use mem0
 
-memcp supports mem0's REST server at release v2.2.1, built from mem0's source.
+memcp supports mem0's REST server at release v2.2.1, built from mem0's source. Setting
+it up needs `git`, `make` and `python3`.
 
-1. Get the server:
+1. From the memcp directory, get the server beside it and go to its `server/` folder:
 
    ```bash
-   git clone --depth 1 --branch v2.2.1 https://github.com/mem0ai/mem0.git
+   cd .. && git clone --depth 1 --branch v2.2.1 https://github.com/mem0ai/mem0.git &&
+     cd mem0/server
    ```
 
-2. In `mem0/server`, create `.env` as in the "Configure the environment" step of mem0's
-   [Self-Hosted Setup](https://docs.mem0.ai/open-source/setup) guide. Also set
-   `ADMIN_API_KEY` to a long random value (`openssl rand -hex 32`): memcp authenticates
-   with it, and deleting all of a scope's memories needs the admin key.
-3. mem0's compose file publishes its API, dashboard and Postgres on every interface, and
-   a host firewall such as ufw doesn't filter Docker's published ports. In `mem0/server`,
-   create `docker-compose.override.yaml` to keep them on this machine and restart them
-   after a reboot:
+2. Create `.env` as in the "Configure the environment" step of mem0's
+   [Self-Hosted Setup](https://docs.mem0.ai/open-source/setup) guide, and also set
+   `ADMIN_API_KEY` to a long random value (`openssl rand -hex 32`). memcp authenticates
+   with that key.
+3. Create `docker-compose.override.yaml`, which keeps mem0's API and dashboard on this
+   machine, drops Postgres's host port and restarts the services after a reboot
+   (`!override` and `!reset` need Compose 2.24 or later):
 
    ```yaml
    services:
@@ -78,13 +79,14 @@ memcp supports mem0's REST server at release v2.2.1, built from mem0's source.
        restart: unless-stopped
    ```
 
-4. Start mem0 and create its admin account, which closes its open sign-up:
+4. Start mem0 and create its admin account, and keep the admin password it prints:
 
    ```bash
    make bootstrap
    ```
 
-5. In the memcp directory, create `docker-compose.override.yml` to join mem0's network:
+5. Back in the memcp directory (`cd ../../memcp`), create `docker-compose.override.yml`
+   to join mem0's network:
 
    ```yaml
    services:
@@ -109,7 +111,7 @@ memcp supports mem0's REST server at release v2.2.1, built from mem0's source.
 `.env` already sets `MEMCP_BACKEND=sqlite`. The database lives in a Docker volume and
 survives a restart.
 
-### Start memcp
+### Start memcp and connect a client
 
 1. Start it:
 
@@ -123,16 +125,16 @@ survives a restart.
 
 ## Run a Compose deployment
 
-### Day-to-day tasks
+### Day-to-day Compose tasks
 
 | Task | Command |
 |---|---|
 | Stop, keeping memories | `docker compose down` |
-| Stop and delete memories | `docker compose down --volumes` |
+| Stop and delete memories | `docker compose down --volumes`; with mem0, the memories are in mem0's database, so delete them there |
 | Replace a token | Edit `MEMCP_AUTH_TOKENS` in `.env`, then `docker compose up -d --wait` |
-| Change compose settings | Put them in `docker-compose.override.yml`, which an upgrade doesn't overwrite |
+| Change compose settings | Put them in `docker-compose.override.yml`, which an upgrade doesn't overwrite, merged into one `memcp` entry |
 
-### Upgrade
+### Upgrade a Compose deployment
 
 1. In the memcp directory, download the current compose file:
 
@@ -156,7 +158,8 @@ survives a restart.
 ### Pin a release
 
 The compose file runs the latest release. To stay on one, name it in
-`docker-compose.override.yml`, using a version from
+`docker-compose.override.yml` (merged into its `memcp` entry if it has one), using a
+version from
 [Releases](https://github.com/Jartan-LLC/memcp/releases) without its leading `v` (for
 example `0.2.0`):
 
@@ -208,7 +211,11 @@ comma-separated.
   run unauthenticated on any interface another machine can reach.
 - `.env` holds the tokens: keep it at mode 600 and out of version control.
 - Only the loopback Host names are admitted until `MEMCP_ALLOWED_HOSTS` adds yours.
-- With mem0, only memcp should reach mem0's API and Postgres.
+- With mem0, only memcp should reach mem0's API, dashboard and Postgres. A host firewall
+  such as ufw doesn't filter Docker's published ports; mem0's override keeps them on
+  loopback.
+- With mem0, its admin account exists (`make bootstrap`), so nobody else can sign up as
+  mem0's admin.
 
 ## Run memcp without Docker
 
