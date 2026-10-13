@@ -44,7 +44,6 @@ docs/_build/
 
 # Conformance stack: the pinned mem0 checkout and the report it produces
 tests/mem0/.mem0/
-conformance-report.json
 
 # Logs
 *.log

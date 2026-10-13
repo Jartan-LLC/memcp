@@ -1,14 +1,12 @@
-"""Cross-backend round trip (A3) asserted against the documented loss set (A4).
+"""Cross-backend round trip, asserted against the losses docs/reference.md lists.
 
 Writes the corpus into the source, migrates it, and checks per memory that content
 and scope survived and that the query which found it in the source still finds it
-in the target. Anything else that changed is compared to the pair's portability
-record — `DECLARED_LOSSES` for a backend memcp ships, `declare_pair()` for one it
-does not. A loss no record names fails here, and so does a record that over-claims.
+in the target. Anything else that changed must be one of LOSSES, and every one of
+LOSSES must actually happen: an over-claimed loss would let a real regression pass.
 
-The target always receives a different tenant id. A migration into a fresh tenant
-is the honest shape of the operation, and it keeps a same-backend pair from being
-a no-op that import dedup swallows.
+The target always receives a different tenant id, so a same-backend pair is a real
+migration rather than a no-op that import dedup swallows.
 """
 
 from __future__ import annotations
@@ -16,20 +14,17 @@ from __future__ import annotations
 import pytest
 
 from memcp.backend.base import MemoryBackend
-from memcp.conformance import portability
-from memcp.conformance.corpus import CorpusEntry, round_trip_corpus
-from memcp.conformance.registry import BackendSpec
-from memcp.conformance.report import Recorder, RoundTrip
-from memcp.conformance.suite.conftest import PairSpec
 from memcp.migrate import dedup_key, migrate
 from memcp.types import Memory
+from tests.conformance.corpus import CorpusEntry, round_trip_corpus
 
-SEARCH_LIMIT = 25
+# Smaller than every scope in the corpus, so a search that ignores the query fails.
+SEARCH_LIMIT = 3
 LIST_LIMIT = 200
 
-# pytest-asyncio decides how to run a test at collection time, so the marker has
-# to be here rather than added by a hook. See suite/conftest.py.
-pytestmark = pytest.mark.asyncio
+# Import calls add() on the target, which mints a new id and timestamps, and export
+# carries current content only, not the change log.
+LOSSES = frozenset({"memory_id", "created_at", "updated_at", "history"})
 
 
 async def _write_corpus(backend: MemoryBackend, tenant: str, corpus: list[CorpusEntry]) -> None:
@@ -100,50 +95,46 @@ def _observed_losses(
     return observed
 
 
-@pytest.mark.conformance("round_trip")
 async def test_round_trip_preserves_content_scope_and_retrieval(
     pair: tuple[MemoryBackend, MemoryBackend],
-    pair_spec: PairSpec,
+    pair_names: tuple[str, str],
     tenant: str,
     other_tenant: str,
-    report: Recorder,
 ):
     source, target = pair
-    source_spec, target_spec = pair_spec
-    _skip_without_list(source, source_spec)
-    _skip_without_list(target, target_spec)
-
-    # Raises UndocumentedPairError if no record covers the pair.
-    declared = sorted(portability.declared_aspects(source_spec.name, target_spec.name))
+    source_name, target_name = pair_names
+    for backend, name in ((source, source_name), (target, target_name)):
+        if "list_memories" not in backend.capabilities():
+            pytest.skip(f"{name} does not declare list_memories, so it cannot be migrated")
 
     corpus = round_trip_corpus()
     await _write_corpus(source, tenant, corpus)
 
     for entry in corpus:
-        await _assert_retrievable(source, tenant, entry, f"source {source_spec.name}")
+        await _assert_retrievable(source, tenant, entry, f"source {source_name}")
 
     result = await migrate(
         source,
         target,
         tenant,
         target_user_id=other_tenant,
-        source_name=source_spec.name,
-        target_name=target_spec.name,
+        source_name=source_name,
+        target_name=target_name,
         limit=LIST_LIMIT,
     )
 
     assert not result.errors, f"migration reported errors: {result.errors}"
     assert result.exported == len(corpus), (
-        f"exported {result.exported} of {len(corpus)} memories from {source_spec.name}. "
+        f"exported {result.exported} of {len(corpus)} memories from {source_name}. "
         "A shortfall here is the source collapsing writes, not the migration losing them."
     )
     assert result.skipped == 0, (
         f"{result.skipped} memories were skipped as duplicates importing into "
-        f"{target_spec.name}. The corpus holds identical content in two scopes, so a "
+        f"{target_name}. The corpus holds identical content in two scopes, so a "
         "skip here means dedup is not scope-aware."
     )
     assert result.imported == len(corpus), (
-        f"imported {result.imported} of {len(corpus)} memories into {target_spec.name}"
+        f"imported {result.imported} of {len(corpus)} memories into {target_name}"
     )
 
     source_memories = (await source.list_memories(tenant, limit=LIST_LIMIT)).memories
@@ -173,47 +164,12 @@ async def test_round_trip_preserves_content_scope_and_retrieval(
     )
 
     for entry in corpus:
-        await _assert_retrievable(target, other_tenant, entry, f"target {target_spec.name}")
+        await _assert_retrievable(target, other_tenant, entry, f"target {target_name}")
 
-    # `history` is only comparable when both sides can report it. Declaring it for a
-    # pair that cannot is not an over-claim, so it is reported as unverified rather
-    # than failed.
-    observable = set(portability.ASPECTS)
-    if not compare_history:
-        observable.discard("history")
-
-    undeclared = sorted(portability.undeclared(source_spec.name, target_spec.name, observed))
-    stale = sorted(
-        portability.stale(source_spec.name, target_spec.name, observed, observable=observable)
+    # History is only comparable when both sides report it.
+    expected = LOSSES if compare_history else LOSSES - {"history"}
+    assert observed == expected, (
+        f"{source_name} -> {target_name} lost {sorted(observed)}; expected exactly "
+        f"{sorted(expected)}. An extra loss is a regression; a missing one means LOSSES "
+        "and docs/reference.md over-claim."
     )
-    unverified = sorted(portability.unverified(source_spec.name, target_spec.name, observable))
-    report.record_round_trip(
-        RoundTrip(
-            source=source_spec.name,
-            target=target_spec.name,
-            exported=result.exported,
-            imported=result.imported,
-            observed_losses=undeclared,
-            declared_losses=declared,
-            stale_losses=stale,
-            unverified_losses=unverified,
-        )
-    )
-
-    assert not undeclared, (
-        f"{source_spec.name} -> {target_spec.name} lost {undeclared}, which no "
-        f"portability record names. Either the adapter regressed or the loss is real "
-        f"and belongs in the record — decide, do not widen the assertion. Declared for "
-        f"this pair: {declared}."
-    )
-    assert not stale, (
-        f"the portability record declares {stale} lost for {source_spec.name} -> "
-        f"{target_spec.name}, but the round trip preserved it. An over-claiming record "
-        "is as bad as a silent loss: it would let a real regression in those aspects "
-        "pass. Remove the declaration or make the corpus produce the loss."
-    )
-
-
-def _skip_without_list(backend: MemoryBackend, spec: BackendSpec) -> None:
-    if "list_memories" not in backend.capabilities():
-        pytest.skip(f"{spec.name} does not declare list_memories, so it cannot be migrated")

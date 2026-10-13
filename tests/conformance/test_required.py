@@ -11,18 +11,11 @@ import uuid
 import pytest
 
 from memcp.backend.base import MemoryBackend
-from memcp.conformance.capabilities import (
-    ALL_CAPABILITIES,
-    OPTIONAL_CAPABILITIES,
-    REQUIRED_METHODS,
-)
+from memcp.backend.capabilities import ALL_CAPABILITIES, OPTIONAL_CAPABILITIES
 from memcp.types import AddResult, MemoryAPIError
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
-
-# pytest-asyncio decides how to run a test at collection time, so the marker has
-# to be here rather than added by a hook. See suite/conftest.py.
-pytestmark = pytest.mark.asyncio
+REQUIRED_METHODS = tuple(sorted(MemoryBackend.__abstractmethods__))
 
 
 def _ids(result: AddResult | list[AddResult]) -> list[str]:
@@ -182,7 +175,7 @@ async def _call_optional(backend: MemoryBackend, method_name: str, tenant: str) 
 
 
 async def test_undeclared_capabilities_raise_not_implemented(backend: MemoryBackend, tenant: str):
-    """A2's other half: what a backend does not claim, it must refuse outright.
+    """What a backend does not claim, it must refuse outright.
 
     A backend that silently half-answers a method it did not declare is worse than
     one that raises. The tool layer never registers that tool, so the behaviour is

@@ -1,10 +1,10 @@
 """The corpus the round trip moves between backends.
 
-Every entry carries the query that must find it, because A3's assertion is not
+Every entry carries the query that must find it, because the round trip asserts not
 "the content is present" but "the same query still retrieves it". Content is
 deliberately word-distinctive: the in-memory backend ranks by query-word overlap
 and mem0 ranks by embedding similarity, and a distinctive phrase puts the target
-in the first page under either.
+among the first few results under either.
 
 Three scopes, and two contents that appear in two scopes each — that pair is what
 content-only import dedup used to swallow (GitHub #30).
@@ -167,7 +167,3 @@ def round_trip_corpus() -> list[CorpusEntry]:
             {"source": "finding"},
         ),
     ]
-
-
-def scope_count() -> int:
-    return len({tuple(sorted(e.scope.items())) for e in round_trip_corpus()})

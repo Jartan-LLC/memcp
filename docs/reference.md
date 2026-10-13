@@ -104,11 +104,25 @@ pre-existing row will read as attributed when it never was.
 - No rate limiting — configure it at the reverse proxy
 - `delete_all_memories` deletes by scope structure, not content match
 
-What survives a move between two backends, and what does not, is declared per pair
-in [portability.md](portability.md) and asserted against.
+## Moving memories between backends
+
+`export_memories` and `import_memories` move a tenant's memories from one backend to
+another. Content, scope and metadata survive, and the same search finds each memory.
+These do not survive, for any pair of backends:
+
+| Lost | Why |
+|---|---|
+| Memory ids | The target assigns its own. Refer to memories by content and scope, not id. |
+| `created_at`, `updated_at` | Imported memories are new on the target. |
+| History | Exports carry current content only, not the change log. |
+| `author` | The import is stamped with the importing token's seat. |
+
+Retrieval quality follows the target: moving from `mem0` to `sqlite` or `in_memory`
+swaps meaning-based search for keyword matching. Importing into `mem0` writes with
+`infer=false`, but mem0 may still merge a memory with identical content in the same
+scope.
 
 ## See also
 
 - [deployment.md](deployment.md) — Docker Compose, backends, tokens, reverse proxies
-- [conformance.md](conformance.md) — holding a backend to the suite, in this repository or out of it
-- [tests/mem0/README.md](../tests/mem0/README.md) — the conformance run against a real mem0
+- [tests/mem0/README.md](../tests/mem0/README.md) — the conformance suite against a real mem0

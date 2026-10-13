@@ -8,8 +8,7 @@ single tenant without anything failing.
 
 So this drives the real ASGI stack with two real tokens, and asserts for **every
 registered tool** that Mallory can neither read, change, delete nor enumerate
-Alice's memory. It runs against every backend the conformance registry can build, so
-a new adapter inherits the check rather than needing its own.
+Alice's memory. It runs against every backend in this repository.
 
 `mem0` is included when `MEM0_API_BASE`/`MEM0_API_KEY` are set (skipped otherwise —
 see `tests/test_backend_mem0.py` for the same gate). It is the one backend where

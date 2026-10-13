@@ -1,4 +1,4 @@
-"""Capability-gated conformance (A2).
+"""Capability-gated conformance.
 
 Every test carries `@pytest.mark.conformance(<capability>)` and skips only when the
 backend does not declare that capability. A backend that declares one and fails a
@@ -13,10 +13,6 @@ from memcp.backend.base import MemoryBackend
 from memcp.types import AddResult, EntitiesResult, ListResult, MemoryAPIError
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
-
-# pytest-asyncio decides how to run a test at collection time, so the marker has
-# to be here rather than added by a hook. See suite/conftest.py.
-pytestmark = pytest.mark.asyncio
 
 
 def _first_id(result: AddResult | list[AddResult]) -> str:

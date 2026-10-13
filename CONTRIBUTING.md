@@ -46,6 +46,17 @@ as a release deployment.
    docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
    ```
 
+## Backend conformance suite
+
+`tests/conformance` holds every backend to the same contract: the required methods,
+tenant isolation on each, every optional capability the backend declares (and a
+`NotImplementedError` for each it doesn't), and a round trip between every pair of
+backends that checks content, scope and retrieval survive. `make test` runs it against
+`in_memory` and `sqlite`. To include mem0, start a local one first
+([tests/mem0/README.md](tests/mem0/README.md)).
+
+A new backend joins by adding its name to `BACKENDS` in `tests/conformance/conftest.py`.
+
 ## Conventions
 
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/)

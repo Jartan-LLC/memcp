@@ -233,8 +233,8 @@ async def migrate(
 
     `target_user_id` defaults to `user_id` — pass it to land the memories under a
     different tenant on the target. Both backends need the `list_memories`
-    capability. What does not survive the trip is documented per pair in
-    `docs/portability.md`; see `memcp.conformance.portability`. `author`, when
+    capability. What does not survive the trip is listed in `docs/reference.md`
+    ("Moving memories between backends"). `author`, when
     given, is stamped onto the target's copies as the principal running the
     migration — see `import_payload`.
     """

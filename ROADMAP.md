@@ -17,7 +17,7 @@ round trip and the CI mem0 stack landed first, and Cognee inherits them as gates
 
 **Goal:** All three adapters (mem0, in-memory, Cognee) pass identical conformance tests.
 
-- [x] Conformance test suite for backend adapters (`python -m memcp.conformance`)
+- [x] Conformance test suite for backend adapters (`tests/conformance`)
 - [x] Cross-backend migration tooling (export from one → import to another)
 - [x] Self-contained CI docker-compose for mem0 (no API secrets needed)
 - [x] Scope-aware import dedup
@@ -53,7 +53,7 @@ Production readiness for multi-tenant deployments.
 
 Make it trivial for community contributors to build backend adapters.
 
-- [x] Conformance test package (pip-installable, run against any MemoryBackend) — landed early in v0.2. Adapters register through `MEMCP_CONFORMANCE_EXTRA` and `declare_pair()`; `tests/test_conformance_out_of_tree.py` runs that recipe from a scratch directory, because the first version of this only worked from inside a memcp checkout and the checkbox was ticked before anyone had tried it from outside
+- [ ] Conformance test package (pip-installable, run against any MemoryBackend) (#107)
 - [ ] Backend adapter development guide
 - [ ] CI template for adapter projects
 - [ ] Published API reference (auto-generated or manual)
