@@ -11,6 +11,7 @@ persistent long-term memory over streamable HTTP.
 ## Quickstart
 
 ```bash
+mkdir memcp && cd memcp
 curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
 curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example
 chmod 600 .env

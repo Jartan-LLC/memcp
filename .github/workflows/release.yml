@@ -26,6 +26,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          # Stable means vX.Y.Z, the same rule as .github/scripts/takes-latest.sh.
           prerelease=()
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || prerelease=(--prerelease)
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \

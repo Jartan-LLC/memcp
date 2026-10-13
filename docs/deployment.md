@@ -6,9 +6,11 @@ package on PyPI. Each release's `docker-compose.yml` runs that release's image w
 
 ## Run it with Docker Compose
 
-1. Download the latest release's compose file and environment template:
+1. In a new directory, download the latest release's compose file and environment
+   template:
 
    ```bash
+   mkdir memcp && cd memcp
    curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
    curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example
    chmod 600 .env
@@ -36,7 +38,7 @@ restart.
 
 | Task | Command |
 |---|---|
-| Run a different release | Set `MEMCP_VERSION=<version>` in `.env`, 0.2.0 or later |
+| Run a different release | Set `MEMCP_VERSION=<version>` in `.env` (0.2.0 or later), then `docker compose up -d --wait` |
 | Change the compose settings | Put the changes in `docker-compose.override.yml`, which an upgrade doesn't overwrite |
 | Stop, keeping memories | `docker compose down` |
 | Stop and delete memories | `docker compose down --volumes` |
@@ -44,7 +46,7 @@ restart.
 
 ## Upgrade
 
-1. Download the new compose file:
+1. In the memcp directory, download the new compose file:
 
    ```bash
    curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
@@ -53,7 +55,8 @@ restart.
 2. List settings the new template has that `.env` lacks, and add the ones you need:
 
    ```bash
-   curl -fsSL https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example | diff .env -
+   curl -fsSL https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example \
+     | comm -13 <(grep -o '^[A-Z0-9_]*=' .env | sort) <(grep -o '^[A-Z0-9_]*=' - | sort)
    ```
 
 3. If `.env` sets `MEMCP_VERSION`, change it to the new version or remove it.
@@ -144,6 +147,6 @@ From a clone, `docker-compose.build.yml` builds the image from the working tree 
 of pulling a release:
 
 ```bash
-cp .env.example .env    # then set MEMCP_AUTH_TOKENS
+cp .env.example .env && chmod 600 .env    # then set MEMCP_AUTH_TOKENS
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
 ```

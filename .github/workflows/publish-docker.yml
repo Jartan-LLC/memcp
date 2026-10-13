@@ -98,8 +98,8 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # takes-latest.sh compares against every tag
 
-      # Pre-releases get no attachments: the docs never download them, and a
-      # non-semver tag like 1.0.0rc1 gets no matching image tag from metadata-action.
+      # Pre-releases (as release.yml marked them) get no attachments: the docs never
+      # download them, and a tag like 1.0.0rc1 gets no image tag from metadata-action.
       # takes-latest.sh runs here rather than reusing publish's answer, so a re-run
       # after a newer release can't move the latest release backwards.
       - name: Attach the compose file and environment template
@@ -107,7 +107,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [ "$(gh release view "$GITHUB_REF_NAME" --json isPrerelease -q .isPrerelease)" = true ]; then
             echo "::notice::$GITHUB_REF_NAME is a pre-release; nothing to attach"
             exit 0
           fi
