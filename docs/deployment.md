@@ -35,8 +35,9 @@ restart.
 
 | Task | Command |
 |---|---|
-| Upgrade | Download the new release's `docker-compose.yml` (step 1, first command), then `docker compose up -d --wait` |
+| Upgrade | Download the new release's `docker-compose.yml` (step 1, first command) and add any new settings from its `env.example` to `.env`, then `docker compose up -d --wait`. With `MEMCP_VERSION` set, change that instead. |
 | Run a different release | Set `MEMCP_VERSION=<version>` in `.env`, 0.2.0 or later |
+| Change the compose settings | Put the changes in `docker-compose.override.yml`, which an upgrade doesn't overwrite |
 | Stop, keeping memories | `docker compose down` |
 | Stop and delete memories | `docker compose down --volumes` |
 | Replace a token | Edit `MEMCP_AUTH_TOKENS` in `.env`, then `docker compose up -d --wait` |
@@ -66,14 +67,14 @@ For search by meaning, extraction and a graph, use mem0.
 
 ## Behind a reverse proxy
 
-When a proxy or platform (Traefik, Caddy, nginx, Dokploy, Coolify, Kubernetes) routes to
-memcp:
+When a proxy or platform (Traefik, Caddy, nginx, Dokploy, Coolify) routes to memcp:
 
 1. Set `MEMCP_ALLOWED_HOSTS` in `.env` to the hostname clients use, for example
    `MEMCP_ALLOWED_HOSTS=memory.example.com`. It replaces the compose file's default,
    which admits only `127.0.0.1` and `localhost`.
 2. If the proxy runs in Docker, create `docker-compose.override.yml` beside
-   `docker-compose.yml`, naming the proxy's network:
+   `docker-compose.yml`, naming the proxy's network (`!reset` needs Compose 2.24 or
+   later):
 
    ```yaml
    services:
@@ -87,7 +88,8 @@ memcp:
    ```
 
 3. Apply it with `docker compose up -d --wait`.
-4. Point the proxy at `memcp:8080`, and clients at `https://<hostname>/mcp`.
+4. Point the proxy at memcp (`memcp:8080` from the proxy's Docker network,
+   `127.0.0.1:8080` from the host), and clients at `https://<hostname>/mcp`.
 
 **A 421 response ("Invalid Host header")** means the Host header the request arrived
 with isn't in `MEMCP_ALLOWED_HOSTS`. Some proxies rewrite it to the upstream address
@@ -97,14 +99,12 @@ as `memcp:8080`. Add that name to the list, comma-separated.
 ## How it is secured
 
 - **Loopback only by default.** The compose file publishes memcp on `127.0.0.1`.
-  Changing that is a decision you make in the file.
-- **No token, no public interface.** Without `MEMCP_AUTH_TOKENS` every request is served
-  as one tenant, so memcp refuses to start on any interface another machine can reach.
-- **Tokens stay in `.env`.** The compose file reads them from there; the repository's
-  `.gitignore` excludes `.env`.
-- **Host headers are checked.** The compose file admits only the loopback names unless
+- **A token is required.** The compose file won't start without `MEMCP_AUTH_TOKENS`, and
+  the server refuses to run unauthenticated on any interface another machine can reach.
+- **Tokens live in `.env`.** Keep it out of version control.
+- **Host headers are checked.** Only the loopback names are admitted unless
   `MEMCP_ALLOWED_HOSTS` says otherwise.
-- **Images are built once per release tag**, from a digest-pinned Python base.
+- **Images build on a digest-pinned Python base.**
 
 ## Running without Docker
 
