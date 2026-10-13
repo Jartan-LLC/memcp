@@ -10,7 +10,8 @@ persistent long-term memory over streamable HTTP.
 
 ## Quickstart
 
-Needs Docker. memcp runs on `127.0.0.1:8080` with the `sqlite` backend.
+Needs Docker. This starts memcp on `127.0.0.1:8080` with the `sqlite` backend; for
+search by meaning and fact extraction, [use mem0](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md#use-mem0) instead.
 
 ```bash
 mkdir memcp && cd memcp &&
@@ -30,9 +31,8 @@ docker compose up -d --wait
 **No account, no API key.** Memories go to a file on disk and survive a restart.
 Search is keyword matching, so it finds a memory when your question reuses its words
 and misses one phrased differently, and it stores what you give it word for word
-instead of pulling facts out of it. Semantic search and the knowledge graph need mem0
-and a key. A client does not have to guess which it is talking to: `memory_status`
-says.
+instead of pulling facts out of it; mem0 does both. A client does not have to guess
+which it is talking to: `memory_status` says.
 
 ## Connect from Claude Code
 
