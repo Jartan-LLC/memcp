@@ -16,13 +16,14 @@ git -C .mem0 remote set-url origin "$repo"
 git -C .mem0 fetch --depth 1 origin "$pin"
 git -C .mem0 checkout --force "$pin"
 
-engine="$(sed -n 's/^version = "\(.*\)"$/\1/p' .mem0/pyproject.toml | head -n 1)"
+engine="$(sed -n '/^\[project\]$/,/^\[/s/^version = "\(.*\)"$/\1/p' .mem0/pyproject.toml)"
 if [ -z "$engine" ]; then
   echo "no version in .mem0/pyproject.toml at $pin" >&2
   exit 1
 fi
 reqs=.mem0/server/requirements.txt
-sed "s/^mem0ai>=.*/mem0ai==$engine/" "$reqs" > "$reqs.tmp" && mv "$reqs.tmp" "$reqs"
+sed "s/^mem0ai>=.*/mem0ai==$engine/" "$reqs" > "$reqs.tmp"
+mv "$reqs.tmp" "$reqs"
 if ! grep -qx "mem0ai==$engine" "$reqs"; then
   echo "could not pin mem0ai in $reqs: its mem0ai line changed upstream" >&2
   exit 1
