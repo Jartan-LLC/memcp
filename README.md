@@ -10,12 +10,14 @@ persistent long-term memory over streamable HTTP.
 
 ## Quickstart
 
+Needs Docker. memcp runs on `127.0.0.1:8080` with the `sqlite` backend.
+
 ```bash
-mkdir memcp && cd memcp
-curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
-curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example
-chmod 600 .env
-openssl rand -hex 32
+mkdir memcp && cd memcp &&
+  curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml &&
+  curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example &&
+  chmod 600 .env &&
+  openssl rand -hex 32
 ```
 
 In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>` with the token that printed, then
@@ -24,8 +26,6 @@ start it:
 ```bash
 docker compose up -d --wait
 ```
-
-Needs Docker. memcp runs on `127.0.0.1:8080` with the `sqlite` backend.
 
 **No account, no API key.** Memories go to a file on disk and survive a restart.
 Search is keyword matching, so it finds a memory when your question reuses its words

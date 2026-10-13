@@ -10,10 +10,10 @@ package on PyPI. Each release's `docker-compose.yml` runs that release's image w
    template:
 
    ```bash
-   mkdir memcp && cd memcp
-   curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
-   curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example
-   chmod 600 .env
+   mkdir memcp && cd memcp &&
+     curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml &&
+     curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example &&
+     chmod 600 .env
    ```
 
 2. Generate a token:
@@ -78,10 +78,20 @@ restart.
 
 To use mem0:
 
-1. Run mem0 in Docker, on a network clients can't reach. memcp enforces tenant isolation
-   itself, so only memcp should reach mem0.
-2. Attach memcp to that network with a `docker-compose.override.yml`, as in
-   [Behind a reverse proxy](#behind-a-reverse-proxy) step 2, naming mem0's network.
+1. Run mem0 in Docker, on a network only memcp joins.
+2. Create `docker-compose.override.yml` beside `docker-compose.yml`, naming mem0's
+   network:
+
+   ```yaml
+   services:
+     memcp:
+       networks: [default, mem0]
+   networks:
+     mem0:
+       name: <mem0-network>
+       external: true
+   ```
+
 3. In `.env`, set `MEMCP_BACKEND=mem0`, `MEM0_API_KEY`, and `MEM0_API_BASE` to mem0's
    address on that network (memcp resolves it from inside its container, where
    `localhost` is memcp itself).
@@ -153,16 +163,19 @@ variable.
 
 From a clone, `docker-compose.build.yml` builds the image from the working tree instead
 of pulling a release. It runs as its own Compose project, `memcp-checkout`, so it leaves a
-release deployment's container and memories alone, but it uses the same port: stop a
-running release deployment first.
+release deployment's container and memories alone, but it uses the same port.
 
-```bash
-cp .env.example .env && chmod 600 .env
-```
+1. Stop any running release deployment.
+2. Create `.env`:
 
-In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>` with a token from
-`openssl rand -hex 32`, then:
+   ```bash
+   cp .env.example .env && chmod 600 .env
+   ```
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
-```
+3. In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>` with a token from
+   `openssl rand -hex 32`.
+4. Build and start it:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
+   ```
