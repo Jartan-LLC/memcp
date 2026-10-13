@@ -107,20 +107,17 @@ pre-existing row will read as attributed when it never was.
 ## Moving memories between backends
 
 `export_memories` and `import_memories` move a tenant's memories from one backend to
-another. Content, scope and metadata survive, and the same search finds each memory.
-These do not survive, for any pair of backends:
+another. Content, scope and metadata survive. These do not, for any pair of backends:
 
 | Lost | Why |
 |---|---|
 | Memory ids | The target assigns its own. Refer to memories by content and scope, not id. |
 | `created_at`, `updated_at` | Imported memories are new on the target. |
 | History | Exports carry current content only, not the change log. |
-| `author` | The import is stamped with the importing token's seat. |
+| `author` | Imports are stamped with the importing token's seat, or none on a server without tokens. |
 
-Retrieval quality follows the target: moving from `mem0` to `sqlite` or `in_memory`
-swaps meaning-based search for keyword matching. Importing into `mem0` writes with
-`infer=false`, but mem0 may still merge a memory with identical content in the same
-scope.
+Retrieval follows the target: after a move from `mem0` to `sqlite` or `in_memory`, a
+query finds a memory only when they share words.
 
 ## See also
 

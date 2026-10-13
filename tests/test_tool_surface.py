@@ -52,12 +52,9 @@ def test_tool_surface_has_twelve_tools():
 # What each backend actually registers
 # ---------------------------------------------------------------------------
 #
-# docs/tool-surface.json is generated from ALL_CAPABILITIES, so it freezes the full
-# surface any backend can expose and no longer moves when one backend declares fewer.
-# That is deliberate — an honest undeclaration should not read as the contract
-# shrinking — but it means the snapshot stopped being the thing that notices a
-# backend losing a tool. This table is what notices instead: it is per backend, it is
-# exact, and a capability quietly disappearing fails here with the backend named.
+# docs/tool-surface.json is generated from ALL_CAPABILITIES, so it holds the full
+# surface any backend can expose and doesn't change when one backend declares fewer.
+# This table is what notices a backend losing a tool: per backend and exact.
 
 UNIVERSAL_TOOLS = {
     "add_memory",

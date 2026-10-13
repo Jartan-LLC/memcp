@@ -42,7 +42,7 @@ htmlcov/
 # Docs build output (Sphinx)
 docs/_build/
 
-# Conformance stack: the pinned mem0 checkout and the report it produces
+# The pinned mem0 checkout tests/mem0 builds
 tests/mem0/.mem0/
 
 # Logs

@@ -35,7 +35,9 @@ def _open(name: str, directory: Path) -> MemoryBackend:
         return InMemoryBackend()
     if name == "sqlite":
         return SqliteBackend(directory / "memcp.sqlite3")
-    return Mem0Backend(os.environ["MEM0_API_BASE"], os.environ["MEM0_API_KEY"])
+    if name == "mem0":
+        return Mem0Backend(os.environ["MEM0_API_BASE"], os.environ["MEM0_API_KEY"])
+    raise ValueError(f"no conformance factory for backend {name!r}")
 
 
 async def _wipe(backend: MemoryBackend, *tenants: str) -> None:
@@ -88,11 +90,13 @@ async def pair(
     source_name, target_name = pair_names
     _skip_unavailable(source_name, target_name)
     source = _open(source_name, tmp_path / "source")
-    target = _open(target_name, tmp_path / "target")
     try:
-        yield source, target
+        target = _open(target_name, tmp_path / "target")
+        try:
+            yield source, target
+        finally:
+            await _wipe(target, other_tenant)
+            await target.close()
     finally:
         await _wipe(source, tenant)
-        await _wipe(target, other_tenant)
         await source.close()
-        await target.close()

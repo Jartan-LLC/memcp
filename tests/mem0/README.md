@@ -21,8 +21,8 @@ tests/mem0/down.sh
 
 The fork is pinned rather than tracked: an upstream push should not turn this
 repository's `main` red without a commit here. Move the pin deliberately, and expect
-the conformance report to be the thing that tells you whether the new SHA still
-honours the adapter's contract.
+the conformance suite to tell you whether the new SHA still honours the adapter's
+contract.
 
 ## What it proves, and what it does not
 

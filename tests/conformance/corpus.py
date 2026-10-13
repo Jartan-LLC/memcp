@@ -6,8 +6,8 @@ deliberately word-distinctive: the in-memory backend ranks by query-word overlap
 and mem0 ranks by embedding similarity, and a distinctive phrase puts the target
 among the first few results under either.
 
-Three scopes, and two contents that appear in two scopes each — that pair is what
-content-only import dedup used to swallow (GitHub #30).
+Three scopes, and two contents that appear in two scopes each, which a content-only
+import dedup would collapse.
 """
 
 from __future__ import annotations
