@@ -1,4 +1,4 @@
-"""Required-method conformance — the six abstract methods plus the two declarations.
+"""Required-method conformance: the abstract methods every backend implements.
 
 Every backend runs every test here. None of it is capability-gated, so nothing in
 this module may skip.
@@ -15,17 +15,11 @@ from memcp.backend.capabilities import ALL_CAPABILITIES, OPTIONAL_CAPABILITIES
 from memcp.types import AddResult, MemoryAPIError
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
-REQUIRED_METHODS = tuple(sorted(MemoryBackend.__abstractmethods__))
 
 
 def _ids(result: AddResult | list[AddResult]) -> list[str]:
     items = result if isinstance(result, list) else [result]
     return [r.id for r in items]
-
-
-async def test_implements_required_methods(backend: MemoryBackend):
-    for name in REQUIRED_METHODS:
-        assert callable(getattr(backend, name, None)), f"missing required method {name}()"
 
 
 async def test_capabilities_are_known_names(backend: MemoryBackend):

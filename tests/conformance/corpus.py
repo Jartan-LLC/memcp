@@ -33,7 +33,7 @@ _SHARED_TWO = "Escalations older than nine days move to the standing review agen
 
 
 def round_trip_corpus() -> list[CorpusEntry]:
-    """24 memories across 3 scopes, including 2 contents duplicated across scopes."""
+    """The memories the round trip moves, some repeated across scopes."""
     return [
         CorpusEntry(
             "The pgvector collection for tenant onboarding is named memcp_primary",
@@ -48,8 +48,8 @@ def round_trip_corpus() -> list[CorpusEntry]:
             {"source": "runbook"},
         ),
         CorpusEntry(
-            "Ferro reviews adapter changes before they reach the release branch",
-            "who reviews adapter changes release branch",
+            "A second maintainer reviews adapter changes before they reach a release",
+            "who reviews adapter changes release",
             SCOPE_A,
         ),
         CorpusEntry(
@@ -97,13 +97,13 @@ def round_trip_corpus() -> list[CorpusEntry]:
             {"source": "roadmap"},
         ),
         CorpusEntry(
-            "Provisioning must print every container and volume before creating any",
-            "provisioning print containers volumes before creating",
+            "The deploy guide lists every container and volume before anything starts",
+            "deploy guide lists container volume",
             SCOPE_B,
         ),
         CorpusEntry(
-            "Fifteen agents read the deployment, so tool argument shapes are frozen",
-            "fifteen agents tool argument shapes frozen",
+            "Connected clients depend on tool names, so argument shapes change rarely",
+            "connected clients tool argument shapes",
             SCOPE_B,
             {"source": "constraint", "confidence": "high"},
         ),
@@ -140,8 +140,8 @@ def round_trip_corpus() -> list[CorpusEntry]:
             SCOPE_B,
         ),
         CorpusEntry(
-            "Run seven reproduced the undeclared metadata loss on the first attempt",
-            "run seven reproduced undeclared metadata loss",
+            "Run seven reproduced the timestamp drift on the first attempt",
+            "run seven reproduced timestamp drift",
             SCOPE_C,
             {"source": "evidence"},
         ),
