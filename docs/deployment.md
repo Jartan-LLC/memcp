@@ -4,7 +4,7 @@ memcp ships as a Docker image, `ghcr.io/jartan-llc/memcp`, and as the `memcp-ser
 package on PyPI. Each release's `docker-compose.yml` runs that release's image with the
 `sqlite` backend: one container, one database file, no API key.
 
-## Run it with Docker Compose
+## Run memcp with Docker Compose
 
 1. In a new directory, download the latest release's compose file and environment
    template:
@@ -59,7 +59,9 @@ restart.
      <(curl -fsSL https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example | grep -o '^[A-Z0-9_]*=' | sort)
    ```
 
-3. If `.env` sets `MEMCP_VERSION`, change it to the new version or remove it.
+3. If `.env` sets `MEMCP_VERSION`, change it to the new version (the release's tag
+   without the `v`, from [Releases](https://github.com/Jartan-LLC/memcp/releases)) or
+   remove it.
 4. Restart:
 
    ```bash
@@ -75,6 +77,11 @@ restart.
 | `mem0` | yes | for mem0's LLM | A [mem0](https://github.com/mem0ai/mem0) REST server you run. Embedding search, fact extraction, a knowledge graph. |
 
 To use mem0, set `MEMCP_BACKEND=mem0`, `MEM0_API_BASE` and `MEM0_API_KEY` in `.env`.
+memcp reaches `MEM0_API_BASE` from inside its container, so `localhost` there is the
+container itself: use mem0's address on a Docker network memcp shares, or, for a mem0
+on the host, `http://host.docker.internal:<port>` (on Linux, also add
+`extra_hosts: ["host.docker.internal:host-gateway"]` to the memcp service in
+`docker-compose.override.yml`).
 memcp enforces tenant isolation itself, so keep mem0 and its database off any network a
 client can reach: only memcp should be.
 
@@ -121,7 +128,7 @@ with isn't in `MEMCP_ALLOWED_HOSTS`. Some proxies rewrite it to the upstream add
 as `memcp:8080`, or `127.0.0.1:8080` from a proxy on the host. Add that name to the
 list, comma-separated.
 
-## How it is secured
+## How a Compose deployment is secured
 
 - **Loopback only by default.** The compose file publishes memcp on `127.0.0.1`.
 - **A token is required.** The compose file won't start without `MEMCP_AUTH_TOKENS`, and
@@ -134,7 +141,7 @@ list, comma-separated.
 
 ```bash
 pipx install memcp-server
-MEMCP_BACKEND=sqlite MEMCP_HOST=127.0.0.1 memcp
+MEMCP_BACKEND=sqlite MEMCP_SQLITE_PATH="$HOME/.memcp/memcp.sqlite3" MEMCP_HOST=127.0.0.1 memcp
 ```
 
 The server listens on `http://localhost:8080`. [reference.md](reference.md) lists every
@@ -148,6 +155,11 @@ release deployment's container and memories alone, but it uses the same port: st
 running release deployment first.
 
 ```bash
-cp .env.example .env && chmod 600 .env    # then set MEMCP_AUTH_TOKENS
+cp .env.example .env && chmod 600 .env
+```
+
+Set `MEMCP_AUTH_TOKENS` in `.env`, then:
+
+```bash
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
 ```

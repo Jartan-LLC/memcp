@@ -15,8 +15,13 @@ mkdir memcp && cd memcp
 curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
 curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example
 chmod 600 .env
-# In .env, set MEMCP_AUTH_TOKENS=<token>:<your-name>; generate a token with
-#   openssl rand -hex 32
+openssl rand -hex 32
+```
+
+In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>` with the token that printed, then
+start it:
+
+```bash
 docker compose up -d --wait
 ```
 
@@ -34,7 +39,7 @@ says.
 With your token (the part of `MEMCP_AUTH_TOKENS` before the colon):
 
 ```bash
-claude mcp add --transport http memcp http://localhost:8080/mcp \
+claude mcp add --scope user --transport http memcp http://localhost:8080/mcp \
   --header "Authorization: Bearer YOUR_TOKEN"
 ```
 
