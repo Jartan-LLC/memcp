@@ -76,14 +76,16 @@ restart.
 | `in_memory` | **no** | no | Process memory, lost on restart. For tests and demos. |
 | `mem0` | yes | for mem0's LLM | A [mem0](https://github.com/mem0ai/mem0) REST server you run. Embedding search, fact extraction, a knowledge graph. |
 
-To use mem0, set `MEMCP_BACKEND=mem0`, `MEM0_API_BASE` and `MEM0_API_KEY` in `.env`.
-memcp reaches `MEM0_API_BASE` from inside its container, so `localhost` there is the
-container itself: use mem0's address on a Docker network memcp shares, or, for a mem0
-on the host, `http://host.docker.internal:<port>` (on Linux, also add
-`extra_hosts: ["host.docker.internal:host-gateway"]` to the memcp service in
-`docker-compose.override.yml`).
-memcp enforces tenant isolation itself, so keep mem0 and its database off any network a
-client can reach: only memcp should be.
+To use mem0:
+
+1. Run mem0 in Docker, on a network clients can't reach. memcp enforces tenant isolation
+   itself, so only memcp should reach mem0.
+2. Attach memcp to that network with a `docker-compose.override.yml`, as in
+   [Behind a reverse proxy](#behind-a-reverse-proxy) step 2, naming mem0's network.
+3. In `.env`, set `MEMCP_BACKEND=mem0`, `MEM0_API_KEY`, and `MEM0_API_BASE` to mem0's
+   address on that network (memcp resolves it from inside its container, where
+   `localhost` is memcp itself).
+4. Apply it with `docker compose up -d --wait`.
 
 ### What `sqlite` doesn't do
 
@@ -158,7 +160,8 @@ running release deployment first.
 cp .env.example .env && chmod 600 .env
 ```
 
-Set `MEMCP_AUTH_TOKENS` in `.env`, then:
+In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>` with a token from
+`openssl rand -hex 32`, then:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
