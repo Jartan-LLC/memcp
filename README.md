@@ -61,7 +61,7 @@ find it. `mem0` is the backend that matches on meaning.
 - Durable, keyless local storage (`sqlite`), or mem0 on pgvector for semantic search and a knowledge graph
 - Add, search, list, update and delete memories over MCP — 12 tools, frozen surface
 - Flat scope-based filtering (`agent_id`, `run_id`)
-- Per-tenant bearer token auth, minted per deployment, never defaulted
+- Per-tenant bearer token auth, never defaulted
 - Stateless HTTP transport — safe behind reverse proxies
 
 ## Documentation

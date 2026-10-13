@@ -143,8 +143,9 @@ variable.
 ## Running a checkout
 
 From a clone, `docker-compose.build.yml` builds the image from the working tree instead
-of pulling a release. It runs as its own Compose project, `memcp-checkout`, apart from
-any release deployment:
+of pulling a release. It runs as its own Compose project, `memcp-checkout`, so it leaves a
+release deployment's container and memories alone, but it uses the same port: stop a
+running release deployment first.
 
 ```bash
 cp .env.example .env && chmod 600 .env    # then set MEMCP_AUTH_TOKENS

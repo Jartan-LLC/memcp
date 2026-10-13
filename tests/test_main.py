@@ -19,3 +19,11 @@ def test_an_argument_is_an_error_not_a_silent_serve(monkeypatch: pytest.MonkeyPa
     with pytest.raises(SystemExit) as excinfo:
         entrypoint.main(["--backend=sqlite"])
     assert excinfo.value.code == 2
+
+
+def test_help_exits_cleanly(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    monkeypatch.setattr(entrypoint, "serve", lambda: pytest.fail("should not have served"))
+    with pytest.raises(SystemExit) as excinfo:
+        entrypoint.main(["--help"])
+    assert excinfo.value.code == 0
+    assert "environment variables" in capsys.readouterr().out

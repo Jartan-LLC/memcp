@@ -45,13 +45,15 @@ def serve() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     args = sys.argv[1:] if argv is None else argv
+    usage = (
+        "memcp takes no arguments; it is configured through environment variables: "
+        "https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md"
+    )
+    if args in (["-h"], ["--help"]):
+        print(usage)
+        raise SystemExit(0)
     if args:
-        print(
-            f"Unknown argument: {args[0]!r}. memcp takes no arguments; it is configured "
-            "through environment variables: "
-            "https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md",
-            file=sys.stderr,
-        )
+        print(f"Unknown argument: {args[0]!r}. {usage}", file=sys.stderr)
         raise SystemExit(2)
     serve()
 

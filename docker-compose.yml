@@ -7,6 +7,8 @@ name: memcp
 
 services:
   memcp:
+    # publish-docker.yml rewrites this line's default to the release's version; keep
+    # its text exact.
     image: ghcr.io/jartan-llc/memcp:${MEMCP_VERSION:-latest}
     restart: unless-stopped
     env_file:

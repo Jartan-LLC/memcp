@@ -4,7 +4,7 @@
 #
 # Its own project and image names keep it from replacing a release deployment's
 # container, volume or image, and `pull_policy: build` keeps compose from reusing a stale
-# local image.
+# local image. It publishes the same port, so stop a release deployment first.
 
 name: memcp-checkout
 
