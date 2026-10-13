@@ -56,7 +56,7 @@ In a new conversation, ask:
 
 > "What linter do I use?"
 
-Claude searches memory automatically and uses the stored context. On the default
+Claude searches memory automatically and uses the stored context. On the quickstart's
 `sqlite` backend this works because `linter` and `linting` share a stem — matching is
 lexical, so a question phrased in words that do not appear in the memory will not
 find it. `mem0` is the backend that matches on meaning.

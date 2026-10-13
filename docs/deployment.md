@@ -132,7 +132,7 @@ survives a restart.
 | Stop, keeping memories | `docker compose down` |
 | Stop and delete memories | `docker compose down --volumes`; with mem0, the memories are in mem0's database: `make clean` in `mem0/server` deletes them, and mem0's admin account with them |
 | Replace a token | Edit `MEMCP_AUTH_TOKENS` in `.env`, then `docker compose up -d --wait` |
-| Change compose settings | Put them in `docker-compose.override.yml`, which an upgrade doesn't overwrite, merged into one `memcp` entry |
+| Change compose settings | Put them in `docker-compose.override.yml`, which an upgrade doesn't overwrite. Keep one `memcp` entry there: merge each snippet into it, list every network in its `networks:`, and declare each network once under the top-level `networks:` |
 
 ### Upgrade a Compose deployment
 
@@ -158,8 +158,7 @@ survives a restart.
 ### Pin a release
 
 The compose file runs the latest release. To stay on one, name it in
-`docker-compose.override.yml` (merged into its `memcp` entry if it has one), using a
-version from
+`docker-compose.override.yml`, using a version from
 [Releases](https://github.com/Jartan-LLC/memcp/releases) without its leading `v` (for
 example `0.2.0`):
 
@@ -177,9 +176,8 @@ When a proxy or platform (Traefik, Caddy, nginx, Dokploy, Coolify) routes to mem
    `MEMCP_ALLOWED_HOSTS=memory.example.com`. It replaces the compose file's default,
    which admits only `127.0.0.1` and `localhost`.
 2. If the proxy runs in Docker, add to `docker-compose.override.yml`, naming the
-   proxy's network (`!reset` needs Compose 2.24 or later). If the file already has a
-   `memcp` service, as with mem0, merge into it: one `memcp` entry, with every network in
-   its `networks:` list and each network declared once under the top-level `networks:`.
+   proxy's network (`!reset` needs Compose 2.24 or later), merged with anything already
+   there:
 
    ```yaml
    services:
@@ -210,7 +208,8 @@ comma-separated.
 - The compose file won't start without `MEMCP_AUTH_TOKENS`, and the server refuses to
   run unauthenticated on any interface another machine can reach.
 - `.env` holds the tokens: keep it at mode 600 and out of version control.
-- Only the loopback Host names are admitted until `MEMCP_ALLOWED_HOSTS` adds yours.
+- Only the `127.0.0.1` and `localhost` Host names are admitted unless
+  `MEMCP_ALLOWED_HOSTS` is set; a value replaces them.
 - With mem0, only memcp should reach mem0's API, dashboard and Postgres. A host firewall
   such as ufw doesn't filter Docker's published ports; mem0's override keeps them on
   loopback.
@@ -224,5 +223,5 @@ pipx install memcp-server
 MEMCP_BACKEND=sqlite MEMCP_SQLITE_PATH="$HOME/.memcp/memcp.sqlite3" MEMCP_HOST=127.0.0.1 memcp
 ```
 
-The server listens on `http://localhost:8080`. [reference.md](reference.md) lists every
-variable.
+Clients connect to `http://127.0.0.1:8080/mcp` with no token. [reference.md](reference.md)
+lists every variable.
