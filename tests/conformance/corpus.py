@@ -2,9 +2,9 @@
 
 Every entry carries the query that must find it, because the round trip asserts not
 "the content is present" but "the same query still retrieves it". Content is
-deliberately word-distinctive: the in-memory backend ranks by query-word overlap
-and mem0 ranks by embedding similarity, and a distinctive phrase puts the target
-among the first few results under either.
+deliberately word-distinctive: in_memory and sqlite rank by query-word overlap and
+mem0 by embedding similarity, and a distinctive phrase puts the target among the
+first few results under each.
 
 Several scopes, and contents repeated across scopes, which a content-only import
 dedup would collapse.

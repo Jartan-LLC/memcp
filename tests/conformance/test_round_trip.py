@@ -31,9 +31,8 @@ LOSSES = frozenset({"memory_id", "created_at", "updated_at", "history"})
 async def _write_corpus(backend: MemoryBackend, tenant: str, corpus: list[CorpusEntry]) -> None:
     """Write the corpus, editing one memory on the way in.
 
-    The edit matters: `updated_at` and `history` are declared losses, and a corpus
-    of never-touched memories would not produce either, leaving both declarations
-    unenforced.
+    The edit matters: `updated_at` and `history` are in LOSSES, and a corpus of
+    never-touched memories would lose neither, so every pair would fail.
     """
     can_edit = "update_memory" in backend.capabilities()
     for i, entry in enumerate(corpus):

@@ -172,9 +172,8 @@ async def test_undeclared_capabilities_raise_not_implemented(backend: MemoryBack
     """What a backend does not claim, it must refuse outright.
 
     A backend that silently half-answers a method it did not declare is worse than
-    one that raises. The tool layer never registers that tool, so the behaviour is
-    unreachable in production and unverified by this suite — and callers inside memcp
-    do reach backend methods directly, `memcp.migrate` among them.
+    one that raises. The tool layer never registers that tool, but callers inside
+    memcp reach backend methods directly, `memcp.migrate` among them.
     """
     declared = backend.capabilities()
     for capability, method_name in OPTIONAL_CAPABILITIES.items():

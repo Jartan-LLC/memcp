@@ -48,13 +48,9 @@ def test_tool_surface_has_twelve_tools():
     assert len(toolsurface.current_surface()) == 12
 
 
-# ---------------------------------------------------------------------------
-# What each backend actually registers
-# ---------------------------------------------------------------------------
-#
-# docs/tool-surface.json is generated from ALL_CAPABILITIES, so it holds the full
-# surface any backend can expose and doesn't change when one backend declares fewer.
-# This table is what notices a backend losing a tool: per backend and exact.
+# docs/tool-surface.json holds every tool any backend can expose, so it doesn't notice
+# one backend losing a tool; EXPECTED_TOOLS does. It is exact, not a subset: a tool
+# appearing is as much a change as one vanishing.
 
 UNIVERSAL_TOOLS = {
     "add_memory",
@@ -64,8 +60,6 @@ UNIVERSAL_TOOLS = {
     "memory_status",
 }
 
-# Every tool each in-repository backend registers. Exact, not a subset: a tool
-# appearing is as much a change as one vanishing.
 EXPECTED_TOOLS: dict[str, set[str]] = {
     "in_memory": UNIVERSAL_TOOLS
     | {

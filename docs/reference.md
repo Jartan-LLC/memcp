@@ -107,8 +107,9 @@ pre-existing row will read as attributed when it never was.
 ## Moving memories between backends
 
 `export_memories` and `import_memories` move a tenant's memories from one backend to
-another; `import_memories` takes at most 1,000 memories per call. Content, scope and
-metadata survive. These do not, for any pair of backends:
+another; `import_memories` takes at most 1,000 memories per call, and an export from
+`mem0` stops at its list ceiling (above). Content, scope and metadata survive. These do
+not, for any pair of backends:
 
 | Lost | Why |
 |---|---|
@@ -117,8 +118,8 @@ metadata survive. These do not, for any pair of backends:
 | History | Exports carry current content only, not the change log. |
 | `author` | Imports are stamped with the importing token's seat, or none on a server without tokens. |
 
-Retrieval follows the target: after a move from `mem0` to `sqlite` or `in_memory`, a
-query finds a memory only when they share words.
+Retrieval follows the target: after a move from `mem0` to `sqlite` or `in_memory`,
+search is keyword matching (see Known limitations).
 
 ## See also
 
