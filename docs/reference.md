@@ -22,7 +22,7 @@ mid-task rather than read through. For getting a deployment running, see
 | `MEMCP_AUTH_SEATS` | No | Optional token-to-seat mapping, layered onto `MEMCP_AUTH_TOKENS`: `tok1:agent-one,tok2:agent-two`, seat matching `[A-Za-z0-9_.-]+`. What memcp stamps as `author` on every write that token makes. A token named here with no `MEMCP_AUTH_TOKENS` entry is rejected at startup. Two tokens can share a tenant with different seats — that is how one shared token becomes individually attributable — and a token absent from this mapping keeps its seat equal to its tenant, as it always has |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
-| `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. Unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
+| `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. `docker-compose.yml` defaults it to `127.0.0.1:*,localhost:*`; a value replaces that. Without Docker, unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
 | `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
 | `MEMCP_LOG_FORMAT` | No | Log format: `json` or `plain` (default: `json`) |
 

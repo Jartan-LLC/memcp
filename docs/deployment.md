@@ -57,9 +57,9 @@ it up needs `git`, `make` and `python3`.
    ```
 
 2. Create `.env` as in the "Configure the environment" step of mem0's
-   [Self-Hosted Setup](https://docs.mem0.ai/open-source/setup) guide, and also set
-   `ADMIN_API_KEY` to a long random value (`openssl rand -hex 32`). memcp authenticates
-   with that key.
+   [Self-Hosted Setup](https://docs.mem0.ai/open-source/setup) guide. Also set
+   `POSTGRES_PASSWORD`, which mem0's compose file requires, and `ADMIN_API_KEY`, which
+   memcp authenticates with, each to a long random value (`openssl rand -hex 32`).
 3. Create `docker-compose.override.yaml`, which keeps mem0's API and dashboard on this
    machine, drops Postgres's host port and restarts the services after a reboot
    (`!override` and `!reset` need Compose 2.24 or later):
@@ -130,7 +130,7 @@ survives a restart.
 | Task | Command |
 |---|---|
 | Stop, keeping memories | `docker compose down` |
-| Stop and delete memories | `docker compose down --volumes`; with mem0, the memories are in mem0's database, so delete them there |
+| Stop and delete memories | `docker compose down --volumes`; with mem0, the memories are in mem0's database: `make clean` in `mem0/server` deletes them, and mem0's admin account with them |
 | Replace a token | Edit `MEMCP_AUTH_TOKENS` in `.env`, then `docker compose up -d --wait` |
 | Change compose settings | Put them in `docker-compose.override.yml`, which an upgrade doesn't overwrite, merged into one `memcp` entry |
 
