@@ -14,7 +14,7 @@ persistent long-term memory over streamable HTTP.
 curl -fsSLO https://raw.githubusercontent.com/Jartan-LLC/memcp/main/docker-compose.yml
 curl -fsSL -o .env https://raw.githubusercontent.com/Jartan-LLC/memcp/main/.env.example
 # In .env, set MEMCP_AUTH_TOKENS=<token>:<your-name>; generate a token with
-#   python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+#   openssl rand -hex 32
 docker compose up -d --wait
 ```
 
@@ -29,25 +29,15 @@ says.
 
 ## Connect from Claude Code
 
-Add to your MCP settings (Claude Code → Settings → MCP Servers), with the token from
-`.env`:
+With the token from `.env`:
 
-```json
-{
-  "mcpServers": {
-    "memcp": {
-      "type": "streamable-http",
-      "url": "http://localhost:8080/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_TOKEN"
-      }
-    }
-  }
-}
+```bash
+claude mcp add --transport http memcp http://localhost:8080/mcp \
+  --header "Authorization: Bearer YOUR_TOKEN"
 ```
 
 Behind a reverse proxy, the URL is `https://<your-host>/mcp`. A server run on loopback
-without `MEMCP_AUTH_TOKENS` takes no `headers`.
+without `MEMCP_AUTH_TOKENS` takes no `--header`.
 
 ## Try it
 

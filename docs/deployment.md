@@ -16,7 +16,7 @@ backend: one container, one database file, no API key.
 2. Generate a token:
 
    ```bash
-   python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+   openssl rand -hex 32
    ```
 
 3. In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>`. `<your-name>` is the tenant
@@ -30,8 +30,8 @@ backend: one container, one database file, no API key.
 5. Add the server to your MCP client with the token, as in the
    [README](../README.md#connect-from-claude-code).
 
-memcp listens on `127.0.0.1:8080`. Memories live in the `memcp_data` volume and survive
-a restart.
+memcp listens on `127.0.0.1:8080`. Memories live in a Docker volume and survive a
+restart.
 
 | Task | Command |
 |---|---|
@@ -72,18 +72,27 @@ memcp:
 1. Set `MEMCP_ALLOWED_HOSTS` in `.env` to the hostname clients use, for example
    `MEMCP_ALLOWED_HOSTS=memory.example.com`. It replaces the compose file's default,
    which admits only `127.0.0.1` and `localhost`.
-2. If the proxy runs in Docker, attach memcp to the proxy's network and remove the
-   `ports:` entry, so nothing on the host reaches memcp except through the proxy.
-3. Point clients at `https://<hostname>/mcp`.
+2. If the proxy runs in Docker, create `docker-compose.override.yml` beside
+   `docker-compose.yml`, naming the proxy's network:
+
+   ```yaml
+   services:
+     memcp:
+       ports: !reset []
+       networks: [default, proxy]
+   networks:
+     proxy:
+       name: <proxy-network>
+       external: true
+   ```
+
+3. Apply it with `docker compose up -d --wait`.
+4. Point the proxy at `memcp:8080`, and clients at `https://<hostname>/mcp`.
 
 **A 421 response ("Invalid Host header")** means the Host header the request arrived
 with isn't in `MEMCP_ALLOWED_HOSTS`. Some proxies rewrite it to the upstream address
 (nginx's `proxy_set_header Host $proxy_host` does; Traefik doesn't), so requests arrive
 as `memcp:8080`. Add that name to the list, comma-separated.
-
-`MEMCP_ALLOWED_HOSTS` is the MCP SDK's DNS-rebinding protection. Unset, the SDK enables
-it only when `MEMCP_HOST` is `127.0.0.1`, `localhost` or `::1`, which is why the compose
-file, binding `0.0.0.0` inside the container, sets it.
 
 ## How it is secured
 

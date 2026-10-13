@@ -255,10 +255,15 @@ jobs:
           cp .env.example .env
           sed -i 's/^MEMCP_AUTH_TOKENS=.*/MEMCP_AUTH_TOKENS=ci-token:ci-user/' .env
           docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
+          init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          mcp() {
+            curl -s -o /dev/null -w '%{http_code}' -H "Host: $1" -H 'Authorization: Bearer ci-token' \
+              -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+              -d "$init" http://127.0.0.1:8080/mcp
+          }
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health)" = 200
-          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: attacker.example' \
-            -H 'Authorization: Bearer ci-token' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-            -d '{}' http://127.0.0.1:8080/mcp)" = 421
+          test "$(mcp localhost:8080)" = 200
+          test "$(mcp attacker.example)" = 421
 
       - name: Compose logs
         if: failure()

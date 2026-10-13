@@ -6,6 +6,8 @@
 # Runs the latest release; set MEMCP_VERSION in .env to pin one. To run this
 # checkout instead, add docker-compose.build.yml. docs/deployment.md covers the rest.
 
+name: memcp
+
 services:
   memcp:
     image: ghcr.io/jartan-llc/memcp:${MEMCP_VERSION:-latest}
