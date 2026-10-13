@@ -39,7 +39,7 @@ claude mcp add --transport http memcp http://localhost:8080/mcp \
 ```
 
 Behind a reverse proxy, the URL is `https://<your-host>/mcp`. A server started with
-`python -m memcp` on loopback and no `MEMCP_AUTH_TOKENS` takes no `--header`.
+`memcp` on loopback and no `MEMCP_AUTH_TOKENS` takes no `--header`.
 
 ## Try it
 

@@ -48,7 +48,8 @@ def main(argv: list[str] | None = None) -> None:
     if args:
         print(
             f"Unknown argument: {args[0]!r}. memcp takes no arguments; it is configured "
-            "through environment variables (docs/reference.md).",
+            "through environment variables: "
+            "https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md",
             file=sys.stderr,
         )
         raise SystemExit(2)

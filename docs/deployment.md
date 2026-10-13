@@ -55,8 +55,8 @@ restart.
 2. List settings the new template has that `.env` lacks, and add the ones you need:
 
    ```bash
-   curl -fsSL https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example \
-     | comm -13 <(grep -o '^[A-Z0-9_]*=' .env | sort) <(grep -o '^[A-Z0-9_]*=' - | sort)
+   comm -13 <(grep -o '^[A-Z0-9_]*=' .env | sort) \
+     <(curl -fsSL https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example | grep -o '^[A-Z0-9_]*=' | sort)
    ```
 
 3. If `.env` sets `MEMCP_VERSION`, change it to the new version or remove it.
@@ -129,13 +129,12 @@ list, comma-separated.
 - **Tokens live in `.env`.** Keep it out of version control.
 - **Host headers are checked.** Only the loopback names are admitted unless
   `MEMCP_ALLOWED_HOSTS` says otherwise.
-- **Images build on a digest-pinned Python base.**
 
 ## Running without Docker
 
 ```bash
-pip install memcp-server
-MEMCP_BACKEND=sqlite MEMCP_HOST=127.0.0.1 python -m memcp
+pipx install memcp-server
+MEMCP_BACKEND=sqlite MEMCP_HOST=127.0.0.1 memcp
 ```
 
 The server listens on `http://localhost:8080`. [reference.md](reference.md) lists every
@@ -144,7 +143,8 @@ variable.
 ## Running a checkout
 
 From a clone, `docker-compose.build.yml` builds the image from the working tree instead
-of pulling a release:
+of pulling a release. It runs as its own Compose project, `memcp-checkout`, apart from
+any release deployment:
 
 ```bash
 cp .env.example .env && chmod 600 .env    # then set MEMCP_AUTH_TOKENS
