@@ -18,9 +18,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      # No checkout needed: gh talks to the API and resolves the repo from
-      # GH_REPO. The view-or-create guard keeps re-runs on the same tag
-      # idempotent instead of failing with "release already exists".
+      # gh resolves the repo from GH_REPO. The view-or-create guard keeps re-runs
+      # on the same tag idempotent instead of failing with "release already exists".
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -28,3 +27,22 @@ jobs:
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # docs/deployment.md downloads these from the latest release. The attached compose
+      # file defaults to its own release's image, so the file and the image always match.
+      - name: Attach the compose file and environment template
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sed "s/\${MEMCP_VERSION:-latest}/\${MEMCP_VERSION:-$version}/" docker-compose.yml \
+            > "$RUNNER_TEMP/docker-compose.yml"
+          grep -qF ":-$version}" "$RUNNER_TEMP/docker-compose.yml"
+          cp .env.example "$RUNNER_TEMP/env.example"
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            "$RUNNER_TEMP/docker-compose.yml" "$RUNNER_TEMP/env.example"

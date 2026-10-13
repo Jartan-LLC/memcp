@@ -6,11 +6,11 @@ backend: one container, one database file, no API key.
 
 ## Run it with Docker Compose
 
-1. Download the compose file and the environment template:
+1. Download the latest release's compose file and environment template:
 
    ```bash
-   curl -fsSLO https://raw.githubusercontent.com/Jartan-LLC/memcp/main/docker-compose.yml
-   curl -fsSL -o .env https://raw.githubusercontent.com/Jartan-LLC/memcp/main/.env.example
+   curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
+   curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example
    ```
 
 2. Generate a token:
@@ -35,8 +35,8 @@ restart.
 
 | Task | Command |
 |---|---|
-| Pin a release | Set `MEMCP_VERSION=<version>` in `.env` (default: `latest`) |
-| Upgrade | `docker compose pull && docker compose up -d --wait` |
+| Upgrade | Download the new release's `docker-compose.yml` (step 1, first command), then `docker compose up -d --wait` |
+| Run a different release | Set `MEMCP_VERSION=<version>` in `.env`, 0.2.0 or later |
 | Stop, keeping memories | `docker compose down` |
 | Stop and delete memories | `docker compose down --volumes` |
 | Replace a token | Edit `MEMCP_AUTH_TOKENS` in `.env`, then `docker compose up -d --wait` |

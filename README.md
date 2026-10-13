@@ -11,8 +11,8 @@ persistent long-term memory over streamable HTTP.
 ## Quickstart
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/Jartan-LLC/memcp/main/docker-compose.yml
-curl -fsSL -o .env https://raw.githubusercontent.com/Jartan-LLC/memcp/main/.env.example
+curl -fsSLO https://github.com/Jartan-LLC/memcp/releases/latest/download/docker-compose.yml
+curl -fsSL -o .env https://github.com/Jartan-LLC/memcp/releases/latest/download/env.example
 # In .env, set MEMCP_AUTH_TOKENS=<token>:<your-name>; generate a token with
 #   openssl rand -hex 32
 docker compose up -d --wait

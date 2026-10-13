@@ -3,8 +3,9 @@
 #   cp .env.example .env    # set MEMCP_AUTH_TOKENS
 #   docker compose up -d --wait
 #
-# Runs the latest release; set MEMCP_VERSION in .env to pin one. To run this
-# checkout instead, add docker-compose.build.yml. docs/deployment.md covers the rest.
+# The copy attached to each release runs that release; this one runs `latest`.
+# MEMCP_VERSION in .env overrides either (0.2.0 or later). To run this checkout
+# instead, add docker-compose.build.yml. docs/deployment.md covers the rest.
 
 name: memcp
 
