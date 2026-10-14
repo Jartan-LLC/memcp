@@ -335,6 +335,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                 "errors": outcome.errors,
                 "results": outcome.imported,
                 "skipped_details": outcome.skipped,
+                "dedup_incomplete": outcome.dedup_incomplete,
             }
 
         @mcp.tool(
@@ -369,6 +370,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             return {
                 "memories": [serialize_memory(m) for m in result.memories],
                 "next_cursor": result.next_cursor,
+                "incomplete": result.incomplete,
             }
 
     if "get_memory" in caps:

@@ -511,6 +511,37 @@ async def test_list_memories_requests_the_server_ceiling(backend):
     )
 
 
+def _list_rows(count: int) -> list[dict[str, object]]:
+    return [
+        {
+            "id": f"m-{i}",
+            "memory": f"mem {i}",
+            "user_id": USER,
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        for i in range(count)
+    ]
+
+
+@respx.mock
+async def test_list_memories_marks_a_full_ceiling_incomplete(backend):
+    """mem0 can't page past its ceiling, so a full response may hide more memories."""
+    respx.get(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json=_list_rows(LIST_CEILING))
+    )
+    result = await backend.list_memories(USER, limit=10)
+    assert result.incomplete is True
+
+
+@respx.mock
+async def test_list_memories_below_the_ceiling_is_complete(backend):
+    respx.get(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json=_list_rows(LIST_CEILING - 1))
+    )
+    result = await backend.list_memories(USER, limit=10)
+    assert result.incomplete is False
+
+
 # ---------------------------------------------------------------------------
 # history
 # ---------------------------------------------------------------------------

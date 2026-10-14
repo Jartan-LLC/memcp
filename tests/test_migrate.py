@@ -13,9 +13,30 @@ from memcp.migrate import (
     migrate,
     scope_key,
 )
+from memcp.types import ListResult
 
 TENANT = "tenant_a"
 OTHER = "tenant_b"
+
+
+class PagedBackend(InMemoryBackend):
+    """Returns at most `page_size` memories per call, and can mark every list incomplete.
+
+    Stands in for a store with a server-side page size (paging) or a list ceiling
+    it can't page past (mem0).
+    """
+
+    def __init__(self, page_size: int, *, incomplete: bool = False) -> None:
+        super().__init__()
+        self.page_size = page_size
+        self.incomplete = incomplete
+
+    async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
+        page = await super().list_memories(
+            user_id, scope=scope, limit=min(limit, self.page_size), cursor=cursor
+        )
+        page.incomplete = self.incomplete
+        return page
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +101,34 @@ async def test_export_flags_truncation(backend: InMemoryBackend):
     assert payload.truncated is True
 
 
+async def test_export_follows_next_cursor():
+    backend = PagedBackend(page_size=2)
+    for i in range(5):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    payload = await export_payload(backend, TENANT)
+    assert payload.count == 5
+    assert payload.truncated is False
+    assert {m["content"] for m in payload.memories} == {f"fact {i}" for i in range(5)}
+
+
+async def test_export_flags_truncation_across_pages():
+    backend = PagedBackend(page_size=2)
+    for i in range(5):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    payload = await export_payload(backend, TENANT, limit=3)
+    assert payload.count == 3
+    assert payload.truncated is True
+
+
+async def test_export_flags_an_incomplete_list():
+    backend = PagedBackend(page_size=100, incomplete=True)
+    for i in range(3):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    payload = await export_payload(backend, TENANT)
+    assert payload.count == 3
+    assert payload.truncated is True
+
+
 async def test_export_isolates_tenants(backend: InMemoryBackend):
     await backend.add(TENANT, "mine", infer=False)
     payload = await export_payload(backend, OTHER)
@@ -94,8 +143,48 @@ async def test_export_isolates_tenants(backend: InMemoryBackend):
 async def test_dedup_index_keys_on_content_and_scope(backend: InMemoryBackend):
     await backend.add(TENANT, "same", scope={"agent_id": "a"}, infer=False)
     await backend.add(TENANT, "same", scope={"agent_id": "b"}, infer=False)
-    index = await build_dedup_index(backend, TENANT)
+    index, incomplete = await build_dedup_index(backend, TENANT)
     assert len(index) == 2
+    assert incomplete is False
+
+
+async def test_dedup_index_follows_next_cursor():
+    backend = PagedBackend(page_size=2)
+    for i in range(5):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    index, incomplete = await build_dedup_index(backend, TENANT)
+    assert len(index) == 5
+    assert incomplete is False
+
+
+async def test_dedup_index_flags_the_cap():
+    backend = PagedBackend(page_size=2)
+    for i in range(5):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    index, incomplete = await build_dedup_index(backend, TENANT, limit=3)
+    assert len(index) == 3
+    assert incomplete is True
+
+
+async def test_import_skips_a_duplicate_beyond_the_first_page():
+    backend = PagedBackend(page_size=2)
+    for i in range(5):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    outcome = await import_payload(backend, TENANT, [{"content": "fact 4"}])
+    assert len(outcome.skipped) == 1
+    assert outcome.imported == []
+
+
+async def test_import_reports_a_complete_dedup_read(backend: InMemoryBackend):
+    outcome = await import_payload(backend, TENANT, [{"content": "x"}])
+    assert outcome.dedup_incomplete is False
+
+
+async def test_import_reports_an_incomplete_dedup_read():
+    backend = PagedBackend(page_size=100, incomplete=True)
+    outcome = await import_payload(backend, TENANT, [{"content": "x"}])
+    assert outcome.dedup_incomplete is True
+    assert len(outcome.imported) == 1
 
 
 async def test_import_stores_verbatim(backend: InMemoryBackend):
@@ -207,6 +296,22 @@ async def test_migrate_between_backends():
     assert report.errors == []
     landed = await target.list_memories(TENANT)
     assert {m.content for m in landed.memories} == {"fact 0", "fact 1", "fact 2"}
+
+
+async def test_migrate_reports_an_incomplete_source():
+    source, target = PagedBackend(page_size=100, incomplete=True), InMemoryBackend()
+    await source.add(TENANT, "fact", infer=False)
+    report = await migrate(source, target, TENANT)
+    assert report.truncated is True
+    assert report.dedup_incomplete is False
+
+
+async def test_migrate_reports_an_incomplete_target_dedup_read():
+    source, target = InMemoryBackend(), PagedBackend(page_size=100, incomplete=True)
+    await source.add(TENANT, "fact", infer=False)
+    report = await migrate(source, target, TENANT)
+    assert report.truncated is False
+    assert report.dedup_incomplete is True
 
 
 async def test_migrate_into_a_different_tenant():

@@ -358,7 +358,10 @@ class Mem0Backend(MemoryBackend):
                 user_id,
             )
         memories = [_parse_memory(r) for r in raw]
-        return paginate(memories, cursor, limit)
+        page = paginate(memories, cursor, limit)
+        # A full response can't tell 1000 memories from more, so it counts as incomplete.
+        page.incomplete = len(raw) >= LIST_CEILING
+        return page
 
     async def history(self, user_id: str, memory_id: str) -> list[HistoryEntry]:
         # Fetch-then-verify: mem0 history endpoint is global

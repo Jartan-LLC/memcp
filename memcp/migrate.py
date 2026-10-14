@@ -64,6 +64,7 @@ class ImportOutcome:
     imported: list[dict[str, Any]] = field(default_factory=list)
     skipped: list[dict[str, Any]] = field(default_factory=list)
     errors: list[dict[str, Any]] = field(default_factory=list)
+    dedup_incomplete: bool = False
 
 
 @dataclass
@@ -75,6 +76,25 @@ class MigrationReport:
     imported: int = 0
     skipped: int = 0
     errors: list[dict[str, Any]] = field(default_factory=list)
+    dedup_incomplete: bool = False
+
+
+async def _list_all(backend: MemoryBackend, user_id: str, limit: int) -> tuple[list[Memory], bool]:
+    """Read up to `limit` memories by following `next_cursor`, and whether any were missed.
+
+    Missed means more than `limit` exist, or the backend marked a page incomplete.
+    """
+    memories: list[Memory] = []
+    incomplete = False
+    cursor: str | None = None
+    while True:
+        page = await backend.list_memories(user_id, limit=limit + 1 - len(memories), cursor=cursor)
+        memories.extend(page.memories)
+        incomplete = incomplete or page.incomplete
+        cursor = page.next_cursor
+        if cursor is None or not page.memories or len(memories) > limit:
+            break
+    return memories[:limit], incomplete or len(memories) > limit
 
 
 async def export_payload(
@@ -88,9 +108,7 @@ async def export_payload(
     Requires the `list_memories` capability; raises MemoryAPIError on backend
     failure for the caller to map.
     """
-    result = await backend.list_memories(user_id, limit=limit + 1)
-    truncated = len(result.memories) > limit
-    memories = result.memories[:limit]
+    memories, truncated = await _list_all(backend, user_id, limit)
     return ExportPayload(
         memories=[serialize_memory(m) for m in memories],
         count=len(memories),
@@ -103,14 +121,14 @@ async def build_dedup_index(
     user_id: str,
     *,
     limit: int = MAX_EXPORT,
-) -> dict[DedupKey, str]:
+) -> tuple[dict[DedupKey, str], bool]:
     """Map (content, scope) -> memory id for a tenant's existing memories.
 
     Capped at `limit`: tenants above it get best-effort dedup rather than a
-    refused import.
+    refused import. The flag is True when the index missed memories.
     """
-    result = await backend.list_memories(user_id, limit=limit + 1)
-    return {dedup_key(m.content, m.scope): m.id for m in result.memories}
+    memories, incomplete = await _list_all(backend, user_id, limit)
+    return {dedup_key(m.content, m.scope): m.id for m in memories}, incomplete
 
 
 async def import_payload(
@@ -143,10 +161,11 @@ async def import_payload(
         raise ValueError("on_conflict='overwrite' requires the update_memory capability")
 
     existing: dict[DedupKey, str] = {}
-    if on_conflict != "duplicate":
-        existing = await build_dedup_index(backend, user_id, limit=dedup_limit)
-
     outcome = ImportOutcome()
+    if on_conflict != "duplicate":
+        existing, outcome.dedup_incomplete = await build_dedup_index(
+            backend, user_id, limit=dedup_limit
+        )
 
     for i, entry in enumerate(memories):
         content = entry.get("content")
@@ -256,6 +275,7 @@ async def migrate(
         imported=len(outcome.imported),
         skipped=len(outcome.skipped),
         errors=outcome.errors,
+        dedup_incomplete=outcome.dedup_incomplete,
     )
 
 

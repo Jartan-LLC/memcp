@@ -360,6 +360,28 @@ async def test_list_memories_returns_all(mcp_with_tools):
     await mcp.call("add_memory", content="two")
     result = await mcp.call("list_memories")
     assert len(result["memories"]) == 2
+    assert result["incomplete"] is False
+
+
+async def test_list_memories_reports_an_incomplete_list(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="one")
+    _mark_lists_incomplete(backend)
+    result = await mcp.call("list_memories")
+    assert result["incomplete"] is True
+    assert len(result["memories"]) == 1
+
+
+def _mark_lists_incomplete(backend: InMemoryBackend) -> None:
+    """Make every list_memories call report memories beyond the backend's list ceiling."""
+    original = backend.list_memories
+
+    async def incomplete_list(*args, **kwargs):
+        page = await original(*args, **kwargs)
+        page.incomplete = True
+        return page
+
+    backend.list_memories = incomplete_list
 
 
 async def test_list_memories_invalid_cursor(mcp_with_tools):
@@ -938,6 +960,15 @@ async def test_import_memories_basic(mcp_with_tools):
     assert len(result["results"]) == 3
     assert result["errors"] == []
     assert result["skipped"] == 0
+    assert result["dedup_incomplete"] is False
+
+
+async def test_import_memories_reports_an_incomplete_dedup_read(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    _mark_lists_incomplete(backend)
+    result = await mcp.call("import_memories", memories=[{"content": "fact"}])
+    assert result["dedup_incomplete"] is True
+    assert result["imported"] == 1
 
 
 async def test_import_memories_over_limit(mcp_with_tools):
@@ -1247,6 +1278,15 @@ async def test_export_memories_returns_all(mcp_with_tools):
     assert len(result["memories"]) == 3
     contents = {m["content"] for m in result["memories"]}
     assert contents == {"export one", "export two", "export three"}
+
+
+async def test_export_memories_reports_an_incomplete_list(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="export one")
+    _mark_lists_incomplete(backend)
+    result = await mcp.call("export_memories")
+    assert result["truncated"] is True
+    assert result["count"] == 1
 
 
 async def test_export_memories_empty(mcp_with_tools):
