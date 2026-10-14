@@ -22,7 +22,7 @@ that isn't in the tree belongs to that design, not to the code.
 | Scope | `agent_id` and `run_id`: labels that organize memories inside a space. Not a security boundary. |
 | System fields | `system["space"]` (the partition), `system["author"]` (name of the key that last wrote the memory) and `system["created_by"]` (name of the key that created it). Set only by policy. |
 | Policy decision | A decision about what memcp accepts from a client or returns to it: the space a call reaches, what a key's grant allows, scope, authorship, metadata and limits. |
-| Policy object | The one instance of `policy.Policy` that `http/app.py` builds around the backend; `tools/` calls only it. |
+| Policy object | The instance of `policy.Policy` that `http/app.py` builds around the backend; `tools/` calls only it. |
 | Capabilities | What a backend declares about itself: its optional operations (`update`, `list`, `history`, `entities`), its retrieval kind, whether it extracts facts, and its list ceiling (the most memories its `list` can reach), if it has one. |
 
 ## Packages
@@ -72,8 +72,9 @@ Tests mirror the packages (`tests/http/`, `tests/tools/`, `tests/policy/`,
    optional capabilities. Outside `backends/`, change only the backend setting in
    `config.py` and its construction in `http/app.py`. If `tools/` or `policy/` would need
    an edit, extend the contract instead.
-5. Policy validates every argument before calling a backend, and checks every result it can
-   on the way back (the checks are listed per operation below).
+5. Policy validates every argument except `cursor`, which only a backend can read, before
+   calling a backend, and checks every result it can on the way back (the checks are listed
+   per operation below).
 6. Each policy decision has a test that calls `policy/` directly with input that breaks it.
    Each backend guarantee has a test in `tests/conformance`, run against every backend.
 

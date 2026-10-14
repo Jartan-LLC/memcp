@@ -1,8 +1,9 @@
 """The layering rules in docs/architecture.md, checked against the code.
 
-Imports go down the package table (http, tools, policy, backends) or to the shared
-modules; only the app and the tool-surface generator construct a backend; and only
-`memcp.policy` calls a backend method.
+Imports go down the package table (http, tools, policy, backends), stay inside one
+package, or reach the shared modules. Only the app and the tool-surface generator
+construct a backend. Only `memcp.policy` calls a backend method, and `tools/` and
+`http/` never touch `._backend`.
 """
 
 from __future__ import annotations
@@ -108,7 +109,6 @@ def test_the_import_check_catches_an_upward_import():
     assert _allowed("memcp.backends.mem0.adapter", "memcp.backends.base")
 
 
-# Where a backend may be built: the server's app, and the tool-surface generator.
 BACKEND_BUILDERS = {"memcp.http.app", "memcp.tools.surface"}
 
 
@@ -214,7 +214,9 @@ async def test_only_policy_calls_a_backend(config: Config, monkeypatch: Any):
     assert {"add_memory", *arguments} == set(call), "every registered tool runs here"
     results = [added] + [await call[name](**kwargs) for name, kwargs in arguments.items()]
     refused = [r for r in results if isinstance(r, dict) and "error" in r]
-    assert refused == [], "a refused call never reaches the backend"
+    assert refused == [], (
+        "every call must succeed, or it never reaches the backend and proves nothing"
+    )
 
     monkeypatch.setattr(http_app, "_create_backend", lambda _config: recorder)
     app, _ = http_app.create_app(config)

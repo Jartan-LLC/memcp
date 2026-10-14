@@ -140,7 +140,8 @@ class Policy:
     async def update(
         self, memory_id: str, content: str, *, metadata: dict[str, Any] | None = None
     ) -> Memory:
-        """Replace a memory's content, re-stamped with the caller as author."""
+        """Replace a memory's content, re-stamped with the caller as author; `not_found` when
+        missing or someone else's."""
         principal = get_principal()
         with _validation():
             validate_memory_id(memory_id)
@@ -156,7 +157,7 @@ class Policy:
             )
 
     async def delete(self, memory_id: str) -> bool:
-        """Delete one of the caller's memories; `not_found` when missing."""
+        """Delete one of the caller's memories; `not_found` when missing or someone else's."""
         user_id = get_tenant()
         with _validation():
             validate_memory_id(memory_id)
@@ -200,7 +201,7 @@ class Policy:
             )
 
     async def history(self, memory_id: str) -> list[HistoryEntry]:
-        """A memory's change log; `not_found` when missing."""
+        """A memory's change log; `not_found` when missing or someone else's."""
         user_id = get_tenant()
         with _validation():
             validate_memory_id(memory_id)
