@@ -111,6 +111,11 @@ class MemoryBackend(ABC):
         limit: int = 100,
         cursor: str | None = None,
     ) -> ListResult:
+        """One page of the tenant's memories, with `next_cursor` set while more remain.
+
+        Set `incomplete` on every page when memories may exist beyond what any page
+        reaches (a store's list ceiling).
+        """
         raise NotImplementedError
 
     async def history(self, user_id: str, memory_id: str) -> list[HistoryEntry]:
@@ -128,6 +133,7 @@ class MemoryBackend(ABC):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
+        """Set `incomplete` when the counts come from a list marked incomplete."""
         raise NotImplementedError
 
     # --- lifecycle ---

@@ -49,9 +49,16 @@ class FirstPageIncompleteBackend(PagedBackend):
 
 
 class EmptyPageBackend(InMemoryBackend):
-    """Returns an empty page that still carries a cursor."""
+    """Returns an empty page that still carries a cursor, and fails rather than loop."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
 
     async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
+        self.calls += 1
+        if self.calls > 3:
+            raise AssertionError("a reader kept following a cursor past an empty page")
         return ListResult(memories=[], next_cursor="more")
 
 

@@ -174,7 +174,7 @@ def serialize_memory(m: Memory) -> dict[str, Any]:
 class ListResult:
     memories: list[Memory] = field(default_factory=list)
     next_cursor: str | None = None
-    # True when memories exist beyond the backend's list ceiling, where no cursor reaches.
+    # True on every page when memories may exist beyond the backend's list ceiling.
     incomplete: bool = False
 
 
