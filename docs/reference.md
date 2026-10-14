@@ -90,7 +90,8 @@ Branch on `code`; `message` is for people. `retry` is `true` only when the same 
 succeed later.
 
 A rejected entry doesn't fail `import_memories`: it imports the entries it can and lists
-each rejected one in its result's `errors`, with the entry's `index` and the reason.
+each rejected one in its result's `errors`, with the entry's `index` and the reason in
+`error`.
 
 | Code | When | `retry` |
 |---|---|---|
