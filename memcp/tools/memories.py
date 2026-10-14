@@ -6,9 +6,7 @@ from typing import Any
 
 from memcp.policy import Policy
 from memcp.tools._shared import DESTRUCTIVE, READ_ONLY
-from memcp.types import (
-    serialize_memory,
-)
+from memcp.types import serialize_memory
 
 
 def register(mcp: Any, policy: Policy) -> None:

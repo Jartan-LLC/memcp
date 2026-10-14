@@ -12,7 +12,7 @@ READ_ONLY = {"readOnlyHint": True, "idempotentHint": True}
 DESTRUCTIVE = {"destructiveHint": True}
 
 
-def backend_error(e: MemoryAPIError) -> dict[str, Any]:
+def _backend_error(e: MemoryAPIError) -> dict[str, Any]:
     """Map a backend failure to a canonical error: 408 becomes `timeout`; anything
     else is `backend_error`, retryable when the status is 5xx."""
     if e.status == 408:
@@ -30,6 +30,6 @@ def translate_errors(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitab
         except PolicyError as e:
             return canonical_error(e.code, e.message)
         except MemoryAPIError as e:
-            return backend_error(e)
+            return _backend_error(e)
 
     return wrapper

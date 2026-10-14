@@ -94,23 +94,39 @@ def test_the_import_check_catches_an_upward_import():
 BACKEND_BUILDERS = {"memcp.http.app", "memcp.tools.surface"}
 
 
-def _constructs_a_backend(path: Path) -> bool:
-    for node in ast.walk(ast.parse(path.read_text())):
-        if isinstance(node, ast.Call):
-            name = getattr(node.func, "id", None) or getattr(node.func, "attr", "")
-            if name.endswith("Backend") and name != "MemoryBackend":
-                return True
-    return False
+def _backend_classes(trees: list[ast.Module]) -> set[str]:
+    """Names of every class in memcp that subclasses MemoryBackend, however indirectly."""
+    classes = [n for tree in trees for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    found = {"MemoryBackend"}
+    while True:
+        more = {
+            c.name
+            for c in classes
+            if any((getattr(b, "id", None) or getattr(b, "attr", None)) in found for b in c.bases)
+            and c.name not in found
+        }
+        if not more:
+            return found - {"MemoryBackend"}
+        found |= more
+
+
+def _constructs(tree: ast.Module, classes: set[str]) -> bool:
+    return any(
+        isinstance(node, ast.Call)
+        and (getattr(node.func, "id", None) or getattr(node.func, "attr", None)) in classes
+        for node in ast.walk(tree)
+    )
 
 
 def test_only_the_app_and_the_generator_construct_a_backend():
+    trees = {_module_name(p): ast.parse(p.read_text()) for p in PACKAGE_ROOT.rglob("*.py")}
+    classes = _backend_classes(list(trees.values()))
     builders = {
-        _module_name(path)
-        for path in PACKAGE_ROOT.rglob("*.py")
-        if not _module_name(path).startswith("memcp.backends") and _constructs_a_backend(path)
+        module
+        for module, tree in trees.items()
+        if not module.startswith("memcp.backends") and _constructs(tree, classes)
     }
-    assert "memcp.http.app" in builders
-    assert builders <= BACKEND_BUILDERS
+    assert builders == BACKEND_BUILDERS
 
 
 class _EveryCapability(InMemoryBackend):
@@ -159,21 +175,28 @@ async def test_only_policy_calls_a_backend(config: Config, monkeypatch: Any):
     recorder = _CallerRecorder(_EveryCapability())
 
     tools = _Tools()
+    # The recorder stands in for a MemoryBackend; Policy only calls its methods.
     register_tools(tools, Policy(recorder), config)  # type: ignore[arg-type]
     call = tools.handlers
     added = await call["add_memory"](content="layering check", infer=False)
     memory_id = added["results"][0]["id"] if "results" in added else added["id"]
-    await call["search_memory"](query="layering")
-    await call["get_memory"](memory_id=memory_id)
-    await call["update_memory"](memory_id=memory_id, content="layering check, updated")
-    await call["memory_history"](memory_id=memory_id)
-    await call["list_memories"]()
-    await call["memory_entities"]()
-    await call["memory_status"]()
-    await call["export_memories"]()
-    await call["import_memories"](memories=[{"content": "imported"}])
-    await call["delete_memory"](memory_id=memory_id)
-    await call["delete_all_memories"](scope={"agent_id": "nobody"})
+    arguments: dict[str, dict[str, Any]] = {
+        "search_memory": {"query": "layering"},
+        "get_memory": {"memory_id": memory_id},
+        "update_memory": {"memory_id": memory_id, "content": "layering check, updated"},
+        "memory_history": {"memory_id": memory_id},
+        "list_memories": {},
+        "memory_entities": {},
+        "memory_status": {},
+        "export_memories": {},
+        "import_memories": {"memories": [{"content": "imported"}]},
+        "delete_memory": {"memory_id": memory_id},
+        "delete_all_memories": {"scope": {"agent_id": "nobody"}},
+    }
+    assert {"add_memory", *arguments} == set(call), "every registered tool runs here"
+    results = [added] + [await call[name](**kwargs) for name, kwargs in arguments.items()]
+    refused = [r for r in results if isinstance(r, dict) and "error" in r]
+    assert refused == [], "a refused call never reaches the backend"
 
     monkeypatch.setattr(http_app, "_create_backend", lambda _config: recorder)
     app, _ = http_app.create_app(config)

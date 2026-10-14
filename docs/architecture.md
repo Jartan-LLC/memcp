@@ -46,7 +46,7 @@ memcp/
   __main__.py, config.py, types.py, identity.py
   http/       app.py, auth.py (keys file, token resolution), hosts.py, logging.py
   tools/      __init__.py (register_tools), memories.py, bulk.py, transfer.py, insight.py, surface.py,
-              _shared.py (annotations, backend-error mapping)
+              _shared.py (annotations, error responses)
   policy/     __init__.py (one method per operation), access.py, scope.py, metadata.py,
               results.py, transfer.py, audit.py
   backends/   base.py (the contract), capabilities.py, keyword.py, in_memory.py, sqlite.py,

@@ -1,4 +1,4 @@
-"""Export and import tools, over the transfer engine in `memcp.policy.transfer`."""
+"""Export and import tools."""
 
 from __future__ import annotations
 

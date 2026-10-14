@@ -67,21 +67,21 @@ class Policy:
 
     def __init__(self, backend: MemoryBackend):
         self._backend = backend
-        self._scope_keys = set(backend.scope_keys())
-
-    # --- what the backend declares ---
+        self._capabilities = backend.capabilities()
+        self._scope_key_list = backend.scope_keys()
+        self._scope_keys = set(self._scope_key_list)
 
     @property
     def extracts_facts(self) -> bool:
         return self._backend.extracts_facts
 
     def capabilities(self) -> set[str]:
-        return self._backend.capabilities()
+        """The optional operations the backend declares."""
+        return set(self._capabilities)
 
     def scope_keys(self) -> list[str]:
-        return self._backend.scope_keys()
-
-    # --- operations ---
+        """The scope keys the backend supports, in its order."""
+        return list(self._scope_key_list)
 
     async def add(
         self,
@@ -91,6 +91,7 @@ class Policy:
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
     ) -> AddResult | list[AddResult]:
+        """Store content for the caller, stamped with its author."""
         with _validation():
             validate_content(content)
         principal = get_principal()
@@ -113,6 +114,7 @@ class Policy:
         limit: int = 10,
         threshold: float = 0.0,
     ) -> list[Memory]:
+        """The caller's memories that match `query`, ranked by the backend."""
         with _validation():
             validate_query(query)
             validate_limit(limit)
@@ -125,6 +127,7 @@ class Policy:
         )
 
     async def get(self, memory_id: str) -> Memory:
+        """One of the caller's memories; `not_found` when missing or someone else's."""
         user_id = get_tenant()
         with _validation():
             validate_memory_id(memory_id)
@@ -137,6 +140,7 @@ class Policy:
     async def update(
         self, memory_id: str, content: str, *, metadata: dict[str, Any] | None = None
     ) -> Memory:
+        """Replace a memory's content, re-stamped with the caller as author."""
         principal = get_principal()
         with _validation():
             validate_memory_id(memory_id)
@@ -152,6 +156,7 @@ class Policy:
             )
 
     async def delete(self, memory_id: str) -> bool:
+        """Delete one of the caller's memories; `not_found` when missing."""
         user_id = get_tenant()
         with _validation():
             validate_memory_id(memory_id)
@@ -159,6 +164,7 @@ class Policy:
             return await self._backend.delete(user_id, memory_id)
 
     async def delete_all(self, scope: dict[str, Any]) -> int | None:
+        """Delete the caller's memories in a non-empty, concrete scope; the count if known."""
         user_id = get_tenant()
         cleaned = validate_scope(scope, self._scope_keys)
         if not cleaned:
@@ -182,16 +188,19 @@ class Policy:
         limit: int = 100,
         cursor: str | None = None,
     ) -> ListResult:
+        """One page of the caller's memories."""
         with _validation():
             validate_limit(limit)
         user_id = get_tenant()
         scope = validate_scope(scope, self._scope_keys)
+        # A backend raises ValueError for a cursor it can't read.
         with _validation():
             return await self._backend.list_memories(
                 user_id, scope=scope, limit=limit, cursor=cursor
             )
 
     async def history(self, memory_id: str) -> list[HistoryEntry]:
+        """A memory's change log; `not_found` when missing."""
         user_id = get_tenant()
         with _validation():
             validate_memory_id(memory_id)
@@ -201,6 +210,7 @@ class Policy:
     async def entities(
         self, *, scope: dict[str, Any] | None = None, limit: int = 100
     ) -> EntitiesResult:
+        """Entity counts over the caller's memories."""
         with _validation():
             validate_limit(limit)
         user_id = get_tenant()
@@ -208,11 +218,13 @@ class Policy:
         return await self._backend.entities(user_id, scope=scope, limit=limit)
 
     async def export_memories(self) -> ExportPayload:
+        """Every memory of the caller's, up to the export cap."""
         return await export_payload(self._backend, get_tenant(), limit=MAX_EXPORT)
 
     async def import_memories(
         self, memories: Sequence[dict[str, Any]], *, on_conflict: str = "skip"
     ) -> ImportOutcome:
+        """Store a batch for the caller; per-entry failures are in the outcome, not raised."""
         if not memories:
             raise PolicyError("validation_error", "memories array must not be empty")
         if len(memories) > MAX_IMPORT:
@@ -223,7 +235,7 @@ class Policy:
             raise PolicyError(
                 "validation_error", "on_conflict must be 'skip', 'overwrite', or 'duplicate'"
             )
-        if on_conflict == "overwrite" and "update_memory" not in self.capabilities():
+        if on_conflict == "overwrite" and "update_memory" not in self._capabilities:
             raise PolicyError(
                 "not_supported", "on_conflict='overwrite' requires update_memory capability"
             )
@@ -245,8 +257,6 @@ class Policy:
             dedup_limit=MAX_EXPORT,
             author=author_for(principal),
         )
-
-    # --- lifecycle ---
 
     async def health(self) -> HealthStatus:
         return await self._backend.health()

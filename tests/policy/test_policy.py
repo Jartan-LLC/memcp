@@ -212,9 +212,10 @@ async def test_import_refuses_an_unknown_conflict_mode(policy: Policy):
 
 
 async def test_import_overwrite_needs_the_update_capability(
-    policy: Policy, backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
+    backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(backend, "capabilities", lambda: {"list_memories"})
+    policy = Policy(backend)
     await _refused(
         policy.import_memories([{"content": "x"}], on_conflict="overwrite"), "not_supported"
     )
