@@ -36,6 +36,9 @@ Shared by all of them and importing nothing else from memcp: `types.py` (`Memory
 `HistoryEntry`, result types, `MemoryAPIError`), `identity.py` (key, grant, the current
 request's key, which has no default: reading it when no key is set raises) and `config.py`.
 
+Files below that aren't in the tree are planned in
+[#116](https://github.com/Jartan-LLC/memcp/issues/116) and the restructure PRs after it.
+
 ```text
 memcp/
   __main__.py, config.py, types.py, identity.py

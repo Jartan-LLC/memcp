@@ -8,27 +8,27 @@ from pathlib import Path
 
 import pytest
 
-from memcp.tools import surface as toolsurface
+from memcp.tools import surface
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_tool_surface_matches_the_snapshot():
-    path = REPO_ROOT / toolsurface.SNAPSHOT_PATH
-    assert path.exists(), f"{toolsurface.SNAPSHOT_PATH} is missing"
+    path = REPO_ROOT / surface.SNAPSHOT_PATH
+    assert path.exists(), f"{surface.SNAPSHOT_PATH} is missing"
     committed = json.loads(path.read_text(encoding="utf-8"))["tools"]
-    current = toolsurface.current_surface()
+    current = surface.current_surface()
 
     added = sorted(set(current) - set(committed))
     removed = sorted(set(committed) - set(current))
     assert not removed, (
         f"tool(s) {removed} disappeared from the MCP surface. Connected clients call "
         "these names, so a removal is a breaking change: state it before running "
-        f"`{toolsurface.GENERATOR}`."
+        f"`{surface.GENERATOR}`."
     )
     assert not added, (
         f"new tool(s) {added} appeared. Additive is safe for existing clients, but the "
-        f"snapshot has to be regenerated deliberately: `{toolsurface.GENERATOR}`."
+        f"snapshot has to be regenerated deliberately: `{surface.GENERATOR}`."
     )
 
     changed = {
@@ -39,13 +39,13 @@ def test_tool_surface_matches_the_snapshot():
     assert not changed, (
         "the argument shape or annotations of "
         f"{sorted(changed)} changed. State what it breaks for a connected client, then "
-        f"regenerate with `{toolsurface.GENERATOR}`. Detail: "
+        f"regenerate with `{surface.GENERATOR}`. Detail: "
         f"{json.dumps(changed, indent=2, sort_keys=True)}"
     )
 
 
 def test_tool_surface_has_twelve_tools():
-    assert len(toolsurface.current_surface()) == 12
+    assert len(surface.current_surface()) == 12
 
 
 # docs/tool-surface.json holds every tool any backend can expose, so it doesn't notice
@@ -138,4 +138,4 @@ def test_the_snapshot_is_the_union_of_what_the_backends_register():
     union: set[str] = set()
     for name in EXPECTED_TOOLS:
         union |= _registered_tools(name)
-    assert union == set(toolsurface.load())
+    assert union == set(surface.load())
