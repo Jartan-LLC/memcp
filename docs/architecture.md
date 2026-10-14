@@ -24,7 +24,7 @@ Calls go down the table, never up.
 | Package | Owns | Never |
 |---|---|---|
 | `memcp/http/` | HTTP, Host checks, `/health`, resolving a bearer token to its key; `app.py` builds the backend and the policy object at startup | Calls a backend method |
-| `memcp/tools/` | The MCP tools: names, argument schemas, result shapes, error responses. Calls the policy object it is given | Makes a policy decision, or holds a backend |
+| `memcp/tools/` | The MCP tools: names, argument schemas, result shapes, error responses. Calls the policy object it is given, and reads the backend's capabilities from it | Makes a policy decision, or holds a backend |
 | `memcp/policy/` | Every policy decision; import and export; the only caller of a backend method | Knows a store's API |
 | `memcp/backends/` | One adapter per memory store (mem0, sqlite, in_memory): storing, searching, fetching, history | Makes a policy decision |
 
@@ -85,11 +85,13 @@ grants = [{ space = "jon", relation = "reader" }]
   access and can be version-controlled.
 - Names are unique and required, so every write has an author. All of a key's secrets have
   the same access.
-- Each key has exactly one grant. Several grants per key, `manager`, and a registry of keys
-  managed through an API or UI are planned in
-  [#112](https://github.com/Jartan-LLC/memcp/issues/112). The registry resolves tokens to
-  the same keys and grants, so policy doesn't change; a deployment uses the keys file or
-  the registry, never both.
+- Each key has exactly one grant. Planned in
+  [#112](https://github.com/Jartan-LLC/memcp/issues/112): a registry of spaces, keys and
+  grants managed through an API or UI, several grants per key, choosing a space per call,
+  reads across spaces, `manager` and an admin plane, deleting a whole space with each
+  backend declaring how completely it erases, users and organizations, and shared spaces.
+  The registry resolves tokens to the same keys and grants, so policy doesn't change; a
+  deployment uses the keys file or the registry, never both.
 - **Without a keys file,** memcp runs as a single local key named `local` with `writer` on
   the space `default_user`, and refuses to bind any interface other than loopback.
 - **With a keys file,** a request whose token resolves to no key is refused with 401;
@@ -120,18 +122,19 @@ isolation.
 
 ### How policy enforces it
 
-The space comes from the key's grant, never from arguments, metadata or an import payload.
+The space comes from the key's grants: no argument, metadata or import payload can reach a
+space the key isn't granted. With one grant per key, that is always the granted space.
 Every backend call names exactly one partition, and no partition or system field other
 than the author is ever returned to a client.
 
 | Operation | Before calling the backend | After |
 |---|---|---|
 | add, import | Set the partition and all system fields; refuse caller-supplied `system` or reserved metadata | Check each returned item's action (added, updated, deleted) and audit each |
-| search, list, export | Scope validated; partition set | Every memory's stored partition and `system["space"]` must equal the partition asked for; otherwise the request fails |
+| search, list, export | Scope validated; partition set | Every memory's stored partition and `system["space"]` must equal the partition asked for, or the request fails. Every memory's scope must contain the requested scope, or that memory is dropped and a warning logged |
 | get, history | — | Same check as search |
 | update, delete | Fetch the memory and check its space | Check the updated memory |
 | delete_all | Refuse an empty scope or an empty, null or wildcard value | Nothing can be checked after a bulk delete; the backend's store invariants are the protection |
-| entities | Partition set | The partition is never returned as an entity |
+| entities | Partition set | Entity rows carry no partition, so the backend's filter is the protection; the partition is never returned as an entity |
 | status, health | — | — |
 
 A memory written before stamps existed is checked on its stored partition alone. On a
@@ -192,7 +195,10 @@ Unicode normalization, and paging past a backend's page size.
 
 ## Backend-specific tools
 
-Not built yet; [#107](https://github.com/Jartan-LLC/memcp/issues/107) builds it.
+Not built yet; planned in [#107](https://github.com/Jartan-LLC/memcp/issues/107), with the
+other parts of the contract a third-party backend needs: an `open_space` hook for stores
+that create their own ids for a space, a trusted bulk-delete capability with a
+list-and-delete fallback, and refusing a backend that hasn't passed the conformance suite.
 
 A backend can offer MCP tools beyond the standard set when its store can do something they
 can't express, such as a graph backend answering "what's connected to project X?". The
