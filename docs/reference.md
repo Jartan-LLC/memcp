@@ -102,7 +102,7 @@ each rejected one in its result's `errors`, with the entry's `index` and the rea
 | `not_found` | The memory doesn't exist or belongs to another tenant | `false` |
 | `not_supported` | `import_memories` with `on_conflict=overwrite` on a backend without `update_memory` | `false` |
 | `timeout` | The backend didn't answer in time | `true` |
-| `backend_error` | The backend returned an error | `true` for a 5xx |
+| `backend_error` | The backend returned an error | `true` for a 5xx, otherwise `false` |
 
 A request without a valid bearer token gets HTTP 401 with the same object and the code
 `unauthorized`.
