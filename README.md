@@ -45,12 +45,6 @@ Where the system Python refuses `pip install` (an "externally managed" environme
 use `pipx install memcp-server`. With no `MEMCP_AUTH_TOKENS`, memcp serves one tenant on
 loopback and clients connect without a token.
 
-**No account, no API key.** Memories go to a file on disk and survive a restart.
-Search is keyword matching, so it finds a memory when your question reuses its words
-and misses one phrased differently, and it stores what you give it word for word
-instead of pulling facts out of it; mem0 does both. A client does not have to guess
-which it is talking to: `memory_status` says.
-
 ## Connect from Claude Code
 
 With your token (the part of `MEMCP_AUTH_TOKENS` before the colon):
