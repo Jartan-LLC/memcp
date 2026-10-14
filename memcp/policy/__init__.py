@@ -7,6 +7,7 @@ failure it doesn't decide on reaches the caller as `MemoryAPIError`.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
@@ -34,12 +35,13 @@ from memcp.types import (
     Memory,
     MemoryAPIError,
     PolicyError,
-    is_wildcard,
     validate_content,
     validate_limit,
     validate_memory_id,
     validate_query,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -60,6 +62,19 @@ def _not_found() -> Iterator[None]:
         if e.status in (404, 410):
             raise PolicyError("not_found", NOT_FOUND_MSG) from e
         raise
+
+
+def _in_scope(memories: list[Memory], scope: dict[str, Any] | None) -> list[Memory]:
+    """Drop, with a warning, any memory a backend returned outside the requested scope."""
+    if not scope:
+        return memories
+    kept: list[Memory] = []
+    for memory in memories:
+        if all(str(memory.scope.get(k)) == str(v) for k, v in scope.items()):
+            kept.append(memory)
+        else:
+            logger.warning("Dropped memory %s returned outside the requested scope", memory.id)
+    return kept
 
 
 class Policy:
@@ -122,9 +137,10 @@ class Policy:
                 raise ValueError("threshold must be between 0.0 and 1.0")
         user_id = get_tenant()
         scope = validate_scope(scope, self._scope_keys)
-        return await self._backend.search(
+        found = await self._backend.search(
             user_id, query, scope=scope, limit=limit, threshold=threshold
         )
+        return _in_scope(found, scope)
 
     async def get(self, memory_id: str) -> Memory:
         """One of the caller's memories; `not_found` when missing or someone else's."""
@@ -172,14 +188,6 @@ class Policy:
             raise PolicyError(
                 "scope_required", "delete_all_memories requires at least one scope key."
             )
-        # An empty, "*" or null value means "any" to mem0's adapter; refuse it here so
-        # no backend widens a scoped delete.
-        if any(is_wildcard(v) for v in cleaned.values()):
-            raise PolicyError(
-                "validation_error",
-                "delete_all_memories needs a concrete value for each scope key, "
-                "not empty, '*' or null.",
-            )
         return await self._backend.delete_all(user_id, cleaned)
 
     async def list_memories(
@@ -196,9 +204,11 @@ class Policy:
         scope = validate_scope(scope, self._scope_keys)
         # A backend raises ValueError for a cursor it can't read.
         with _validation():
-            return await self._backend.list_memories(
+            page = await self._backend.list_memories(
                 user_id, scope=scope, limit=limit, cursor=cursor
             )
+        page.memories = _in_scope(page.memories, scope)
+        return page
 
     async def history(self, memory_id: str) -> list[HistoryEntry]:
         """A memory's change log; `not_found` when missing or someone else's."""

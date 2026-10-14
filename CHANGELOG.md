@@ -23,7 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Three log sources have new logger names: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter` (mem0 backend), `memcp.auth` is now `memcp.http.auth` (rejected requests), and `memcp.tools` is now `memcp.policy.scope` (the warning when a `user_id` is stripped from a scope). Tool-call records keep `memcp.tools`. Update any log filter or alert that matches the old names.
+- **Every tool applies the same scope rules, on every backend.**
+  - A scope naming `user_id` is refused with `invalid_scope`; it used to be ignored.
+  - An empty, `*` or `null` value is refused with `validation_error` on every tool, not just `delete_all_memories`. On mem0, search and list read such a value as "any".
+  - So is a value with whitespace at either end, and a `run_id` with whitespace inside it, which mem0 trims or refuses.
+  - An import entry whose scope breaks one of these rules is listed in `errors`.
+  - A memory a backend returns outside the requested scope is left out of search and list results, and logged.
+- Two log sources have new logger names: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter` (mem0 backend), and `memcp.auth` is now `memcp.http.auth` (rejected requests). Tool-call records keep `memcp.tools`. Update any log filter or alert that matches the old names.
 - **`MEMCP_BACKEND` is required.** It defaulted to `mem0`; a server started without it now refuses to start and names the variable. Set `MEMCP_BACKEND=mem0` to keep a 0.1.x deployment running as before.
 - **Image tags come from `docker/metadata-action`**, converging with scaffold: `{{version}}` and `{{major}}.{{minor}}` instead of one hardcoded pair. `{{major}}` is deliberately absent — pre-1.0 it is an alias for "any version at all", and across minor lines it carries the same ordering defect `latest` had. `flavor: latest=false` turns off metadata-action's own `latest=auto`, which excludes pre-releases but does **not** check whether the tag is the highest version; the explicit guard added earlier makes that decision instead.
 - **The README points at documents rather than restating them.** It answers what memcp is, how to get a running one, how a client connects, and where everything else lives. The environment-variable table, the 12-tool surface and the per-backend limitations moved to `docs/reference.md`; the check loop moved to `CONTRIBUTING.md` and the conformance run to `tests/mem0/README.md`; running the server without Docker moved into `docs/deployment.md`. Links out of the README are absolute, because PyPI renders it as the package page and does not resolve relative paths.

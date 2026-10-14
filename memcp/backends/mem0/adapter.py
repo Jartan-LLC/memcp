@@ -38,8 +38,10 @@ LIST_CEILING = 1000
 
 
 def _norm(value: Any) -> Any:
-    """Return None for wildcard/empty sentinels; pass through otherwise."""
-    return None if is_wildcard(value) else value
+    """Refuse a value mem0 would read as "any"; mem0 has no way to match it literally."""
+    if is_wildcard(value):
+        raise MemoryAPIError(400, "scope values must not be empty, '*' or null")
+    return value
 
 
 def _scope_items(scope: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -56,7 +58,7 @@ def _build_search_filters(
     filters: dict[str, Any] = {"user_id": user_id}
     if scope:
         for key, val in _scope_items(scope):
-            val = _norm(val) if isinstance(val, str) else val
+            val = _norm(val)
             if val is not None:
                 filters[key] = val
     return filters

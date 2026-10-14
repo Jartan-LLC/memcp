@@ -9,7 +9,14 @@ import pytest
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.identity import DEFAULT_PRINCIPAL, Principal, reset_tenant, set_principal, set_tenant
 from memcp.policy import Policy
-from memcp.types import AUTHOR_METADATA_KEY, MAX_IMPORT, MemoryAPIError, PolicyError
+from memcp.types import (
+    AUTHOR_METADATA_KEY,
+    MAX_IMPORT,
+    ListResult,
+    Memory,
+    MemoryAPIError,
+    PolicyError,
+)
 
 
 @pytest.fixture
@@ -90,10 +97,77 @@ async def test_scope_normalizes_agent_id(policy: Policy, backend: InMemoryBacken
     assert [m.content for m in listed.memories] == ["scoped"]
 
 
-async def test_scope_strips_user_id(policy: Policy, backend: InMemoryBackend):
-    await policy.add("x", scope={"user_id": "someone-else", "agent_id": "a"}, infer=False)
+SCOPED: dict[str, Any] = {
+    "add": lambda p, scope: p.add("x", scope=scope, infer=False),
+    "search": lambda p, scope: p.search("q", scope=scope),
+    "list_memories": lambda p, scope: p.list_memories(scope=scope),
+    "delete_all": lambda p, scope: p.delete_all(scope),
+}
+
+
+@pytest.mark.parametrize("operation", SCOPED)
+async def test_scope_refuses_user_id(policy: Policy, backend: InMemoryBackend, operation: str):
+    message = await _refused(
+        SCOPED[operation](policy, {"user_id": "someone-else", "agent_id": "a"}), "invalid_scope"
+    )
+    assert "user_id" in message and "token" in message
     assert (await backend.list_memories("someone-else")).memories == []
-    assert len((await backend.list_memories("test_user")).memories) == 1
+
+
+@pytest.mark.parametrize("operation", SCOPED)
+@pytest.mark.parametrize("value", ["*", "", "  ", None])
+async def test_scope_refuses_a_value_that_matches_anything(
+    policy: Policy, operation: str, value: Any
+):
+    await _refused(SCOPED[operation](policy, {"run_id": value}), "validation_error")
+
+
+@pytest.mark.parametrize("value", [" s1", "s1 ", "\ts1"])
+async def test_scope_refuses_whitespace_at_either_end(
+    backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch, value: str
+):
+    monkeypatch.setattr(backend, "scope_keys", lambda: ["agent_id", "run_id", "session"])
+    policy = Policy(backend)
+    await _refused(policy.search("q", scope={"session": value}), "validation_error")
+    await policy.search("q", scope={"session": "s 1"})
+
+
+async def test_scope_refuses_whitespace_inside_a_run_id(policy: Policy):
+    await _refused(policy.search("q", scope={"run_id": "run one"}), "validation_error")
+
+
+async def test_scope_accepts_a_number(policy: Policy):
+    await policy.search("q", scope={"run_id": 7})
+
+
+def _returning(backend: InMemoryBackend, method: str, memories: list[Memory]) -> None:
+    """Make `method` return `memories` whatever was asked, like a backend that ignores scope."""
+
+    async def ignoring_scope(*args: Any, **kwargs: Any) -> Any:
+        if method == "list_memories":
+            return ListResult(memories=memories)
+        return memories
+
+    setattr(backend, method, ignoring_scope)
+
+
+@pytest.mark.parametrize("method", ["search", "list_memories"])
+async def test_a_returned_memory_outside_the_scope_is_dropped(
+    policy: Policy,
+    backend: InMemoryBackend,
+    method: str,
+    caplog: pytest.LogCaptureFixture,
+):
+    inside = Memory(id="in", content="in", scope={"agent_id": "a", "run_id": "7"})
+    outside = Memory(id="out", content="out", scope={"agent_id": "b"})
+    _returning(backend, method, [inside, outside])
+    if method == "search":
+        found = await policy.search("q", scope={"agent_id": "a", "run_id": 7})
+    else:
+        found = (await policy.list_memories(scope={"agent_id": "a", "run_id": 7})).memories
+    assert [m.id for m in found] == ["in"]
+    assert "out" in caplog.text
+    assert "out" not in [m.content for m in found]
 
 
 async def test_delete_all_requires_a_scope(policy: Policy):
