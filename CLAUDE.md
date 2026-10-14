@@ -23,11 +23,8 @@ The project rules are in `GUARDRAILS.md`:
 
 ## Skills
 
-Project conventions live in `.claude/skills/`. Check the relevant skill when working in an unfamiliar area:
-
-- **api-error-patterns** — MCP tool error format, canonical error codes
-
-When adding a new skill, add an entry here.
+Project conventions go in `.claude/skills/`; list each one here, and check the relevant one
+when working in an unfamiliar area.
 
 ## Verify
 

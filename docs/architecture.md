@@ -276,8 +276,12 @@ The reserved metadata set and the wildcard and empty-value check are defined onc
   from output.
 - **Limits:** page sizes, result counts, import sizes, and metadata key count, key length
   and value size outside their ranges are refused.
-- **Errors:** a backend error reaches the client as a fixed code and message; the store's
-  response goes to the server log only.
+- **Errors:** policy raises `PolicyError(code, message)` for a request it refuses, and turns a
+  backend 404 or 410 into `not_found` on a by-id call (`get`, `update`, `delete`,
+  `history`). A tool handler catches nothing: `translate_errors` returns `PolicyError` and
+  `MemoryAPIError` as the error object in [reference.md](reference.md#errors). A backend
+  error reaches the client as a fixed code and message; the store's response goes to the
+  server log only.
 - **Audit:** every policy decision is logged to a structured audit logger: operation, key
   name (never a token), space, memory ids or scope and count, relation, outcome. Never
   content.
