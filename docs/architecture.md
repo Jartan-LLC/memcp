@@ -65,8 +65,9 @@ Tests mirror the packages (`tests/http/`, `tests/tools/`, `tests/policy/`,
    `http/app.py` does, and only tests call a backend directly. A test checks the server's
    calls.
 4. Adding a backend means writing one class that implements `backends/base.py` and declares
-   its optional capabilities. Needing an edit to `tools/` or `policy/` beyond registering it
-   means the contract is missing something.
+   its optional capabilities. Needing an edit to `tools/` or `policy/` means the contract
+   is missing something; outside `backends/`, a new backend touches only the backend
+   setting in `config.py` and its construction in `http/app.py`.
 5. Policy validates every argument before calling a backend, and checks every result it can
    on the way back (the checks are listed per operation below).
 6. Each policy decision has a test that calls `policy/` directly with input that breaks it.
@@ -79,12 +80,12 @@ Keys are configured in a TOML file whose path `MEMCP_KEYS_FILE` gives:
 ```toml
 [[keys]]
 name = "laptop-claude"
-secrets = ["sha256:9f86d0…"]          # two entries during a rotation
+secrets = ["sha256:<64 hex digits>"]  # two entries during a rotation
 grants = [{ space = "team-notes", relation = "writer" }]
 
 [[keys]]
 name = "ci-reader"
-secrets = ["sha256:2c26b4…"]
+secrets = ["sha256:<64 hex digits>"]
 grants = [{ space = "team-notes", relation = "reader" }]
 ```
 
@@ -124,8 +125,8 @@ Startup refuses:
 - a space named `*` or empty, or one the configured backend's `validate_partition` refuses
   (policy checks each granted space when `http/app.py` builds it).
 
-A space whose name another store couldn't match exactly (whitespace, control characters,
-more than 128 characters, a `spc_` or `__` prefix) is logged as a warning and served.
+A space name that isn't portable to every backend (whitespace, control characters, more
+than 128 characters) or that starts with `spc_` or `__` is logged as a warning and served.
 
 ### Relation needed per tool
 
@@ -170,17 +171,18 @@ has one, equal the partition policy asked for. A failed space check fails the re
 
 **Import and export:** export returns ids, timestamps, author and the space's memories'
 content, scope and metadata; import reads only content, scope and metadata, writes into the
-importing key's space, and stamps each memory as that key's write. Export and import's
-dedup read follow `next_cursor` until the space is exhausted or memcp's export cap is
-reached; reaching memcp's export cap (`MAX_EXPORT`), or a backend marking its list
-incomplete, marks the export truncated. Import and migrate write content as given
-(`infer=False`). A migration that stops at the cap is reported as truncated.
+importing key's space, writes content as given (`infer=False`), and stamps each memory as
+that key's write. Export, import's dedup read and `migrate()` follow `next_cursor` until
+the list ends or memcp's export cap (`MAX_EXPORT`) is reached. An export or migration that
+stops at the cap, or reads a list the backend marked incomplete, is marked truncated.
 
 **Migration:** `migrate()` is an operator function for moving memories between backends.
-It isn't reachable by a client, takes source and target partitions directly, space-checks
-every memory it reads from the source, writes each to the target with `system` copied from
-the source and `space` set to the target partition, and is audited as the operation
-`migrate`.
+It isn't reachable by a client. It takes source and target partitions directly, refused
+as a granted space would be (`*`, empty, or refused by that backend's
+`validate_partition`); space-checks every memory it reads from the source; and writes each
+to the target as given (`infer=False`), with `system` copied from the source and `space`
+set to the target partition. It is audited as the operation `migrate`; its caller passes an
+operator name, which the audit records as the key name.
 
 **Trust within a space:** all keys with `writer` on one space trust each other. On a backend
 that extracts facts (`infer=True`), `system["author"]` records the key that called add, not
@@ -200,10 +202,11 @@ content.
 - returns, on every memory, the partition it stored and the `system` fields it stored, as
   stored, never copied from the request;
 - stores `system` as policy passes it, on add and on update;
-- refuses, on add and update, metadata with a key under `_memcp_` or in the reserved set,
-  so caller metadata never overwrites `system`;
+- refuses, on add, and on update in either the keys to set or the keys to remove, a
+  metadata key under `_memcp_` or in the reserved set, raising `MemoryAPIError` 400, so
+  caller metadata never overwrites or removes `system`;
 - implements the required methods: `add`, `search`, `get`, `delete`, `delete_all`,
-  `scope_keys`, `health` and `close`; `get` returns `None`, and `update`, `delete` and
+  `scope_keys`, `validate_partition`, `health` and `close`; `get` returns `None`, and `update`, `delete` and
   `history` raise `MemoryAPIError` 404, when the id is missing or belongs to another
   partition;
 - never changes a memory's partition;
@@ -212,15 +215,15 @@ content.
 - returns scope values as strings, compared byte for byte;
 - returns search results sorted by `score`, a number from 0 to 1 where higher is better
   (policy applies the threshold to that score; a backend may use it as a hint);
-- returns a `next_cursor` from `list_memories` whenever more memories exist within its
+- returns a `next_cursor` from `list` whenever more memories exist within its
   declared list ceiling, and marks the result incomplete when memories exist beyond it;
 - reports each add item's action: `added`, `updated` or `deleted`;
 - refuses a partition its store can't match by exact equality, on every call
   (`validate_partition`);
 - refuses `delete_all` with an empty scope or an empty, null or wildcard value;
 - declares its optional capabilities by operation name (`update`, `list`, `history`,
-  `entities`), its retrieval kind (keyword or semantic) and whether it extracts facts, and
-  raises `NotImplementedError` for an operation it doesn't declare;
+  `entities`), its retrieval kind (keyword or semantic), whether it extracts facts, and its
+  list ceiling if it has one, and raises `NotImplementedError` for an operation it doesn't declare;
 - maps store errors to `MemoryAPIError`, keeping the store's response out of the message.
 
 Where each backend keeps the system fields: a `system` column on sqlite, a field on
@@ -243,7 +246,7 @@ The reserved metadata set and the wildcard and empty-value check are defined onc
 - on update, a key outside the patch survives, a removed key reads back absent from get,
   list, search and export, removing a missing key does nothing, and a content-only or
   metadata-only update leaves the other unchanged;
-- metadata with a `_memcp_` or reserved key refused on add and update;
+- a `_memcp_` or reserved key refused on add, and on update both to set and to remove;
 - scope values returned as strings, scores in range and sorted;
 - a store error's response absent from the `MemoryAPIError` message.
 
@@ -251,14 +254,14 @@ The reserved metadata set and the wildcard and empty-value check are defined onc
 
 - **Scope:** one function validates every scope before any backend call: allowed keys,
   value types and lengths, key count, `agent_id` normalization. It refuses `user_id`,
-  nested filters, and empty, null or wildcard values, and values with whitespace at
-  either end, or inside a `run_id` (mem0 trims the ends and refuses inner whitespace).
+  nested filters, and empty, null or wildcard values. `agent_id` is normalized first; any
+  other value with whitespace at either end, or a `run_id` with whitespace inside it, is
+  refused (mem0 trims the ends and refuses inner whitespace).
 - **Metadata:** a flat map of keys to strings, numbers, booleans or lists of strings. On
   update, `metadata` is a patch: a key with a value is set, a key set to `null` is removed,
-  and keys left out are kept. A client never sends `null` except to remove a key on
-  update, and never sees one. Policy refuses, with a
-  `validation_error` naming the key, a nested object, a mixed list, a key under the prefix
-  `_memcp_`, and a key in its one reserved set (`data`, `hash`, `id`, `created_at`,
+  and keys left out are kept; a client never sees `null`. Policy refuses, with a
+  `validation_error` naming the key, a `null` value outside an update's patch, a nested
+  object, a mixed list, a key under the prefix `_memcp_`, and a key in the one reserved set (`data`, `hash`, `id`, `created_at`,
   `updated_at`, `text_lemmatized`, `attributed_to`, `user_id`, `agent_id`, `run_id`,
   `actor_id`, `role`, `expiration_date`, `memory_type`), the same on every backend.
   `update_memory`'s `content` is optional. An update must give `content`, a non-empty
