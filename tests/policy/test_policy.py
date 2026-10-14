@@ -34,9 +34,6 @@ async def _add_one(policy: Policy, content: str = "a fact") -> str:
     return (result[0] if isinstance(result, list) else result).id
 
 
-# --- arguments ---
-
-
 async def test_add_refuses_empty_content(policy: Policy):
     await _refused(policy.add("", infer=False), "validation_error")
 
@@ -62,11 +59,17 @@ async def test_entities_refuses_a_limit_out_of_range(policy: Policy):
     await _refused(policy.entities(limit=0), "validation_error")
 
 
-async def test_get_refuses_a_malformed_id(policy: Policy):
-    await _refused(policy.get("not a valid id!"), "validation_error")
+BY_ID: dict[str, Any] = {
+    "get": lambda p, memory_id: p.get(memory_id),
+    "update": lambda p, memory_id: p.update(memory_id, "x"),
+    "delete": lambda p, memory_id: p.delete(memory_id),
+    "history": lambda p, memory_id: p.history(memory_id),
+}
 
 
-# --- scope ---
+@pytest.mark.parametrize("operation", BY_ID)
+async def test_a_by_id_call_refuses_a_malformed_id(policy: Policy, operation: str):
+    await _refused(BY_ID[operation](policy, "not a valid id!"), "validation_error")
 
 
 async def test_scope_refuses_an_unknown_key(policy: Policy):
@@ -97,22 +100,21 @@ async def test_delete_all_requires_a_scope(policy: Policy):
     await _refused(policy.delete_all({}), "scope_required")
 
 
-async def test_delete_all_refuses_a_wildcard_value(policy: Policy):
-    await _refused(policy.delete_all({"agent_id": "*"}), "validation_error")
-
-
-# --- not found ---
+@pytest.mark.parametrize("value", ["*", "", None])
+async def test_delete_all_refuses_a_wildcard_value(policy: Policy, value: Any):
+    await _refused(policy.delete_all({"agent_id": value}), "validation_error")
 
 
 async def test_get_of_a_missing_memory_is_not_found(policy: Policy):
     await _refused(policy.get("missing-id"), "not_found")
 
 
-async def test_get_of_another_tenants_memory_is_not_found(policy: Policy):
+@pytest.mark.parametrize("operation", BY_ID)
+async def test_a_by_id_call_on_another_tenants_memory_is_not_found(policy: Policy, operation: str):
     memory_id = await _add_one(policy)
     token = set_tenant("someone_else")
     try:
-        await _refused(policy.get(memory_id), "not_found")
+        await _refused(BY_ID[operation](policy, memory_id), "not_found")
     finally:
         reset_tenant(token)
 
@@ -138,9 +140,6 @@ async def test_a_backend_error_other_than_404_is_not_a_refusal(
     monkeypatch.setattr(backend, "get", unavailable)
     with pytest.raises(MemoryAPIError):
         await policy.get("some-id")
-
-
-# --- metadata and authorship ---
 
 
 def _record_metadata(backend: InMemoryBackend, method: str) -> list[Any]:
@@ -191,9 +190,6 @@ async def test_a_dev_mode_write_has_no_author(policy: Policy, backend: InMemoryB
         reset_tenant(token)
     assert stored is not None
     assert stored.author is None
-
-
-# --- import ---
 
 
 async def test_import_refuses_an_empty_batch(policy: Policy):

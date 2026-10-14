@@ -45,9 +45,11 @@ and turns a `MemoryAPIError` into `backend_error` or `timeout`.
 
 ## Rules
 
-1. Every tool failure returns the canonical error object — never raw strings or exceptions
+1. Every failure a tool reports is the canonical error object
 2. `retry` is `true` only for transient failures (`e.status >= 500`)
-3. Policy maps a backend 404 or 410 to `not_found`, not `backend_error`
-4. Policy refuses invalid arguments before any backend call
+3. On a by-id call (`get`, `update`, `delete`, `history`), Policy maps a backend 404 or 410
+   to `not_found`, not `backend_error`
+4. Policy refuses invalid arguments before any backend call, except `cursor`, which the
+   backend rejects with `ValueError` and Policy reports as `validation_error`
 5. Tool handlers catch nothing; `translate_errors` handles `PolicyError` and `MemoryAPIError`,
    and any other exception propagates

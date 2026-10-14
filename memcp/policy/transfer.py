@@ -1,9 +1,9 @@
 """Export, import and backend-to-backend migration.
 
-The `export_memories` / `import_memories` MCP tools and the conformance round trip
+`Policy.export_memories` / `Policy.import_memories` and the conformance round trip
 both go through here, so dedup and conflict semantics have exactly one
-implementation. Nothing in this module validates MCP arguments or formats MCP
-errors — that stays in `memcp.tools.transfer`.
+implementation. Argument validation stays in `Policy`, and error formatting in
+`memcp.tools._shared.translate_errors`.
 """
 
 from __future__ import annotations
