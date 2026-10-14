@@ -10,8 +10,8 @@ persistent long-term memory over streamable HTTP.
 
 ## Quickstart
 
-Either way, memcp runs on `127.0.0.1:8080` with the `sqlite` backend; for search by
-meaning and fact extraction, [use mem0](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md#use-mem0) instead.
+Start memcp on `127.0.0.1:8080` with the `sqlite` backend, using Docker or pip. For
+search by meaning and fact extraction, [use mem0](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md#use-mem0) instead.
 
 ### With Docker
 
