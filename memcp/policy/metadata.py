@@ -28,5 +28,5 @@ def author_for(principal: Principal) -> str | None:
 
     The dev-mode fallback principal (no MEMCP_AUTH_TOKENS) is not an
     attribution — nothing authenticated it — so a write made under it must
-    not claim `attributed: true` (Corin, JAR-723 finding 2)."""
+    not claim `attributed: true`."""
     return None if is_unattributed(principal) else principal.seat

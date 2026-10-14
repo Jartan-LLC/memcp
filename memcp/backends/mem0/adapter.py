@@ -132,17 +132,16 @@ def _entity_rows(user_id: str, memories: list[Memory]) -> list[dict[str, Any]]:
 
 
 class Mem0Backend(MemoryBackend):
+    """Adapter for self-hosted mem0 REST API."""
+
     # mem0 runs content through an LLM on add(infer=True) and may store nothing.
     extracts_facts = True
-
-    """Adapter for self-hosted mem0 REST API."""
 
     def __init__(self, base_url: str, api_key: str, *, timeout: float = 30.0):
         self._client = Mem0Client(base_url, api_key, timeout=timeout)
         # Unlike sqlite, this backend has no local file to run a one-time cleanse
-        # migration against (Thorne, JAR-723 finding 1) — memcp has no way to
-        # enumerate every tenant a mem0 install holds, only whichever a request
-        # addresses. A row written before every server that has ever talked to
+        # migration against — memcp has no way to enumerate every tenant a mem0
+        # install holds, only whichever a request addresses. A row written before every server that has ever talked to
         # this store validated `metadata` may carry a caller-planted reserved
         # key that reads back as server-attributed. See docs/reference.md.
         logger.warning(

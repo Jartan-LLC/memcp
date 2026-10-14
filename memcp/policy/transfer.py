@@ -3,7 +3,7 @@
 The `export_memories` / `import_memories` MCP tools and the conformance round trip
 both go through here, so dedup and conflict semantics have exactly one
 implementation. Nothing in this module validates MCP arguments or formats MCP
-errors — that stays in `memcp.tools`.
+errors — that stays in `memcp.tools.transfer`.
 """
 
 from __future__ import annotations

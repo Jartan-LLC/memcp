@@ -46,14 +46,11 @@ class StaticResolver:
 
     @classmethod
     def from_env(cls, raw: str, seats_raw: str | None = None) -> StaticResolver:
-        """Parse `MEMCP_AUTH_TOKENS` ('token:user_id', comma-separated) exactly
-        as pre-patch: `split(":", 1)` per pair, so a `user_id` containing a
-        colon round-trips byte-for-byte unchanged — no seat field is ever read
-        out of this string, so there is nothing here for a legacy `user_id` to
-        collide with (Corin, JAR-723, correction A re-verification: a bare
-        positional third field is genuinely indistinguishable from a
-        colon-containing `user_id`, and no fix should have tried to guess
-        between them from the string alone).
+        """Parse `MEMCP_AUTH_TOKENS` ('token:user_id', comma-separated) with
+        `split(":", 1)` per pair, so a `user_id` containing a colon round-trips
+        byte-for-byte unchanged. No seat field is ever read out of this string:
+        a positional third field would be indistinguishable from a
+        colon-containing `user_id`.
 
         `seats_raw` (`MEMCP_AUTH_SEATS`, 'token:seat', comma-separated) is a
         second, independent variable: an optional seat for a token already

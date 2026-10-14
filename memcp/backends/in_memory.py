@@ -71,9 +71,8 @@ class InMemoryBackend(MemoryBackend):
         now = datetime.now(UTC).isoformat()
         # Reserved keys are stripped here, not just by the tool layer: a caller-
         # supplied `_memcp_author` (or any future `_memcp_` key) must never reach
-        # storage regardless of who calls this method (Thorne, JAR-723 finding 1
-        # — metadata was entirely unvalidated pre-patch, so any bearer-token
-        # holder could plant one, and the read path trusts whatever it finds).
+        # storage regardless of who calls this method, because the read path
+        # trusts whatever it finds.
         stored_metadata = strip_reserved_metadata(metadata) or {}
         if author is not None:
             stored_metadata[AUTHOR_METADATA_KEY] = author

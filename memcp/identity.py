@@ -42,18 +42,17 @@ def get_principal() -> Principal:
 
 def is_unattributed(principal: Principal) -> bool:
     """True when `principal` is the dev-mode fallback — nothing was actually
-    resolved, so a write made under it should not be stamped as attributed
-    (Corin, JAR-723 finding 2).
+    resolved, so a write made under it should not be stamped as attributed.
 
     Identity, not equality: a real resolved `Principal` that happens to equal
     `DEFAULT_PRINCIPAL` by value (a token mapped onto memcp's own default
     tenant name, e.g. while migrating a no-auth deployment onto tokens) must
     still count as attributed — that mapping is a legitimate configuration,
-    and a value comparison would misread it as the fallback (Corin, JAR-723
-    finding 3). Only the literal sentinel object, never rebuilt, ever
-    satisfies this — `set_principal(DEFAULT_PRINCIPAL)` is how a caller opts
-    into it deliberately. `Principal` stays exactly `{tenant, seat}` per item
-    1 and item 6's own check, so this cannot be a third field."""
+    and a value comparison would misread it as the fallback. Only the literal
+    sentinel object, never rebuilt, ever satisfies this —
+    `set_principal(DEFAULT_PRINCIPAL)` is how a caller opts into it
+    deliberately. `Principal` is exactly `{tenant, seat}`, so this cannot be a
+    third field."""
     return principal is DEFAULT_PRINCIPAL
 
 
