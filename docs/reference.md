@@ -89,10 +89,6 @@ A tool that fails returns an error object instead of its result:
 Branch on `code`; `message` is for people. `retry` is `true` only when the same call may
 succeed later.
 
-A rejected entry doesn't fail `import_memories`: it imports the entries it can and lists
-each rejected one in its result's `errors`, with the entry's `index` and the reason in
-`error`.
-
 | Code | When | `retry` |
 |---|---|---|
 | `validation_error` | An argument is malformed or out of range | `false` |
@@ -103,6 +99,10 @@ each rejected one in its result's `errors`, with the entry's `index` and the rea
 | `not_supported` | `import_memories` with `on_conflict=overwrite` on a backend without `update_memory` | `false` |
 | `timeout` | The backend didn't answer in time | `true` |
 | `backend_error` | The backend returned an error | `true` for a 5xx, otherwise `false` |
+
+A rejected entry doesn't fail `import_memories`: it imports the entries it can and lists
+each rejected one in its result's `errors`, with the entry's `index` and the reason in
+`error`.
 
 A request without a valid bearer token gets HTTP 401 with the same object and the code
 `unauthorized`.
