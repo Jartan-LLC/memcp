@@ -113,7 +113,6 @@ The public release. Protocol stabilization and semver guarantee.
 | `messages` param on add_memory | Unlikely | Multi-turn input is mem0-specific; breaks backend agnosticism |
 | In-memory backend vector search | v0.3+ | Lightweight semantic search (e.g. sentence-transformers) to replace keyword matching |
 | Idempotency key on add_memory | v0.3+ | Prevent duplicate storage from retry loops |
-| Export truncation above a backend's list ceiling | v0.3 | `truncated` only trips above MAX_EXPORT (10k); mem0 caps a list at 1000, so a larger tenant exports silently short |
 | Strip backend error details from MCP responses | v0.3+ | Currently raw backend messages exposed; sanitize to status code + generic message |
 | Nested boolean filter support | Never unless mem0 fixes upstream | Rejected by design (502s) |
 | Server-side deduplication | Backend concern | mem0 does it, others may not |

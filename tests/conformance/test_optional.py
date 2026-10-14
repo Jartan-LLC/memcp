@@ -160,6 +160,25 @@ async def test_list_paginates(backend: MemoryBackend, tenant: str):
 
 
 @pytest.mark.conformance("list_memories")
+async def test_list_cursors_reach_every_memory_once(backend: MemoryBackend, tenant: str):
+    _require(backend, "list_memories")
+    added = set()
+    for i in range(5):
+        result = await backend.add(tenant, f"conformance cursor entry {i}", infer=False)
+        added.update(r.id for r in (result if isinstance(result, list) else [result]))
+    seen: list[str] = []
+    cursor = None
+    while True:
+        page = await backend.list_memories(tenant, limit=2, cursor=cursor)
+        assert page.incomplete is False, "a short list must not be marked incomplete"
+        seen.extend(m.id for m in page.memories)
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+    assert sorted(seen) == sorted(added), "following next_cursor must return each memory once"
+
+
+@pytest.mark.conformance("list_memories")
 async def test_list_isolates_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
     _require(backend, "list_memories")
     await backend.add(tenant, "conformance list isolation marker", infer=False)

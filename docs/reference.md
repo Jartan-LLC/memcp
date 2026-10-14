@@ -72,21 +72,21 @@ pre-existing row will read as attributed when it never was.
 |---|---|
 | `get_memory` | Fetch one memory by ID. Returns full content, scope, and metadata |
 | `update_memory` | Full-replace a memory's content (not a patch). Scope immutable — to change scope, add new + delete old |
-| `list_memories` | Browse memories, optionally filtered by scope. Unranked, paginated. For semantic queries: `search_memory` |
-| `export_memories` | Export memories as JSON (max 10k, truncates with flag). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
-| `import_memories` | Batch-import from JSON. Dedup via exact content match, scope-aware. `on_conflict`: skip, overwrite, duplicate (requires `list_memories`; overwrite requires `update_memory`) |
+| `list_memories` | Browse memories, optionally filtered by scope. Unranked, paginated; `incomplete: true` means memories may exist beyond the backend's list ceiling. For semantic queries: `search_memory` |
+| `export_memories` | Export memories as JSON (max 10k; `truncated: true` when it stops there or the backend's list may be incomplete). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
+| `import_memories` | Batch-import from JSON. Dedup via exact content match, scope-aware; `dedup_incomplete: true` means dedup may have missed existing memories, so duplicates are possible. `on_conflict`: skip, overwrite, duplicate (requires `list_memories`; overwrite requires `update_memory`) |
 | `memory_history` | Change log for a memory: timestamps and previous/current content per create/update event |
-| `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `mem0` does, `sqlite` and `in_memory` do not, so it is absent on a keyless install. Not a search tool — use `search_memory` for topics |
+| `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `mem0` does, `sqlite` and `in_memory` do not, so it is absent on a keyless install. `incomplete: true` means the counts may miss some memories. Not a search tool — use `search_memory` for topics |
 
 ## Known limitations
 
 **mem0 backend — upstream constraints:**
 
 - Nested boolean filters (AND/OR/NOT) return 502 — use flat scope keys
-- List endpoint does not paginate server-side — full dataset loaded per request
-- List returns at most 1000 memories per call (mem0's own ceiling), so an export of a tenant above that is incomplete and does not say so
+- List endpoint does not paginate server-side — up to 1000 memories are loaded per request, and memcp pages them
+- List returns at most 1000 memories (mem0's own ceiling) and can't page past it, so a tenant at or above 1000 memories is reported as incomplete (see each tool's flag above)
 - List endpoint does not filter by metadata
-- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, at most 1000 (the list ceiling)
+- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, at most 1000 (the list ceiling, reported as `incomplete`)
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 - `memory_history` entries carry `author: null` for every event — mem0's history log is entirely upstream-managed and has no field to record it in. A memory's current `author` (from `search_memory`, `get_memory`, `list_memories`) is unaffected; only the event-by-event trail cannot be attributed
 

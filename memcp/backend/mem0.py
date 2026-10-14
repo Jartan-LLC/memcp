@@ -350,15 +350,19 @@ class Mem0Backend(MemoryBackend):
         params["top_k"] = LIST_CEILING
         result = await self._request("GET", "/memories", params=params)
         raw = result if isinstance(result, list) else (result or {}).get("results", [])
-        if len(raw) >= LIST_CEILING:
+        # A full response can't tell 1000 memories from more, so it counts as incomplete.
+        at_ceiling = len(raw) >= LIST_CEILING
+        if at_ceiling:
             logger.warning(
-                "mem0 returned its ceiling of %d memories for user %s; anything beyond "
-                "it is missing from list, export, import dedup and memory_entities",
+                "mem0 returned its ceiling of %d memories for user %s; memories beyond "
+                "it can't be listed, so the result is marked incomplete",
                 LIST_CEILING,
                 user_id,
             )
         memories = [_parse_memory(r) for r in raw]
-        return paginate(memories, cursor, limit)
+        page = paginate(memories, cursor, limit)
+        page.incomplete = at_ceiling
+        return page
 
     async def history(self, user_id: str, memory_id: str) -> list[HistoryEntry]:
         # Fetch-then-verify: mem0 history endpoint is global
@@ -394,7 +398,10 @@ class Mem0Backend(MemoryBackend):
         # Not mem0's GET /entities: it counts every tenant's user, agent and run
         # values together, so another tenant's writes would show up here.
         listed = await self.list_memories(user_id, scope=scope, limit=LIST_CEILING)
-        return EntitiesResult(entities=_entity_rows(user_id, listed.memories)[:limit])
+        return EntitiesResult(
+            entities=_entity_rows(user_id, listed.memories)[:limit],
+            incomplete=listed.incomplete,
+        )
 
     # --- lifecycle ---
 

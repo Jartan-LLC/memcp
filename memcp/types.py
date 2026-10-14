@@ -174,6 +174,8 @@ def serialize_memory(m: Memory) -> dict[str, Any]:
 class ListResult:
     memories: list[Memory] = field(default_factory=list)
     next_cursor: str | None = None
+    # See MemoryBackend.list_memories.
+    incomplete: bool = False
 
 
 def paginate(memories: list[Memory], cursor: str | None, limit: int) -> ListResult:
@@ -207,6 +209,8 @@ class HistoryEntry:
 class EntitiesResult:
     entities: list[dict[str, Any]] = field(default_factory=list)
     relationships: list[dict[str, Any]] = field(default_factory=list)
+    # See MemoryBackend.entities.
+    incomplete: bool = False
 
 
 @dataclass

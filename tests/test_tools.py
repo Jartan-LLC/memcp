@@ -360,6 +360,28 @@ async def test_list_memories_returns_all(mcp_with_tools):
     await mcp.call("add_memory", content="two")
     result = await mcp.call("list_memories")
     assert len(result["memories"]) == 2
+    assert result["incomplete"] is False
+
+
+def _mark_incomplete(backend: InMemoryBackend, method_name: str) -> None:
+    """Make every call to `method_name` return a result marked incomplete."""
+    original = getattr(backend, method_name)
+
+    async def incomplete(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        result.incomplete = True
+        return result
+
+    setattr(backend, method_name, incomplete)
+
+
+async def test_list_memories_reports_an_incomplete_list(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="one")
+    _mark_incomplete(backend, "list_memories")
+    result = await mcp.call("list_memories")
+    assert result["incomplete"] is True
+    assert len(result["memories"]) == 1
 
 
 async def test_list_memories_invalid_cursor(mcp_with_tools):
@@ -409,9 +431,18 @@ async def test_memory_entities_returns_structure(mcp_with_graph):
     result = await mcp.call("memory_entities")
     assert "entities" in result
     assert "relationships" in result
+    assert result["incomplete"] is False
     assert len(result["entities"]) >= 1
     assert result["entities"][0]["id"] == "test_user"
     assert result["entities"][0]["total_memories"] >= 1
+
+
+async def test_memory_entities_reports_an_incomplete_count(mcp_with_graph):
+    mcp, backend = mcp_with_graph
+    await mcp.call("add_memory", content="entity test fact")
+    _mark_incomplete(backend, "entities")
+    result = await mcp.call("memory_entities")
+    assert result["incomplete"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -938,6 +969,15 @@ async def test_import_memories_basic(mcp_with_tools):
     assert len(result["results"]) == 3
     assert result["errors"] == []
     assert result["skipped"] == 0
+    assert result["dedup_incomplete"] is False
+
+
+async def test_import_memories_reports_an_incomplete_dedup_read(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    _mark_incomplete(backend, "list_memories")
+    result = await mcp.call("import_memories", memories=[{"content": "fact"}])
+    assert result["dedup_incomplete"] is True
+    assert result["imported"] == 1
 
 
 async def test_import_memories_over_limit(mcp_with_tools):
@@ -1247,6 +1287,15 @@ async def test_export_memories_returns_all(mcp_with_tools):
     assert len(result["memories"]) == 3
     contents = {m["content"] for m in result["memories"]}
     assert contents == {"export one", "export two", "export three"}
+
+
+async def test_export_memories_reports_an_incomplete_list(mcp_with_tools):
+    mcp, backend = mcp_with_tools
+    await mcp.call("add_memory", content="export one")
+    _mark_incomplete(backend, "list_memories")
+    result = await mcp.call("export_memories")
+    assert result["truncated"] is True
+    assert result["count"] == 1
 
 
 async def test_export_memories_empty(mcp_with_tools):
