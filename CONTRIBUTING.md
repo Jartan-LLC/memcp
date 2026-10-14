@@ -15,6 +15,11 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/getting-started/install
 `make lint` runs the [pre-commit](https://pre-commit.com/) hooks; some need
 Docker (actionlint, lychee) and Node (markdownlint) — the devcontainer has both.
 
+## Architecture
+
+Read [docs/architecture.md](docs/architecture.md) before changing code: it says which
+package owns what, and the rules a change is checked against.
+
 ## Verify before opening a PR
 
 ```bash
