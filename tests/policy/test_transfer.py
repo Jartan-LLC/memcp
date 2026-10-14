@@ -308,7 +308,7 @@ async def test_import_reports_per_entry_errors(backend: InMemoryBackend):
 async def test_import_non_dict_metadata_is_a_per_entry_error_not_an_exception(
     backend: InMemoryBackend,
 ):
-    """Thorne, JAR-723 pre-merge gate finding 2: an entry's metadata reaching
+    """An entry's metadata reaching
     strip_reserved_metadata() as a non-dict used to raise AttributeError
     straight out of import_payload, which the tool handler does not catch —
     a partial import that told the caller nothing, and a regression against

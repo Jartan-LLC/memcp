@@ -6,8 +6,8 @@ Two separate things, both recorded here because both were previously unwritten:
   startup. memcp resolves tenant identity from the bearer token, so that combination
   is an open memory store, not a permissive one.
 - **G8** — the SDK's DNS-rebinding rule, pinned as a test rather than as a claim.
-  Thorne could not establish what `host` resolves to with `MEMCP_HOST=0.0.0.0`; the
-  answer is that protection is *off*, and these tests fail if that ever changes.
+  With `MEMCP_HOST=0.0.0.0` the SDK's protection is *off*, and these tests fail if
+  that ever changes.
 """
 
 from __future__ import annotations

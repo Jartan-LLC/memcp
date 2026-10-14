@@ -1,4 +1,4 @@
-"""Server-side author attribution — SEC-2026-0094 conjunct 2, route 2 (JAR-723).
+"""Server-side author attribution — SEC-2026-0094 conjunct 2, route 2.
 
 Before this landed, nothing in memcp distinguished which seat wrote a memory: two
 principals sharing a tenant (the live shape of SEC-2026-0038 — one bearer token for
@@ -221,7 +221,7 @@ async def test_import_memories_overwrite_re_stamps_author_too(mcp_with_tools):
 
 
 async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
-    """Corin, JAR-723 finding 2: with no resolver, nothing authenticated the
+    """With no resolver, nothing authenticated the
     caller, so a write made under the dev-mode fallback principal must not
     claim `attributed: true` — that would tell a reader "the server resolved
     this seat" when it resolved nothing at all.
@@ -245,7 +245,7 @@ async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
 
 
 async def test_real_token_onto_the_default_tenant_name_is_still_attributed(mcp_with_tools):
-    """Corin, JAR-723 finding 3: a real, resolved token that happens to map onto
+    """A real, resolved token that happens to map onto
     memcp's own dev-mode tenant name ('default_user') is not the dev-mode
     fallback — something did authenticate it — so it must not be misread as
     unattributed. The natural way this mapping arises: migrating a no-auth

@@ -102,10 +102,8 @@ async def test_static_resolver_from_env_whitespace():
 
 
 async def test_static_resolver_from_env_user_id_with_a_colon_is_unchanged():
-    """MEMCP_AUTH_TOKENS parsing is byte-identical to pre-patch — split(':', 1)
-    per pair — so a user_id that itself contains a colon still round-trips as a
-    single tenant, exactly as it did before this fix (Corin, JAR-723 correction
-    A re-verification)."""
+    """MEMCP_AUTH_TOKENS parsing splits each pair once on ':', so a user_id that
+    itself contains a colon round-trips as a single tenant."""
     resolver = StaticResolver.from_env("tok:urn:alice")
     assert await resolver.resolve("tok") == Principal(tenant="urn:alice", seat="urn:alice")
 
@@ -131,7 +129,7 @@ def test_static_resolver_from_env_empty():
 
 
 # ---------------------------------------------------------------------------
-# MEMCP_AUTH_SEATS — construction 2 (JAR-723, Corin's discriminator_poc.py)
+# MEMCP_AUTH_SEATS — a seat per token, in a variable of its own
 # ---------------------------------------------------------------------------
 
 

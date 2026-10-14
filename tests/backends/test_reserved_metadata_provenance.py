@@ -1,14 +1,14 @@
 """A caller-supplied reserved metadata key must never be served as server-resolved
-provenance — Thorne's JAR-723 pre-merge gate finding 1.
+provenance.
 
-`metadata` was entirely unvalidated before this fix's write-time guard existed
-(correction B), so any bearer-token holder could have stored `_memcp_author`
-directly, on any backend. The tool-layer strip (`tests/test_attribution.py`) only
-guards a caller reaching `add_memory`/`update_memory`/`import_memories` through the
-MCP surface; these tests are about the backend layer itself, and about data that
-predates any version of the write-time guard.
+`metadata` was unvalidated before the write-time guard existed, so any bearer-token
+holder could have stored `_memcp_author` directly, on any backend. The tool-layer
+strip (`tests/test_attribution.py`) only guards a caller reaching
+`add_memory`/`update_memory`/`import_memories` through the MCP surface; these tests
+are about the backend layer itself, and about data that predates any version of the
+write-time guard.
 
-Two closures, both Thorne named as sufficient for the backends they cover:
+Two closures, each sufficient for the backends it covers:
 - `in_memory`/`sqlite`: `add`/`update` strip the reserved namespace from
   caller-supplied metadata unconditionally now, regardless of caller — so nothing
   written through a patched build's backend layer can carry a forged key, even
@@ -188,7 +188,7 @@ def _seed_raw_metadata(path: Path, *, memory_id: str, raw_metadata: str) -> None
 async def test_sqlite_cleanse_skips_an_unparseable_row_instead_of_failing_to_boot(
     tmp_path: Path,
 ):
-    """Thorne, JAR-723 pre-merge gate C4: the cleanse used to json.loads() every
+    """The cleanse used to json.loads() every
     row unconditionally, so one corrupt metadata blob raised out of
     SqliteBackend.__init__ and the process would not start at all — turning a
     single unreadable row into a total boot failure, on the migration path

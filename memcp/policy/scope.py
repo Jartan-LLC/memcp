@@ -28,7 +28,7 @@ class ScopeError(Exception):
 _AGENT_ID_COLLAPSE_RE = re.compile(r"[^a-z0-9]+")
 
 
-def normalize_agent_id(value: str) -> str:
+def _normalize_agent_id(value: str) -> str:
     """Normalize an agent_id scope value to ``^[a-z0-9-]+$`` form."""
     return _AGENT_ID_COLLAPSE_RE.sub("-", value.strip().lower()).strip("-")
 
@@ -78,7 +78,7 @@ def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict
                 )
             )
         if k == "agent_id" and isinstance(v, str):
-            normalized = normalize_agent_id(v)
+            normalized = _normalize_agent_id(v)
             if not normalized:
                 raise ScopeError(
                     canonical_error(
