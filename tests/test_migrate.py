@@ -20,7 +20,7 @@ OTHER = "tenant_b"
 
 
 class PagedBackend(InMemoryBackend):
-    """Returns at most `page_size` memories per call, and can mark every list incomplete.
+    """Returns at most `page_size` memories per call, and can mark its pages incomplete.
 
     Stands in for a store with a server-side page size (paging) or a list ceiling
     it can't page past (mem0).
@@ -35,17 +35,18 @@ class PagedBackend(InMemoryBackend):
         page = await super().list_memories(
             user_id, scope=scope, limit=min(limit, self.page_size), cursor=cursor
         )
-        page.incomplete = self.incomplete
+        page.incomplete = self.incomplete_on(cursor)
         return page
+
+    def incomplete_on(self, cursor: str | None) -> bool:
+        return self.incomplete
 
 
 class FirstPageIncompleteBackend(PagedBackend):
     """Marks only the first page incomplete, so a later page can't clear the mark."""
 
-    async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
-        page = await super().list_memories(user_id, scope=scope, limit=limit, cursor=cursor)
-        page.incomplete = cursor is None
-        return page
+    def incomplete_on(self, cursor: str | None) -> bool:
+        return cursor is None
 
 
 class EmptyPageBackend(InMemoryBackend):
@@ -114,6 +115,21 @@ async def test_export_returns_wire_shapes(backend: InMemoryBackend):
         "author",
         "attributed",
     }
+
+
+async def test_export_at_exactly_the_limit_is_complete(backend: InMemoryBackend):
+    for i in range(3):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    payload = await export_payload(backend, TENANT, limit=3)
+    assert (payload.count, payload.truncated) == (3, False)
+
+
+async def test_export_at_exactly_the_limit_across_pages_is_complete():
+    backend = PagedBackend(page_size=2)
+    for i in range(4):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    payload = await export_payload(backend, TENANT, limit=4)
+    assert (payload.count, payload.truncated) == (4, False)
 
 
 async def test_export_flags_truncation(backend: InMemoryBackend):

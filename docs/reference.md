@@ -73,7 +73,7 @@ pre-existing row will read as attributed when it never was.
 | `get_memory` | Fetch one memory by ID. Returns full content, scope, and metadata |
 | `update_memory` | Full-replace a memory's content (not a patch). Scope immutable — to change scope, add new + delete old |
 | `list_memories` | Browse memories, optionally filtered by scope. Unranked, paginated; `incomplete: true` means memories may exist beyond the backend's list ceiling. For semantic queries: `search_memory` |
-| `export_memories` | Export memories as JSON (max 10k, truncates with flag). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
+| `export_memories` | Export memories as JSON (max 10k; `truncated: true` when it stops there or the backend's list may be incomplete). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
 | `import_memories` | Batch-import from JSON. Dedup via exact content match, scope-aware; `dedup_incomplete: true` means dedup may have missed existing memories, so duplicates are possible. `on_conflict`: skip, overwrite, duplicate (requires `list_memories`; overwrite requires `update_memory`) |
 | `memory_history` | Change log for a memory: timestamps and previous/current content per create/update event |
 | `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `mem0` does, `sqlite` and `in_memory` do not, so it is absent on a keyless install. `incomplete: true` means the counts may miss some memories. Not a search tool — use `search_memory` for topics |
