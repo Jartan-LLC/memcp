@@ -81,15 +81,13 @@ async def test_add_stores_scope(backend: MemoryBackend, tenant: str):
 
 async def test_search_returns_the_stored_scope(backend: MemoryBackend, tenant: str):
     """Policy drops a result whose scope doesn't match the request, so the scope must come back."""
-    scope_key = backend.scope_keys()[0]
+    scope = {key: f"conformance_{key}_three" for key in backend.scope_keys()}
     content = "scope round trip conformance fact about the lighthouse keeper"
-    await backend.add(tenant, content, scope={scope_key: "conformance_scope_three"}, infer=False)
-    hits = await backend.search(
-        tenant, "lighthouse keeper", scope={scope_key: "conformance_scope_three"}, limit=10
-    )
+    await backend.add(tenant, content, scope=scope, infer=False)
+    hits = await backend.search(tenant, "lighthouse keeper", scope=scope, limit=10)
     match = [m for m in hits if m.content == content]
     assert match, "scope-filtered search missed the memory"
-    assert str(match[0].scope.get(scope_key)) == "conformance_scope_three"
+    assert {k: str(match[0].scope.get(k)) for k in scope} == scope
 
 
 async def test_add_with_infer_returns_a_valid_shape(backend: MemoryBackend, tenant: str):

@@ -33,10 +33,12 @@ def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict
     that would mean "any" to some backend, or that some backend would trim, is
     refused on every operation, so a scope means the same thing on every backend.
     """
-    if not scope:
-        return scope
+    if scope is None:
+        return None
     if not isinstance(scope, dict):
         raise PolicyError("validation_error", "Scope must be an object of keys and values")
+    if not scope:
+        return scope
     if "user_id" in scope:
         raise PolicyError(
             "invalid_scope", "Scope can't set user_id; the server sets it from your token."

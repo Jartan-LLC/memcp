@@ -223,17 +223,15 @@ class Mem0Backend(MemoryBackend):
         return True
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
-        # mem0 ignores a key it doesn't filter on, reads a wildcard value as "any",
-        # and httpx sends an empty list as nothing. Each widens the delete past the
-        # scope asked for; only an empty scope may reach the whole tenant.
+        # mem0 ignores a key it doesn't filter on, and httpx sends an empty list as
+        # nothing; either widens the delete past the scope asked for. A wildcard value
+        # is refused when the params are built. Only an empty scope reaches the tenant.
         if any(
-            k not in self.scope_keys() or not isinstance(v, (str, int, float)) or is_wildcard(v)
+            k not in self.scope_keys() or not isinstance(v, (str, int, float))
             for k, v in scope.items()
         ):
             raise MemoryAPIError(
-                400,
-                f"delete_all scope keys must be among {self.scope_keys()}, "
-                "with single values that are not empty, '*' or null",
+                400, f"delete_all scope keys must be among {self.scope_keys()}, with single values"
             )
         params = _build_identifier_params(user_id, scope)
         await self._client.request("DELETE", "/memories", params=params)

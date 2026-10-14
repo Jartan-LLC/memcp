@@ -65,10 +65,15 @@ def _not_found() -> Iterator[None]:
 
 
 def _wire(value: Any) -> str:
-    """A scope value as it travels to a store: stores hold and return scope values as text."""
+    """A scope value as mem0 holds it: mem0 stores and returns scope values as text."""
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+def _matches(stored: Any, requested: Any) -> bool:
+    """Whether a returned value is the requested one, as Python or as text (mem0)."""
+    return stored == requested or _wire(stored) == _wire(requested)
 
 
 def _in_scope(memories: list[Memory], scope: dict[str, Any] | None) -> list[Memory]:
@@ -77,7 +82,7 @@ def _in_scope(memories: list[Memory], scope: dict[str, Any] | None) -> list[Memo
         return memories
     kept: list[Memory] = []
     for memory in memories:
-        if all(k in memory.scope and _wire(memory.scope[k]) == _wire(v) for k, v in scope.items()):
+        if all(k in memory.scope and _matches(memory.scope[k], v) for k, v in scope.items()):
             kept.append(memory)
         else:
             logger.warning("Dropped memory %s returned outside the requested scope", memory.id)

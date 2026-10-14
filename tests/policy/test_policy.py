@@ -182,10 +182,18 @@ async def test_a_boolean_scope_matches_its_wire_form(policy: Policy, backend: In
     assert [m.id for m in await policy.search("q", scope={"run_id": True})] == ["flagged"]
 
 
-async def test_import_reports_an_entry_whose_scope_is_not_an_object(policy: Policy):
-    outcome = await policy.import_memories([{"content": "x", "scope": "agent-a"}])
+@pytest.mark.parametrize("scope", ["agent-a", "", [], 0, False])
+async def test_import_reports_an_entry_whose_scope_is_not_an_object(policy: Policy, scope: Any):
+    outcome = await policy.import_memories([{"content": "x", "scope": scope}])
     assert outcome.imported == []
     assert outcome.errors[0]["index"] == 0
+
+
+async def test_a_number_matches_an_equal_number_of_another_type(
+    policy: Policy, backend: InMemoryBackend
+):
+    _returning(backend, "search", [Memory(id="seven", content="x", scope={"run_id": 7})])
+    assert [m.id for m in await policy.search("q", scope={"run_id": 7.0})] == ["seven"]
 
 
 async def test_delete_all_requires_a_scope(policy: Policy):
