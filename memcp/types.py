@@ -114,6 +114,15 @@ class MemoryAPIError(RuntimeError):
         super().__init__(f"Backend API {status}: {body[:500]}")
 
 
+class PolicyError(Exception):
+    """A request the policy layer refused, with the error code and message the client gets."""
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(f"{code}: {message}")
+
+
 NOT_FOUND_MSG = (
     "No memory found for that memory_id. It may have been deleted, or the id may be malformed."
 )

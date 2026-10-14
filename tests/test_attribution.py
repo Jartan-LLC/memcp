@@ -28,6 +28,7 @@ import pytest
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
 from memcp.identity import reset_tenant, set_tenant
+from memcp.policy import Policy
 from memcp.tools import register_tools
 
 # Mirrors memcp.types._AUTHOR_METADATA_KEY, deliberately not imported: importing a
@@ -57,7 +58,7 @@ class FakeMCP:
 @pytest.fixture
 def mcp_with_tools(config: Config, backend: InMemoryBackend) -> tuple[FakeMCP, InMemoryBackend]:
     mcp = FakeMCP()
-    register_tools(mcp, backend, config)
+    register_tools(mcp, Policy(backend), config)
     return mcp, backend
 
 

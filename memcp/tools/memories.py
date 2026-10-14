@@ -4,27 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from memcp.backends import MemoryBackend
-from memcp.identity import get_principal, get_tenant
-from memcp.policy.metadata import author_for, strip_reserved
-from memcp.policy.scope import ScopeError, validate_scope
-from memcp.tools._shared import DESTRUCTIVE, READ_ONLY, backend_error
+from memcp.policy import Policy
+from memcp.tools._shared import DESTRUCTIVE, READ_ONLY
 from memcp.types import (
-    NOT_FOUND_MSG,
-    MemoryAPIError,
-    canonical_error,
     serialize_memory,
-    validate_content,
-    validate_limit,
-    validate_memory_id,
-    validate_query,
 )
 
 
-def register(mcp: Any, backend: MemoryBackend) -> None:
+def register(mcp: Any, policy: Policy) -> None:
     """Register the add, search, get, update and delete tools."""
-    allowed_scope_keys = set(backend.scope_keys())
-    caps = backend.capabilities()
+    caps = policy.capabilities()
 
     @mcp.tool(
         description=(
@@ -32,7 +21,7 @@ def register(mcp: Any, backend: MemoryBackend) -> None:
             "default (may store nothing); infer=false for verbatim. "
             "Bulk: use import_memories."
         )
-        if backend.extracts_facts
+        if policy.extracts_facts
         else (
             "Store a fact/preference/decision. This backend has no model behind it, "
             "so content is stored verbatim and the infer argument is accepted but "
@@ -45,28 +34,7 @@ def register(mcp: Any, backend: MemoryBackend) -> None:
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
     ) -> Any:
-        try:
-            validate_content(content)
-        except ValueError as e:
-            return canonical_error("validation_error", str(e))
-        principal = get_principal()
-        try:
-            scope = validate_scope(scope, allowed_scope_keys)
-        except ScopeError as e:
-            return e.error
-        metadata = strip_reserved(metadata)
-        try:
-            result = await backend.add(
-                principal.tenant,
-                content,
-                scope=scope,
-                metadata=metadata,
-                infer=infer,
-                author=author_for(principal),
-            )
-        except MemoryAPIError as e:
-            return backend_error(e)
-
+        result = await policy.add(content, scope=scope, metadata=metadata, infer=infer)
         if not result:
             return (
                 "No durable fact was extracted, so nothing was stored. If you intended "
@@ -87,25 +55,7 @@ def register(mcp: Any, backend: MemoryBackend) -> None:
         limit: int = 10,
         threshold: float = 0.0,
     ) -> Any:
-        try:
-            validate_query(query)
-            validate_limit(limit)
-            if not (0.0 <= threshold <= 1.0):
-                raise ValueError("threshold must be between 0.0 and 1.0")
-        except ValueError as e:
-            return canonical_error("validation_error", str(e))
-        user_id = get_tenant()
-        try:
-            scope = validate_scope(scope, allowed_scope_keys)
-        except ScopeError as e:
-            return e.error
-        try:
-            results = await backend.search(
-                user_id, query, scope=scope, limit=limit, threshold=threshold
-            )
-        except MemoryAPIError as e:
-            return backend_error(e)
-
+        results = await policy.search(query, scope=scope, limit=limit, threshold=threshold)
         return {"results": [serialize_memory(m) for m in results]}
 
     @mcp.tool(
@@ -113,18 +63,7 @@ def register(mcp: Any, backend: MemoryBackend) -> None:
         description=("Delete one memory by memory_id. Confirm with user first."),
     )
     async def delete_memory(memory_id: str) -> Any:
-        user_id = get_tenant()
-        try:
-            validate_memory_id(memory_id)
-        except ValueError as e:
-            return canonical_error("validation_error", str(e))
-        try:
-            result = await backend.delete(user_id, memory_id)
-        except MemoryAPIError as e:
-            if e.status in (404, 410):
-                return canonical_error("not_found", NOT_FOUND_MSG)
-            return backend_error(e)
-        return {"deleted": result}
+        return {"deleted": await policy.delete(memory_id)}
 
     if "get_memory" in caps:
 
@@ -133,20 +72,7 @@ def register(mcp: Any, backend: MemoryBackend) -> None:
             description="Fetch a single memory by ID. Returns full content, scope, and metadata.",
         )
         async def get_memory(memory_id: str) -> Any:
-            user_id = get_tenant()
-            try:
-                validate_memory_id(memory_id)
-            except ValueError as e:
-                return canonical_error("validation_error", str(e))
-            try:
-                result = await backend.get(user_id, memory_id)
-            except MemoryAPIError as e:
-                if e.status in (404, 410):
-                    return canonical_error("not_found", NOT_FOUND_MSG)
-                return backend_error(e)
-            if result is None:
-                return canonical_error("not_found", NOT_FOUND_MSG)
-            return serialize_memory(result)
+            return serialize_memory(await policy.get(memory_id))
 
     if "update_memory" in caps:
 
@@ -162,26 +88,7 @@ def register(mcp: Any, backend: MemoryBackend) -> None:
             content: str,
             metadata: dict[str, Any] | None = None,
         ) -> Any:
-            principal = get_principal()
-            try:
-                validate_memory_id(memory_id)
-                validate_content(content)
-            except ValueError as e:
-                return canonical_error("validation_error", str(e))
-            metadata = strip_reserved(metadata)
-            try:
-                result = await backend.update(
-                    principal.tenant,
-                    memory_id,
-                    content,
-                    metadata=metadata,
-                    author=author_for(principal),
-                )
-            except MemoryAPIError as e:
-                if e.status in (404, 410):
-                    return canonical_error("not_found", NOT_FOUND_MSG)
-                return backend_error(e)
-            return serialize_memory(result)
+            return serialize_memory(await policy.update(memory_id, content, metadata=metadata))
 
 
 def _serialize_add_result(result: Any) -> Any:

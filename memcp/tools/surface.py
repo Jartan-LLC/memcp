@@ -32,6 +32,7 @@ async def _collect() -> dict[str, Any]:
     from memcp.backends.capabilities import ALL_CAPABILITIES
     from memcp.backends.in_memory import InMemoryBackend
     from memcp.config import Config
+    from memcp.policy import Policy
     from memcp.tools import register_tools
 
     # The snapshot is the full surface any backend can expose, not the surface of
@@ -48,7 +49,7 @@ async def _collect() -> dict[str, Any]:
     # model_validate rather than the constructor: the surface must not depend on
     # whatever MEMCP_/MEM0_ variables happen to be set in the caller's environment.
     config = Config.model_validate({"MEMCP_BACKEND": "in_memory", "MEMCP_HOST": "127.0.0.1"})
-    register_tools(server, backend, config)
+    register_tools(server, Policy(backend), config)
     tools = await server.list_tools()
     return {
         tool.name: {

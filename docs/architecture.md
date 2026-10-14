@@ -37,8 +37,9 @@ Calls go down the table, never up.
 | `memcp/backends/` | One backend per kind of store (mem0, sqlite, in_memory): storing, searching, fetching, history | Makes a policy decision |
 
 Shared by all of them and importing nothing else from memcp: `types.py` (`Memory`,
-`HistoryEntry`, result types, `MemoryAPIError`), `identity.py` (key, grant, the current
-request's key, which has no default: reading it when no key is set raises) and `config.py`.
+`HistoryEntry`, result types, `MemoryAPIError`, `PolicyError`), `identity.py` (key, grant,
+the current request's key, which has no default: reading it when no key is set raises) and
+`config.py`.
 
 ```text
 memcp/
@@ -61,7 +62,7 @@ Tests mirror the packages (`tests/http/`, `tests/tools/`, `tests/policy/`,
    invariants listed under "What a backend guarantees"; don't remove them as duplicates of
    policy's checks. A backend never relaxes or reinterprets a policy decision.
 2. A module imports only from packages below it in the table, or from `types.py`,
-   `identity.py` and `config.py`. Modules inside `backends/` may import each other. A test
+   `identity.py` and `config.py`. Modules inside one package may import each other. A test
    fails on any other import.
 3. In the server, only `http/app.py` constructs a backend, and only `policy/` calls a
    backend method, health and shutdown included. The tool-surface generator constructs its
