@@ -61,8 +61,9 @@ Tests mirror the packages (`tests/http/`, `tests/tools/`, `tests/policy/`,
    fails on any other import.
 3. In the server, only `http/app.py` constructs a backend, and only `policy/` calls a
    backend method, health and shutdown included. Tests and the tool-surface generator
-   construct backends of their own, and tests may call them directly. A test checks the
-   server's calls.
+   construct backends of their own. The generator wraps its backend in a policy object as
+   `http/app.py` does, and only tests call a backend directly. A test checks the server's
+   calls.
 4. Adding a backend means writing one class that implements `backends/base.py` and declares
    its optional capabilities. Needing an edit to `tools/` or `policy/` beyond registering it
    means the contract is missing something.
@@ -132,7 +133,7 @@ more than 128 characters, a `spc_` or `__` prefix) is logged as a warning and se
 |---|---|
 | `search_memory`, `list_memories`, `get_memory`, `memory_history`, `memory_entities`, `export_memories` | `reader` or `writer` |
 | `add_memory`, `update_memory`, `delete_memory`, `delete_all_memories`, `import_memories` | `writer` |
-| `memory_status` | none |
+| `memory_status` | any key |
 
 A key without the relation gets `forbidden`. A memory in another space and a missing
 memory both get `not_found`.
@@ -171,8 +172,9 @@ has one, equal the partition policy asked for. A failed space check fails the re
 content, scope and metadata; import reads only content, scope and metadata, writes into the
 importing key's space, and stamps each memory as that key's write. Export and import's
 dedup read follow `next_cursor` until the space is exhausted or memcp's export cap is
-reached; reaching the cap, or a backend marking its list incomplete, marks the export
-truncated.
+reached; reaching memcp's export cap (`MAX_EXPORT`), or a backend marking its list
+incomplete, marks the export truncated. Import and migrate write content as given
+(`infer=False`). A migration that stops at the cap is reported as truncated.
 
 **Migration:** `migrate()` is an operator function for moving memories between backends.
 It isn't reachable by a client, takes source and target partitions directly, space-checks
@@ -198,6 +200,8 @@ content.
 - returns, on every memory, the partition it stored and the `system` fields it stored, as
   stored, never copied from the request;
 - stores `system` as policy passes it, on add and on update;
+- refuses, on add and update, metadata with a key under `_memcp_` or in the reserved set,
+  so caller metadata never overwrites `system`;
 - implements the required methods: `add`, `search`, `get`, `delete`, `delete_all`,
   `scope_keys`, `health` and `close`; `get` returns `None`, and `update`, `delete` and
   `history` raise `MemoryAPIError` 404, when the id is missing or belongs to another
@@ -223,10 +227,11 @@ Where each backend keeps the system fields: a `system` column on sqlite, a field
 in_memory entries, the metadata key `_memcp_system` on mem0.
 
 On mem0, a removed key is written as `null` (only when the key is stored), since mem0
-can't delete a metadata key; a `null` value reads as absent.
+can't delete a metadata key. The mem0 backend drops null-valued keys from everything it
+returns.
 
-Checks that policy and backends both apply (wildcard and empty values, reserved metadata
-keys) are functions in `backends/base.py`, which both may import.
+The reserved metadata set and the wildcard and empty-value check are defined once, in
+`backends/base.py`; policy and every backend import them.
 
 `tests/conformance` checks each guarantee against every backend, including:
 
@@ -238,6 +243,7 @@ keys) are functions in `backends/base.py`, which both may import.
 - on update, a key outside the patch survives, a removed key reads back absent from get,
   list, search and export, removing a missing key does nothing, and a content-only or
   metadata-only update leaves the other unchanged;
+- metadata with a `_memcp_` or reserved key refused on add and update;
 - scope values returned as strings, scores in range and sorted;
 - a store error's response absent from the `MemoryAPIError` message.
 
@@ -245,23 +251,27 @@ keys) are functions in `backends/base.py`, which both may import.
 
 - **Scope:** one function validates every scope before any backend call: allowed keys,
   value types and lengths, key count, `agent_id` normalization. It refuses `user_id`,
-  nested filters, and empty, null or wildcard values, and values with leading or trailing
-  whitespace (mem0 trims them).
+  nested filters, and empty, null or wildcard values, and values with whitespace at
+  either end, or inside a `run_id` (mem0 trims the ends and refuses inner whitespace).
 - **Metadata:** a flat map of keys to strings, numbers, booleans or lists of strings. On
   update, `metadata` is a patch: a key with a value is set, a key set to `null` is removed,
-  and keys left out are kept; `null` is never stored or returned. Policy refuses, with a
+  and keys left out are kept. A client never sends `null` except to remove a key on
+  update, and never sees one. Policy refuses, with a
   `validation_error` naming the key, a nested object, a mixed list, a key under the prefix
   `_memcp_`, and a key in its one reserved set (`data`, `hash`, `id`, `created_at`,
   `updated_at`, `text_lemmatized`, `attributed_to`, `user_id`, `agent_id`, `run_id`,
-  `actor_id`, `role`, `expiration_date`, `memory_type`), the same on every backend. An
-  update must change the content, the metadata or both. `_memcp_` keys are removed from
-  output.
-- **Limits:** page sizes, result counts and import sizes outside their ranges are refused.
+  `actor_id`, `role`, `expiration_date`, `memory_type`), the same on every backend.
+  `update_memory`'s `content` is optional. An update must give `content`, a non-empty
+  `metadata`, or both; otherwise it gets `validation_error`. `_memcp_` keys are removed
+  from output.
+- **Limits:** page sizes, result counts, import sizes, and metadata key count, key length
+  and value size outside their ranges are refused.
   An export from a backend whose list is incomplete is marked truncated.
 - **Errors:** a backend error reaches the client as a fixed code and message; the store's
   response goes to the server log only.
 - **Capabilities:** a tool exists only when the backend declares the operation behind it;
-  export and import need `list`.
+  export and import need `list`, and import with `on_conflict=overwrite` also needs
+  `update`.
   `memory_status` reports the backend's capabilities, retrieval kind and whether it
   extracts facts.
 

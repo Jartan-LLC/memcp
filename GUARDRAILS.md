@@ -21,10 +21,11 @@ every Claude Code session loads it; Liza agents also enforce the tiers (Liza's `
 - State the reason for every dependency you add.
 - Make every decision about what memcp accepts and returns (which space a call reaches,
   what a key's grant allows, scope, authorship, metadata, limits) in `memcp/policy/`, and
-  call a backend method only from `memcp/policy/` (tests excepted). A backend
-  also enforces the store invariants its contract lists, and never relaxes or reinterprets
-  a policy decision. [docs/architecture.md](docs/architecture.md) defines the packages and
-  the rules a change is checked against.
+  call a backend method only from `memcp/policy/` (tests excepted; the tool-surface
+  generator wraps its backend in a policy object). A backend also enforces the store
+  invariants its contract lists, and never relaxes or reinterprets a policy decision.
+  [docs/architecture.md](docs/architecture.md) defines the packages and the rules a change
+  is checked against.
 
 ## Tier 2 (Strong Defaults)
 <!-- Best-effort under pressure. -->
