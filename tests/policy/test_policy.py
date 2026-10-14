@@ -105,6 +105,10 @@ async def test_delete_all_refuses_a_wildcard_value(policy: Policy, value: Any):
     await _refused(policy.delete_all({"agent_id": value}), "validation_error")
 
 
+async def test_delete_all_refuses_a_wildcard_next_to_a_concrete_value(policy: Policy):
+    await _refused(policy.delete_all({"agent_id": "a", "run_id": "*"}), "validation_error")
+
+
 async def test_get_of_a_missing_memory_is_not_found(policy: Policy):
     await _refused(policy.get("missing-id"), "not_found")
 

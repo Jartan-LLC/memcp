@@ -82,6 +82,24 @@ def test_imports_follow_the_package_table():
     assert violations == []
 
 
+def test_the_import_reader_finds_absolute_and_relative_imports():
+    policy_imports = _imported_modules(PACKAGE_ROOT / "policy" / "__init__.py")
+    assert {"memcp.policy.scope", "memcp.backends", "memcp.types"} <= policy_imports
+    in_memory_imports = _imported_modules(PACKAGE_ROOT / "backends" / "in_memory.py")
+    assert {"memcp.backends.base", "memcp.backends.keyword"} <= in_memory_imports
+
+
+def test_tools_and_http_never_reach_into_the_policy_object():
+    reaching = [
+        f"{_module_name(path)}:{node.lineno}"
+        for package in ("tools", "http")
+        for path in sorted((PACKAGE_ROOT / package).rglob("*.py"))
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.Attribute) and node.attr == "_backend"
+    ]
+    assert reaching == []
+
+
 def test_the_import_check_catches_an_upward_import():
     assert not _allowed("memcp.policy.scope", "memcp.tools._shared")
     assert not _allowed("memcp.backends.sqlite", "memcp.policy.transfer")

@@ -175,7 +175,7 @@ class Mem0Backend(MemoryBackend):
                 normed = _norm(val)
                 if normed is not None:
                     payload[key] = normed
-        # Stripped here, not just by the tool layer — see in_memory.add()'s
+        # Stripped here, not just by policy — see in_memory.add()'s
         # comment on the same line.
         stored_metadata = strip_reserved_metadata(metadata) or {}
         if author is not None:

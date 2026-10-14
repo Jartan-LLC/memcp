@@ -1,4 +1,4 @@
-"""Shared data types and error helpers used by tools and backends."""
+"""Shared data types and error helpers used by policy, tools and backends."""
 
 from __future__ import annotations
 

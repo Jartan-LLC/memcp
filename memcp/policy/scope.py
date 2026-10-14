@@ -1,4 +1,4 @@
-"""Scope validation: the rules a tool applies to a caller-supplied scope."""
+"""Scope validation: the rules policy applies to a caller-supplied scope."""
 
 from __future__ import annotations
 
