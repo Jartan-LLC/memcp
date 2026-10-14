@@ -203,7 +203,8 @@ content.
   `history` raise `MemoryAPIError` 404, when the id is missing or belongs to another
   partition;
 - never changes a memory's partition;
-- on update, merges the given metadata into the stored metadata;
+- on update, applies the metadata patch policy passes (keys to set, keys to remove), leaving
+  every other stored key as it is, and changes the content only when content is given;
 - returns scope values as strings, compared byte for byte;
 - returns search results sorted by `score`, a number from 0 to 1 where higher is better
   (policy applies the threshold to that score; a backend may use it as a hint);
@@ -213,8 +214,6 @@ content.
 - refuses a partition its store can't match by exact equality, on every call
   (`validate_partition`);
 - refuses `delete_all` with an empty scope or an empty, null or wildcard value;
-- declares the metadata keys its store reserves (on mem0: `hash`, `created_at`,
-  `updated_at`, `expiration_date`), which policy refuses on input;
 - declares its optional capabilities by operation name (`update`, `list`, `history`,
   `entities`), its retrieval kind (keyword or semantic) and whether it extracts facts, and
   raises `NotImplementedError` for an operation it doesn't declare;
@@ -222,6 +221,9 @@ content.
 
 Where each backend keeps the system fields: a `system` column on sqlite, a field on
 in_memory entries, the metadata key `_memcp_system` on mem0.
+
+On mem0, a removed key is written as `null` (only when the key is stored), since mem0
+can't delete a metadata key; a `null` value reads as absent.
 
 Checks that policy and backends both apply (wildcard and empty values, reserved metadata
 keys) are functions in `backends/base.py`, which both may import.
@@ -233,7 +235,10 @@ keys) are functions in `backends/base.py`, which both may import.
 - a memory written to one partition and fetched by id from another returning `None`, which
   catches a backend that copies the requested partition into its results;
 - paging past the page size, and the incomplete mark past the list ceiling;
-- metadata merged on update, scope values returned as strings, scores in range and sorted;
+- on update, a key outside the patch survives, a removed key reads back absent from get,
+  list, search and export, removing a missing key does nothing, and a content-only or
+  metadata-only update leaves the other unchanged;
+- scope values returned as strings, scores in range and sorted;
 - a store error's response absent from the `MemoryAPIError` message.
 
 ## Policy beyond spaces
@@ -242,8 +247,15 @@ keys) are functions in `backends/base.py`, which both may import.
   value types and lengths, key count, `agent_id` normalization. It refuses `user_id`,
   nested filters, and empty, null or wildcard values, and values with leading or trailing
   whitespace (mem0 trims them).
-- **Metadata:** keys under the reserved prefix `_memcp_` and the backend's reserved keys
-  are refused on input; `_memcp_` keys are removed from output.
+- **Metadata:** a flat map of keys to strings, numbers, booleans or lists of strings. On
+  update, `metadata` is a patch: a key with a value is set, a key set to `null` is removed,
+  and keys left out are kept; `null` is never stored or returned. Policy refuses, with a
+  `validation_error` naming the key, a nested object, a mixed list, a key under the prefix
+  `_memcp_`, and a key in its one reserved set (`data`, `hash`, `id`, `created_at`,
+  `updated_at`, `text_lemmatized`, `attributed_to`, `user_id`, `agent_id`, `run_id`,
+  `actor_id`, `role`, `expiration_date`, `memory_type`), the same on every backend. An
+  update must change the content, the metadata or both. `_memcp_` keys are removed from
+  output.
 - **Limits:** page sizes, result counts and import sizes outside their ranges are refused.
   An export from a backend whose list is incomplete is marked truncated.
 - **Errors:** a backend error reaches the client as a fixed code and message; the store's
