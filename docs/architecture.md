@@ -13,13 +13,13 @@ For running memcp, see [deployment.md](deployment.md); for settings and tools,
 | Space | Where memories live, and the unit of isolation. Every memory belongs to exactly one space, for life. |
 | Partition | The string a backend stores to mark a memory's space. Opaque to the backend, and never shown to a client. A space's partition is its name in the keys file. |
 | Key | A configured identity: a name, one or more secrets (bearer tokens), and one grant. Every request is made by one key. |
-| Grant | A key may use a space with a relation. |
+| Grant | A key's permission to use one space with one relation. |
 | Relation | `reader` (read memories) or `writer` (read, add, change and delete any memory in the space). |
 | Scope | `agent_id` and `run_id`: labels that organize memories inside a space. Not a security boundary. |
 | System fields | `system["space"]` (the partition), `system["author"]` (name of the key that last wrote the memory) and `system["created_by"]` (name of the key that created it). Set only by policy. |
-| Policy decision | A decision about what memcp accepts from a client or returns to it: the space a call reaches, allowed scope values, the author, result counts. |
+| Policy decision | A decision about what memcp accepts from a client or returns to it: the space a call reaches, what a key's grant allows, scope, authorship, metadata and limits. |
 | Policy object | The one instance of `policy.Policy` that `http/app.py` builds around the backend; `tools/` calls only it. |
-| Capabilities | The optional operations a backend declares it supports (`update`, `list`, `history`, `entities`), plus its retrieval kind and whether it extracts facts. |
+| Capabilities | What a backend declares about itself: its optional operations (`update`, `list`, `history`, `entities`), its retrieval kind, whether it extracts facts, and its list ceiling (the most memories its `list` can reach), if it has one. |
 
 ## Packages
 
@@ -52,22 +52,20 @@ Tests mirror the packages (`tests/http/`, `tests/tools/`, `tests/policy/`,
 
 ## Rules for changes
 
-1. Each policy decision is made once, in `memcp/policy/`. A backend also enforces the
-   store invariants listed under "What a backend guarantees", even though policy checks
-   the same input first; that second layer is deliberate. A backend never relaxes or
-   reinterprets a policy decision.
+1. Make each policy decision once, in `memcp/policy/`. A backend also enforces the store
+   invariants listed under "What a backend guarantees"; don't remove them as duplicates of
+   policy's checks. A backend never relaxes or reinterprets a policy decision.
 2. A module imports only from packages below it in the table, or from `types.py`,
    `identity.py` and `config.py`. Modules inside `backends/` may import each other. A test
    fails on any other import.
 3. In the server, only `http/app.py` constructs a backend, and only `policy/` calls a
-   backend method, health and shutdown included. Tests and the tool-surface generator
-   construct backends of their own. The generator wraps its backend in a policy object as
-   `http/app.py` does, and only tests call a backend directly. A test checks the server's
-   calls.
-4. Adding a backend means writing one class that implements `backends/base.py` and declares
-   its optional capabilities. Needing an edit to `tools/` or `policy/` means the contract
-   is missing something; outside `backends/`, a new backend touches only the backend
-   setting in `config.py` and its construction in `http/app.py`.
+   backend method, health and shutdown included. The tool-surface generator constructs its
+   own backend and wraps it in a policy object, as `http/app.py` does. Only tests call a
+   backend directly. A test fails on any other construction or call.
+4. To add a backend, write one class that implements `backends/base.py` and declares its
+   optional capabilities. Outside `backends/`, change only the backend setting in
+   `config.py` and its construction in `http/app.py`. If `tools/` or `policy/` would need
+   an edit, extend the contract instead.
 5. Policy validates every argument before calling a backend, and checks every result it can
    on the way back (the checks are listed per operation below).
 6. Each policy decision has a test that calls `policy/` directly with input that breaks it.
@@ -96,13 +94,14 @@ grants = [{ space = "team-notes", relation = "reader" }]
   printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
   ```
 
-- Names are unique and required, so every write has an author. A name is never renamed or
-  reused for another key, since stored memories record it. All of a key's secrets have the
-  same access.
-- Each key has exactly one grant. Planned in
-  [#112](https://github.com/Jartan-LLC/memcp/issues/112): a registry of spaces, keys and
-  grants managed through an API or UI, several grants per key, choosing a space per call,
-  reads across spaces, `manager` and an admin plane, deleting a whole space with each
+- Names are unique and required, so every write has an author. A key's name never changes
+  and is never given to another key, since stored memories record it. All of a key's
+  secrets have the same access.
+- Each key has exactly one grant.
+- Planned in [#112](https://github.com/Jartan-LLC/memcp/issues/112): a registry of spaces,
+  keys and grants managed through an API or UI, several grants per key, choosing a space
+  per call, reads across spaces, a `manager` relation for administering a space, deleting
+  a whole space with each
   backend declaring how completely it erases, users and organizations, and shared spaces.
   The registry resolves tokens to the same keys and grants, so policy doesn't change; a
   deployment uses the keys file or the registry, never both.
@@ -123,7 +122,7 @@ Startup refuses:
 - a key with no grant or more than one;
 - a relation other than `reader` or `writer`;
 - a space named `*` or empty, or one the configured backend's `validate_partition` refuses
-  (policy checks each granted space when `http/app.py` builds it).
+  (policy checks each granted space when `http/app.py` builds the policy object).
 
 A space name that isn't portable to every backend (whitespace, control characters, more
 than 128 characters) or that starts with `spc_` or `__` is logged as a warning and served.
@@ -141,12 +140,12 @@ memory both get `not_found`.
 
 ## Spaces
 
-memcp enforces tenancy itself, whatever the store supports. On mem0, the backend also maps
+memcp keeps spaces apart itself, whatever the store supports. On mem0, the backend also maps
 the partition to mem0's `user_id`, so mem0's own filter applies to search, list and bulk
 delete; mem0's by-id calls don't check ownership, so there memcp's checks are the only
 isolation.
 
-### How policy enforces it
+### How policy keeps spaces apart
 
 The space comes from the key's grants: no argument, metadata or import payload can reach a
 space the key isn't granted. With one grant per key, that is always the granted space.
@@ -169,8 +168,8 @@ has one, equal the partition policy asked for. A failed space check fails the re
 | import | As add for a new memory; as update for an overwrite; dedup reads the space's memories through list | As add and update |
 | status, health | — | — |
 
-**Import and export:** export returns ids, timestamps, author and the space's memories'
-content, scope and metadata; import reads only content, scope and metadata, writes into the
+**Import and export:** export returns each memory in the space with its id, timestamps,
+author, content, scope and metadata; import reads only content, scope and metadata, writes into the
 importing key's space, writes content as given (`infer=False`), and stamps each memory as
 that key's write. Export, import's dedup read and `migrate()` follow `next_cursor` until
 the list ends or memcp's export cap (`MAX_EXPORT`) is reached. An export or migration that
@@ -188,10 +187,6 @@ operator name, which the audit records as the key name.
 that extracts facts (`infer=True`), `system["author"]` records the key that called add, not
 whose words the facts came from.
 
-**Audit:** every policy decision is logged to a structured audit logger: operation, key
-name (never a token), space, memory ids or scope and count, relation, outcome. Never
-content.
-
 ## What a backend guarantees
 
 `backends/base.py` is the contract. A backend:
@@ -202,28 +197,28 @@ content.
 - returns, on every memory, the partition it stored and the `system` fields it stored, as
   stored, never copied from the request;
 - stores `system` as policy passes it, on add and on update;
-- refuses, on add, and on update in either the keys to set or the keys to remove, a
-  metadata key under `_memcp_` or in the reserved set, raising `MemoryAPIError` 400, so
-  caller metadata never overwrites or removes `system`;
+- refuses a metadata key under `_memcp_` or in the reserved set with `MemoryAPIError` 400,
+  on add and on update, whether the key is set or removed;
 - implements the required methods: `add`, `search`, `get`, `delete`, `delete_all`,
-  `scope_keys`, `validate_partition`, `health` and `close`; `get` returns `None`, and `update`, `delete` and
-  `history` raise `MemoryAPIError` 404, when the id is missing or belongs to another
-  partition;
+  `scope_keys`, `validate_partition`, `health` and `close`;
+- for an id that is missing or belongs to another partition, returns `None` from `get` and
+  raises `MemoryAPIError` 404 from `update`, `delete` and `history`;
 - never changes a memory's partition;
 - on update, applies the metadata patch policy passes (keys to set, keys to remove), leaving
   every other stored key as it is, and changes the content only when content is given;
 - returns scope values as strings, compared byte for byte;
 - returns search results sorted by `score`, a number from 0 to 1 where higher is better
   (policy applies the threshold to that score; a backend may use it as a hint);
-- returns a `next_cursor` from `list` whenever more memories exist within its
-  declared list ceiling, and marks the result incomplete when memories exist beyond it;
+- returns a `next_cursor` from `list` whenever more memories exist within its declared
+  list ceiling, and marks the result incomplete when memories exist beyond it;
 - reports each add item's action: `added`, `updated` or `deleted`;
 - refuses a partition its store can't match by exact equality, on every call
   (`validate_partition`);
 - refuses `delete_all` with an empty scope or an empty, null or wildcard value;
 - declares its optional capabilities by operation name (`update`, `list`, `history`,
   `entities`), its retrieval kind (keyword or semantic), whether it extracts facts, and its
-  list ceiling if it has one, and raises `NotImplementedError` for an operation it doesn't declare;
+  list ceiling if it has one, and raises `NotImplementedError` for an operation it doesn't
+  declare;
 - maps store errors to `MemoryAPIError`, keeping the store's response out of the message.
 
 Where each backend keeps the system fields: a `system` column on sqlite, a field on
@@ -261,35 +256,36 @@ The reserved metadata set and the wildcard and empty-value check are defined onc
   update, `metadata` is a patch: a key with a value is set, a key set to `null` is removed,
   and keys left out are kept; a client never sees `null`. Policy refuses, with a
   `validation_error` naming the key, a `null` value outside an update's patch, a nested
-  object, a mixed list, a key under the prefix `_memcp_`, and a key in the one reserved set (`data`, `hash`, `id`, `created_at`,
-  `updated_at`, `text_lemmatized`, `attributed_to`, `user_id`, `agent_id`, `run_id`,
-  `actor_id`, `role`, `expiration_date`, `memory_type`), the same on every backend.
+  object, a mixed list, a key under the prefix `_memcp_`, and a key in the reserved set
+  (`backends/base.py`), the same on every backend.
   `update_memory`'s `content` is optional. An update must give `content`, a non-empty
   `metadata`, or both; otherwise it gets `validation_error`. `_memcp_` keys are removed
   from output.
 - **Limits:** page sizes, result counts, import sizes, and metadata key count, key length
   and value size outside their ranges are refused.
-  An export from a backend whose list is incomplete is marked truncated.
 - **Errors:** a backend error reaches the client as a fixed code and message; the store's
   response goes to the server log only.
+- **Audit:** every policy decision is logged to a structured audit logger: operation, key
+  name (never a token), space, memory ids or scope and count, relation, outcome. Never
+  content.
 - **Capabilities:** a tool exists only when the backend declares the operation behind it;
   export and import need `list`, and import with `on_conflict=overwrite` also needs
   `update`.
   `memory_status` reports the backend's capabilities, retrieval kind and whether it
   extracts facts.
 
-## Backend-specific tools
-
-Not built yet; planned in [#107](https://github.com/Jartan-LLC/memcp/issues/107), with the
-other parts of the contract a third-party backend needs: an `open_space` hook for stores
-that create their own ids for a space, a trusted bulk-delete capability with a
-list-and-delete fallback, and refusing a backend that hasn't passed the conformance suite.
+## Backend-specific tools (planned)
 
 A backend can offer MCP tools beyond the standard set when its store can do something they
 can't express, such as a graph backend answering "what's connected to project X?". The
 backend declares each tool's name, argument schema, the relation it needs, and a handler.
 `tools/` registers it under a name prefixed with the backend (`mem0_…`) and refuses a name
 that collides with another tool. Each call goes through `policy/`, which checks the
-relation, calls the handler with the authorised partition, and applies the space check to
+relation, calls the handler with the authorized partition, and applies the space check to
 the memcp types the handler returns. These tools are versioned with their backend and kept
 out of the frozen surface in `docs/tool-surface.json`.
+
+Planned in [#107](https://github.com/Jartan-LLC/memcp/issues/107), with the other parts of
+the contract a third-party backend needs: an `open_space` hook for stores that create their
+own ids for a space, a trusted bulk-delete capability with a list-and-delete fallback, and
+refusing a backend that hasn't passed the conformance suite.
