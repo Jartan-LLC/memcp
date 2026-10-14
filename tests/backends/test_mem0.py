@@ -13,7 +13,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 
-from memcp.backend.mem0 import Mem0Backend
+from memcp.backends.mem0 import Mem0Backend
 
 MEM0_API_BASE = os.environ.get("MEM0_API_BASE")
 MEM0_API_KEY = os.environ.get("MEM0_API_KEY")

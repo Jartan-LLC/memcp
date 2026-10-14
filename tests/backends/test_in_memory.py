@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from memcp.backend.in_memory import InMemoryBackend
+from memcp.backends.in_memory import InMemoryBackend
 from memcp.types import MemoryAPIError
 
 USER_A = "alice"

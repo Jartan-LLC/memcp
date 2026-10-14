@@ -4,6 +4,10 @@ How memcp is divided, what each part owns, and the rules a change is checked aga
 For running memcp, see [deployment.md](deployment.md); for settings and tools,
 [reference.md](reference.md).
 
+This is the design memcp's restructure builds to, from the package move in
+[#116](https://github.com/Jartan-LLC/memcp/issues/116) on. A file, check or setting it names
+that isn't in the tree belongs to that design, not to the code.
+
 ## Terms
 
 | Term | Meaning |

@@ -13,7 +13,7 @@ import httpx
 import pytest
 import respx
 
-from memcp.backend.mem0 import LIST_CEILING, Mem0Backend, _entity_rows
+from memcp.backends.mem0 import LIST_CEILING, Mem0Backend, _entity_rows
 from memcp.types import Memory, MemoryAPIError
 
 BASE = "https://mem0.test"

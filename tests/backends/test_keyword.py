@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from memcp.backend.in_memory import InMemoryBackend
-from memcp.backend.keyword import score, tokenize
+from memcp.backends.in_memory import InMemoryBackend
+from memcp.backends.keyword import score, tokenize
 
 STORED = "Prefers Python 3.12 and uses ruff for linting"
 QUESTION = "What linter do I use?"

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from memcp.backend.in_memory import InMemoryBackend
-from memcp.migrate import (
+from memcp.backends.in_memory import InMemoryBackend
+from memcp.policy.transfer import (
     build_dedup_index,
     dedup_key,
     export_payload,

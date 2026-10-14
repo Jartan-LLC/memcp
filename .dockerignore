@@ -15,7 +15,7 @@
 .env
 .env.*
 
-# Python caches / build artifacts (**/ so nested dirs like memcp/backend/__pycache__ match)
+# Python caches / build artifacts (**/ so nested dirs like memcp/backends/__pycache__ match)
 **/__pycache__/
 **/*.py[cod]
 .pytest_cache/

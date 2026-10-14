@@ -1,5 +1,5 @@
 """Memory backend adapters."""
 
-from memcp.backend.base import MemoryBackend
+from memcp.backends.base import MemoryBackend
 
 __all__ = ["MemoryBackend"]

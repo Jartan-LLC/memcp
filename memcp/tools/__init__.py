@@ -13,9 +13,9 @@ import time
 from typing import Any
 
 from memcp.auth import Principal, get_principal, get_tenant, is_unattributed
-from memcp.backend import MemoryBackend
+from memcp.backends import MemoryBackend
 from memcp.config import Config
-from memcp.migrate import ON_CONFLICT_CHOICES, export_payload, import_payload
+from memcp.policy.transfer import ON_CONFLICT_CHOICES, export_payload, import_payload
 from memcp.types import (
     MAX_EXPORT,
     MAX_IMPORT,

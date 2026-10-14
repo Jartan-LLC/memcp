@@ -1,7 +1,7 @@
 """In-memory backend adapter — for conformance tests, dev mode, and demos.
 
 Stores memories in plain dicts. No persistence, no extraction, no vector search.
-Search is the keyword scorer in `memcp.backend.keyword`, shared with the sqlite
+Search is the keyword scorer in `memcp.backends.keyword`, shared with the sqlite
 backend so the two rank identically.
 """
 

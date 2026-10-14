@@ -6,8 +6,8 @@ from __future__ import annotations
 import inspect
 from collections import Counter
 
-from memcp.backend.base import MemoryBackend
-from memcp.backend.capabilities import ALL_CAPABILITIES, OPTIONAL_CAPABILITIES
+from memcp.backends.base import MemoryBackend
+from memcp.backends.capabilities import ALL_CAPABILITIES, OPTIONAL_CAPABILITIES
 from tests.conformance import test_optional, test_required
 from tests.conformance.corpus import round_trip_corpus
 from tests.conformance.test_round_trip import SEARCH_LIMIT
@@ -44,7 +44,7 @@ def test_every_optional_method_has_a_capability():
     assert _optional_methods() == mapped, (
         f"MemoryBackend's optional methods {sorted(_optional_methods())} do not match the "
         f"capability map {sorted(mapped)}. Add the method to OPTIONAL_CAPABILITIES in "
-        "memcp/backend/capabilities.py and write its conformance tests."
+        "memcp/backends/capabilities.py and write its conformance tests."
     )
 
 

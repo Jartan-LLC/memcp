@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from memcp.backend.base import MemoryBackend
-from memcp.backend.in_memory import InMemoryBackend
-from memcp.backend.mem0 import Mem0Backend
-from memcp.backend.sqlite import SqliteBackend
+from memcp.backends.base import MemoryBackend
+from memcp.backends.in_memory import InMemoryBackend
+from memcp.backends.mem0 import Mem0Backend
+from memcp.backends.sqlite import SqliteBackend
 
 BACKENDS = ("in_memory", "sqlite", "mem0")
 PAIRS = [(source, target) for source in BACKENDS for target in BACKENDS]

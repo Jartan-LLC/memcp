@@ -20,7 +20,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from memcp.config import Config, is_loopback
-from memcp.server import create_app
+from memcp.http.app import create_app
 
 MCP_HEADERS = {
     "Content-Type": "application/json",

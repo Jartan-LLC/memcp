@@ -25,7 +25,7 @@ from typing import Any
 import pytest
 
 from memcp.auth import reset_tenant, set_tenant
-from memcp.backend.in_memory import InMemoryBackend
+from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
 from memcp.tools import register_tools
 

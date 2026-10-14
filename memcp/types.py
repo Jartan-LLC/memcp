@@ -154,7 +154,7 @@ def serialize_memory(m: Memory) -> dict[str, Any]:
     """Wire shape for a Memory — the export/import payload and MCP tool results.
 
     `author` is a record of what some client stored, not a verified fact — see
-    `memcp.server.INSTRUCTIONS`. `attributed` is False whenever `author` is null,
+    `memcp.http.app.INSTRUCTIONS`. `attributed` is False whenever `author` is null,
     so a caller does not have to special-case the string "null".
     """
     return {
