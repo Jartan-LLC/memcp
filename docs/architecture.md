@@ -18,6 +18,8 @@ For running memcp, see [deployment.md](deployment.md); for settings and tools,
 | Scope | `agent_id` and `run_id`: labels that organize memories inside a space. Not a security boundary. |
 | System fields | `system["space"]` (the partition), `system["author"]` (name of the key that last wrote the memory) and `system["created_by"]` (name of the key that created it). Set only by policy. |
 | Policy decision | A decision about what memcp accepts from a client or returns to it: the space a call reaches, allowed scope values, the author, result counts. |
+| Policy object | The one instance of `policy.Policy` that `http/app.py` builds around the backend; `tools/` calls only it. |
+| Capabilities | The optional operations a backend declares it supports (`update`, `list`, `history`, `entities`), plus its retrieval kind and whether it extracts facts. |
 
 ## Packages
 
@@ -32,7 +34,7 @@ Calls go down the table, never up.
 
 Shared by all of them and importing nothing else from memcp: `types.py` (`Memory`,
 `HistoryEntry`, result types, `MemoryAPIError`), `identity.py` (key, grant, the current
-request's key) and `config.py`.
+request's key, which has no default: reading it when no key is set raises) and `config.py`.
 
 ```text
 memcp/
@@ -57,9 +59,10 @@ Tests mirror the packages (`tests/http/`, `tests/tools/`, `tests/policy/`,
 2. A module imports only from packages below it in the table, or from `types.py`,
    `identity.py` and `config.py`. Modules inside `backends/` may import each other. A test
    fails on any other import.
-3. In the server, only `http/app.py` constructs a backend. Tests, `migrate()` and the
-   tool-surface generator may construct one too. Outside `backends/`, only `policy/` calls
-   a backend method, health and shutdown included. A test checks the calls.
+3. In the server, only `http/app.py` constructs a backend, and only `policy/` calls a
+   backend method, health and shutdown included. Tests and the tool-surface generator
+   construct backends of their own, and tests may call them directly. A test checks the
+   server's calls.
 4. Adding a backend means writing one class that implements `backends/base.py` and declares
    its optional capabilities. Needing an edit to `tools/` or `policy/` beyond registering it
    means the contract is missing something.
@@ -84,11 +87,16 @@ secrets = ["sha256:2c26b4…"]
 grants = [{ space = "team-notes", relation = "reader" }]
 ```
 
-- A token is a random string of at least 32 bytes (`openssl rand -hex 32`). The file holds
-  its SHA-256 (`printf %s "$TOKEN" | sha256sum`), so it holds nothing that grants access and
-  can be version-controlled.
-- Names are unique and required, so every write has an author. All of a key's secrets have
-  the same access.
+- A token is generated with `openssl rand -hex 32` or an equivalent random source. The file
+  holds its SHA-256, so it holds nothing that grants access and can be version-controlled:
+
+  ```bash
+  printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
+  ```
+
+- Names are unique and required, so every write has an author. A name is never renamed or
+  reused for another key, since stored memories record it. All of a key's secrets have the
+  same access.
 - Each key has exactly one grant. Planned in
   [#112](https://github.com/Jartan-LLC/memcp/issues/112): a registry of spaces, keys and
   grants managed through an API or UI, several grants per key, choosing a space per call,
@@ -99,8 +107,8 @@ grants = [{ space = "team-notes", relation = "reader" }]
 - **When `MEMCP_KEYS_FILE` is unset,** memcp runs as a single local key named `local` with
   `writer` on the space `default_user`, and refuses to bind any interface other than
   loopback.
-- **When it is set,** a request whose token resolves to no key is refused with 401; nothing
-  falls back to a default key.
+- **When it is set,** a request with no token, or one that resolves to no key, is refused
+  with 401; nothing falls back to a default key.
 
 Startup refuses:
 
@@ -112,7 +120,8 @@ Startup refuses:
   keys;
 - a key with no grant or more than one;
 - a relation other than `reader` or `writer`;
-- a space named `*` or empty, or one the configured backend's `validate_partition` refuses.
+- a space named `*` or empty, or one the configured backend's `validate_partition` refuses
+  (policy checks each granted space when `http/app.py` builds it).
 
 A space whose name another store couldn't match exactly (whitespace, control characters,
 more than 128 characters, a `spc_` or `__` prefix) is logged as a warning and served.
@@ -143,7 +152,7 @@ Every backend call names exactly one partition.
 
 The **space check** on a memory: its stored partition, and its `system["space"]` when it
 has one, equal the partition policy asked for. A failed space check fails the request; an
-`isolation_violation` error is logged without content, and the client gets
+`isolation_violation` event is logged without content, and the client gets the error code
 `internal_error`.
 
 | Operation | Before calling the backend | After |
@@ -151,7 +160,7 @@ has one, equal the partition policy asked for. A failed space check fails the re
 | add | Set the partition; set `system` to `{space, author, created_by}`, author and creator both the calling key; refuse caller-supplied `system` or reserved metadata | For each item: an `added` or `updated` item is fetched and space-checked; a `deleted` item is audited by id |
 | search, list, export | Scope validated; partition set | Space check on every memory. A memory whose scope doesn't contain the requested scope is dropped, with a warning |
 | get | — | Space check |
-| update | Fetch the memory and space-check it; send `system` with its stored `created_by`, `author` set to the calling key, and `space` | Space check on the updated memory |
+| update | Fetch the memory and space-check it; send `system` with its stored `created_by` (absent if it has none), `author` set to the calling key, and `space` | Space check on the updated memory |
 | delete, history | Fetch the memory and space-check it | — |
 | delete_all | Refuse an empty scope or an empty, null or wildcard value | Nothing can be checked after a bulk delete; the backend's store invariants are the protection |
 | entities | Partition set | Entity rows carry no partition, so the backend's filter is the protection; the partition is never returned as an entity |
@@ -160,12 +169,16 @@ has one, equal the partition policy asked for. A failed space check fails the re
 
 **Import and export:** export returns ids, timestamps, author and the space's memories'
 content, scope and metadata; import reads only content, scope and metadata, writes into the
-importing key's space, and stamps each memory as that key's write.
+importing key's space, and stamps each memory as that key's write. Export and import's
+dedup read follow `next_cursor` until the space is exhausted or memcp's export cap is
+reached; reaching the cap, or a backend marking its list incomplete, marks the export
+truncated.
 
 **Migration:** `migrate()` is an operator function for moving memories between backends.
 It isn't reachable by a client, takes source and target partitions directly, space-checks
 every memory it reads from the source, writes each to the target with `system` copied from
-the source and `space` set to the target partition, and is audited.
+the source and `space` set to the target partition, and is audited as the operation
+`migrate`.
 
 **Trust within a space:** all keys with `writer` on one space trust each other. On a backend
 that extracts facts (`infer=True`), `system["author"]` records the key that called add, not
@@ -185,28 +198,33 @@ content.
 - returns, on every memory, the partition it stored and the `system` fields it stored, as
   stored, never copied from the request;
 - stores `system` as policy passes it, on add and on update;
-- implements `get`; `get` returns `None`, and `update`, `delete` and `history` raise
-  `MemoryAPIError` 404, when the id is missing or belongs to another partition;
+- implements the required methods: `add`, `search`, `get`, `delete`, `delete_all`,
+  `scope_keys`, `health` and `close`; `get` returns `None`, and `update`, `delete` and
+  `history` raise `MemoryAPIError` 404, when the id is missing or belongs to another
+  partition;
 - never changes a memory's partition;
 - on update, merges the given metadata into the stored metadata;
 - returns scope values as strings, compared byte for byte;
-- returns search results sorted by `score`, a number from 0 to 1 where higher is better,
-  and applies the threshold it is given;
+- returns search results sorted by `score`, a number from 0 to 1 where higher is better
+  (policy applies the threshold to that score; a backend may use it as a hint);
 - returns a `next_cursor` from `list_memories` whenever more memories exist within its
   declared list ceiling, and marks the result incomplete when memories exist beyond it;
 - reports each add item's action: `added`, `updated` or `deleted`;
 - refuses a partition its store can't match by exact equality, on every call
   (`validate_partition`);
 - refuses `delete_all` with an empty scope or an empty, null or wildcard value;
-- declares the metadata keys its store reserves (mem0's `expiration_date`), which policy
-  refuses on input;
-- declares its optional capabilities by operation name (`get`, `update`, `list`, `history`,
+- declares the metadata keys its store reserves (on mem0: `hash`, `created_at`,
+  `updated_at`, `expiration_date`), which policy refuses on input;
+- declares its optional capabilities by operation name (`update`, `list`, `history`,
   `entities`), its retrieval kind (keyword or semantic) and whether it extracts facts, and
   raises `NotImplementedError` for an operation it doesn't declare;
 - maps store errors to `MemoryAPIError`, keeping the store's response out of the message.
 
 Where each backend keeps the system fields: a `system` column on sqlite, a field on
-in_memory entries, a reserved metadata key on mem0.
+in_memory entries, the metadata key `_memcp_system` on mem0.
+
+Checks that policy and backends both apply (wildcard and empty values, reserved metadata
+keys) are functions in `backends/base.py`, which both may import.
 
 `tests/conformance` checks each guarantee against every backend, including:
 
@@ -222,14 +240,16 @@ in_memory entries, a reserved metadata key on mem0.
 
 - **Scope:** one function validates every scope before any backend call: allowed keys,
   value types and lengths, key count, `agent_id` normalization. It refuses `user_id`,
-  nested filters, and empty, null or wildcard values.
+  nested filters, and empty, null or wildcard values, and values with leading or trailing
+  whitespace (mem0 trims them).
 - **Metadata:** keys under the reserved prefix `_memcp_` and the backend's reserved keys
   are refused on input; `_memcp_` keys are removed from output.
 - **Limits:** page sizes, result counts and import sizes outside their ranges are refused.
   An export from a backend whose list is incomplete is marked truncated.
 - **Errors:** a backend error reaches the client as a fixed code and message; the store's
   response goes to the server log only.
-- **Capabilities:** a tool exists only when the backend declares the operation behind it.
+- **Capabilities:** a tool exists only when the backend declares the operation behind it;
+  export and import need `list`.
   `memory_status` reports the backend's capabilities, retrieval kind and whether it
   extracts facts.
 
