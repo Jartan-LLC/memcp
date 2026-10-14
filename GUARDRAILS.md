@@ -19,10 +19,11 @@ every Claude Code session loads it; Liza agents also enforce the tiers (Liza's `
   step that commits counts as that instruction; none counts for pushing or opening pull
   requests, which stay human-initiated.
 - State the reason for every dependency you add.
-- `memcp/policy/` enforces tenancy, scope, attribution, metadata and limits itself, and is
-  the only caller of a backend; a backend stores and retrieves what policy passes it and
-  decides no policy question. [docs/architecture.md](docs/architecture.md) defines the
-  packages and the rules a change is checked against.
+- `memcp/policy/` makes every decision about what memcp accepts and returns (spaces, access,
+  scope, authorship, metadata, limits) and is the only caller of a backend method. A backend
+  also enforces the store invariants its contract lists, and never relaxes or reinterprets
+  a policy decision. [docs/architecture.md](docs/architecture.md) defines the packages and
+  the rules a change is checked against.
 
 ## Tier 2 (Strong Defaults)
 <!-- Best-effort under pressure. -->
