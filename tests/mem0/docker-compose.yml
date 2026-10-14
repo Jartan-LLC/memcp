@@ -3,8 +3,8 @@
 #   tests/mem0/up.sh          bring it up and print the adapter's environment
 #   tests/mem0/down.sh        tear it down, volumes included
 #
-# The mem0 service builds from a checkout of Jartan-LLC/mem0 at the SHA in
-# tests/mem0/mem0.pin, cloned to tests/mem0/.mem0. up.sh does the clone.
+# The mem0 service builds from tests/mem0/.mem0, which fetch.sh (run by up.sh) checks
+# out and prepares.
 #
 # Credentials below are fixed literals on purpose: this stack is disposable, listens
 # on localhost only, and holds nothing but test corpora. Nothing here is a secret and
