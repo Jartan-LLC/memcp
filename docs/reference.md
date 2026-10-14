@@ -83,8 +83,8 @@ pre-existing row will read as attributed when it never was.
 **mem0 backend — upstream constraints:**
 
 - Nested boolean filters (AND/OR/NOT) return 502 — use flat scope keys
-- List endpoint does not paginate server-side — full dataset loaded per request
-- List returns at most 1000 memories (mem0's own ceiling) and can't page past it, so a tenant at or above 1000 memories reads as `incomplete` from `list_memories` and `memory_entities`, `truncated` from `export_memories` and migration, and `dedup_incomplete` from `import_memories` and migration
+- List endpoint does not paginate server-side — up to 1000 memories are loaded per request, and memcp pages them
+- List returns at most 1000 memories (mem0's own ceiling) and can't page past it, so a tenant at or above 1000 memories is reported as incomplete (see each tool's flag above)
 - List endpoint does not filter by metadata
 - Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, at most 1000 (the list ceiling, reported as `incomplete`)
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify

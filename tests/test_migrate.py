@@ -22,8 +22,8 @@ OTHER = "tenant_b"
 class PagedBackend(InMemoryBackend):
     """Returns at most `page_size` memories per call, and can mark its pages incomplete.
 
-    Stands in for a store with a server-side page size (paging) or a list ceiling
-    it can't page past (mem0).
+    Stands in for a store with a server-side page size, or (with `incomplete=True`) one
+    with a list ceiling it can't page past, like mem0.
     """
 
     def __init__(self, page_size: int, *, incomplete: bool = False) -> None:

@@ -133,7 +133,7 @@ class MemoryBackend(ABC):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        """Set `incomplete` when the counts come from a list marked incomplete."""
+        """Set `incomplete` when the counts come from an incomplete `list_memories` result."""
         raise NotImplementedError
 
     # --- lifecycle ---

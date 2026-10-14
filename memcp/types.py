@@ -174,7 +174,7 @@ def serialize_memory(m: Memory) -> dict[str, Any]:
 class ListResult:
     memories: list[Memory] = field(default_factory=list)
     next_cursor: str | None = None
-    # True on every page when memories may exist beyond the backend's list ceiling.
+    # See MemoryBackend.list_memories.
     incomplete: bool = False
 
 
@@ -209,7 +209,7 @@ class HistoryEntry:
 class EntitiesResult:
     entities: list[dict[str, Any]] = field(default_factory=list)
     relationships: list[dict[str, Any]] = field(default_factory=list)
-    # True when the counts come from a list the backend marked incomplete.
+    # See MemoryBackend.entities.
     incomplete: bool = False
 
 

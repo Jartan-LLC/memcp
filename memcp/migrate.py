@@ -82,7 +82,8 @@ class MigrationReport:
 async def _list_all(backend: MemoryBackend, user_id: str, limit: int) -> tuple[list[Memory], bool]:
     """Read up to `limit` memories by following `next_cursor`, and whether any were missed.
 
-    Missed means more than `limit` exist, or the backend marked a page incomplete.
+    Missed means more than `limit` exist, a page was marked incomplete, or the backend
+    returned an empty page with a cursor still set.
     """
     memories: list[Memory] = []
     incomplete = False
@@ -106,9 +107,9 @@ async def export_payload(
 ) -> ExportPayload:
     """Read every memory for a tenant, capped at `limit`.
 
-    `truncated` is True when more than `limit` exist or the backend marked its list
-    incomplete. Requires the `list_memories` capability; raises MemoryAPIError on
-    backend failure for the caller to map.
+    `truncated` is True when the read missed memories (see `_list_all`). Requires the
+    `list_memories` capability; raises MemoryAPIError on backend failure for the caller
+    to map.
     """
     memories, truncated = await _list_all(backend, user_id, limit)
     return ExportPayload(
@@ -127,7 +128,7 @@ async def build_dedup_index(
     """Map (content, scope) -> memory id for a tenant's existing memories.
 
     Capped at `limit`: tenants above it get best-effort dedup rather than a
-    refused import. The flag is True when the index missed memories.
+    refused import. Also returns whether the index missed memories.
     """
     memories, incomplete = await _list_all(backend, user_id, limit)
     return {dedup_key(m.content, m.scope): m.id for m in memories}, incomplete

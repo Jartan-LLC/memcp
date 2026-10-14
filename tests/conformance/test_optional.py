@@ -170,7 +170,7 @@ async def test_list_cursors_reach_every_memory_once(backend: MemoryBackend, tena
     cursor = None
     while True:
         page = await backend.list_memories(tenant, limit=2, cursor=cursor)
-        assert page.incomplete is False, "a list below the ceiling must not be marked incomplete"
+        assert page.incomplete is False, "a short list must not be marked incomplete"
         seen.extend(m.id for m in page.memories)
         cursor = page.next_cursor
         if cursor is None:
