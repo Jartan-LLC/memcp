@@ -1,4 +1,4 @@
-"""Required-method conformance — the six abstract methods plus the two declarations.
+"""Required-method conformance: the abstract methods every backend implements.
 
 Every backend runs every test here. None of it is capability-gated, so nothing in
 this module may skip.
@@ -11,28 +11,15 @@ import uuid
 import pytest
 
 from memcp.backend.base import MemoryBackend
-from memcp.conformance.capabilities import (
-    ALL_CAPABILITIES,
-    OPTIONAL_CAPABILITIES,
-    REQUIRED_METHODS,
-)
+from memcp.backend.capabilities import ALL_CAPABILITIES, OPTIONAL_CAPABILITIES
 from memcp.types import AddResult, MemoryAPIError
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
-
-# pytest-asyncio decides how to run a test at collection time, so the marker has
-# to be here rather than added by a hook. See suite/conftest.py.
-pytestmark = pytest.mark.asyncio
 
 
 def _ids(result: AddResult | list[AddResult]) -> list[str]:
     items = result if isinstance(result, list) else [result]
     return [r.id for r in items]
-
-
-async def test_implements_required_methods(backend: MemoryBackend):
-    for name in REQUIRED_METHODS:
-        assert callable(getattr(backend, name, None)), f"missing required method {name}()"
 
 
 async def test_capabilities_are_known_names(backend: MemoryBackend):
@@ -182,12 +169,11 @@ async def _call_optional(backend: MemoryBackend, method_name: str, tenant: str) 
 
 
 async def test_undeclared_capabilities_raise_not_implemented(backend: MemoryBackend, tenant: str):
-    """A2's other half: what a backend does not claim, it must refuse outright.
+    """What a backend does not claim, it must refuse outright.
 
     A backend that silently half-answers a method it did not declare is worse than
-    one that raises. The tool layer never registers that tool, so the behaviour is
-    unreachable in production and unverified by this suite — and callers inside memcp
-    do reach backend methods directly, `memcp.migrate` among them.
+    one that raises. The tool layer never registers that tool, but callers inside
+    memcp reach backend methods directly, `memcp.migrate` among them.
     """
     declared = backend.capabilities()
     for capability, method_name in OPTIONAL_CAPABILITIES.items():

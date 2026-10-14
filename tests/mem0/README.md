@@ -7,7 +7,7 @@ runs on every pull request (GitHub #28).
 tests/mem0/up.sh  # clone, build, wait for health
 export MEM0_API_BASE=http://127.0.0.1:8888
 export MEM0_API_KEY=memcp-conformance-admin-key
-python -m memcp.conformance
+pytest tests/conformance
 tests/mem0/down.sh
 ```
 
@@ -21,8 +21,8 @@ tests/mem0/down.sh
 
 The fork is pinned rather than tracked: an upstream push should not turn this
 repository's `main` red without a commit here. Move the pin deliberately, and expect
-the conformance report to be the thing that tells you whether the new SHA still
-honours the adapter's contract.
+the conformance suite to tell you whether the new SHA still honours the adapter's
+contract.
 
 ## What it proves, and what it does not
 
@@ -38,8 +38,6 @@ Does not prove:
 - **Fact extraction.** The stand-in answers every completion with "extracted
   nothing", a documented outcome of `add(infer=True)`. Extraction is mem0's LLM
   behaviour, not the seam's, and testing it needs a real provider key.
-- **Anything about the live deployment.** `brain-mcp.jartan.dev` is configured
-  separately and is not built from `main` unmodified.
 
 ## Credentials
 

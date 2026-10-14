@@ -46,9 +46,27 @@ as a release deployment.
    docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
    ```
 
+## Backend conformance suite
+
+`tests/conformance` holds every backend to the same contract: the required methods,
+tenant isolation on each, every optional capability the backend declares (and a
+`NotImplementedError` for each it doesn't), and a round trip between every pair of
+backends that checks content, scope and retrieval survive. `pytest tests/conformance`
+runs it against `in_memory` and `sqlite`, as `make test` does. To include mem0, start a
+local one first ([tests/mem0/README.md](tests/mem0/README.md)).
+
+A new backend needs an entry in each of:
+
+- `BACKENDS` and `_open` in `tests/conformance/conftest.py`
+- `BACKEND_PARAMS` and `_config` in `tests/test_tenant_isolation.py`
+- `EXPECTED_TOOLS` and the `builders` in `_registered_tools` in `tests/test_tool_surface.py`
+
 ## Conventions
 
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`).
 - User-facing changes go in `CHANGELOG.md` under `## [Unreleased]`.
+- `docs/tool-surface.json` freezes the MCP tool names, argument schemas and annotations.
+  To change them, state in the PR what breaks for a connected client, then run
+  `python -m memcp.toolsurface --write`.
 - Report security issues privately via [SECURITY.md](.github/SECURITY.md), not a public issue.

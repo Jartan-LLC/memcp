@@ -29,9 +29,9 @@ GENERATOR = "python -m memcp.toolsurface --write"
 async def _collect() -> dict[str, Any]:
     from mcp.server.mcpserver import MCPServer
 
+    from memcp.backend.capabilities import ALL_CAPABILITIES
     from memcp.backend.in_memory import InMemoryBackend
     from memcp.config import Config
-    from memcp.conformance.capabilities import ALL_CAPABILITIES
     from memcp.tools import register_tools
 
     # The snapshot is the full surface any backend can expose, not the surface of

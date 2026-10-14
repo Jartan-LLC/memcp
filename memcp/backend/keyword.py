@@ -1,8 +1,6 @@
 """Keyword scoring for the backends that have no model behind them.
 
-`sqlite` and `in_memory` both rank by this, in one place rather than two copies, so
-the pair cannot drift and `docs/portability.md`'s claim that they order results
-identically stays true by construction.
+`sqlite` and `in_memory` both rank by this, so they order results identically.
 
 What it is: token overlap between the query and the stored content, with a small
 amount of tolerance for word endings. What it is not: semantic similarity. Nothing
