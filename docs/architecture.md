@@ -4,6 +4,10 @@ How memcp is divided, what each part owns, and the rules a change is checked aga
 For running memcp, see [deployment.md](deployment.md); for settings and tools,
 [reference.md](reference.md).
 
+This is the design memcp's restructure builds to, from the package move in
+[#116](https://github.com/Jartan-LLC/memcp/issues/116) on. A file, check or setting it names
+that isn't in the tree belongs to that design, not to the code.
+
 ## Terms
 
 | Term | Meaning |
@@ -35,10 +39,6 @@ Calls go down the table, never up.
 Shared by all of them and importing nothing else from memcp: `types.py` (`Memory`,
 `HistoryEntry`, result types, `MemoryAPIError`), `identity.py` (key, grant, the current
 request's key, which has no default: reading it when no key is set raises) and `config.py`.
-
-This section describes the target layout. The files and checks it names that aren't in the
-tree arrive in the restructure PRs that follow the move in
-[#116](https://github.com/Jartan-LLC/memcp/issues/116).
 
 ```text
 memcp/

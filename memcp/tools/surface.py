@@ -1,8 +1,8 @@
-"""The MCP tool contract, snapshotted so a change to it cannot be accidental (A6).
+"""The MCP tool contract, snapshotted so a change to it cannot be accidental.
 
-Fifteen agents read the live deployment through these tools. Renaming one, adding a
-required argument or changing an argument's type breaks their recall, so the surface
-is committed to `docs/tool-surface.json` and a test compares against it.
+Connected clients call these tools by name. Renaming one, adding a required argument
+or changing an argument's type breaks every client that uses it, so the surface is
+committed to `docs/tool-surface.json` and a test compares against it.
 
 Tool descriptions are deliberately excluded. They are prose aimed at the model, and
 freezing them would turn every wording improvement into a contract change. Names,
