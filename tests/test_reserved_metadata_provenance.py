@@ -18,7 +18,7 @@ Two closures, both Thorne named as sufficient for the backends they cover:
 - `mem0`: has no migration hook (memcp cannot enumerate every tenant a mem0
   install holds), so this backend's closure is operational — a documented
   precondition and a startup warning, not a code guarantee. See `docs/reference.md`
-  and the module docstring in `memcp/backend/mem0.py`.
+  and the module docstring in `memcp/backends/mem0.py`.
 """
 
 from __future__ import annotations
@@ -30,9 +30,9 @@ from pathlib import Path
 import httpx
 import respx
 
-from memcp.backend.in_memory import InMemoryBackend
-from memcp.backend.mem0 import Mem0Backend
-from memcp.backend.sqlite import SCHEMA, SqliteBackend
+from memcp.backends.in_memory import InMemoryBackend
+from memcp.backends.mem0 import Mem0Backend
+from memcp.backends.sqlite import SCHEMA, SqliteBackend
 from memcp.types import AUTHOR_METADATA_KEY, serialize_memory
 
 # ---------------------------------------------------------------------------

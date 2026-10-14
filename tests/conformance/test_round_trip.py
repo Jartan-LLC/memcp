@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from memcp.backend.base import MemoryBackend
-from memcp.migrate import dedup_key, migrate
+from memcp.backends.base import MemoryBackend
+from memcp.policy.transfer import dedup_key, migrate
 from memcp.types import Memory
 from tests.conformance.corpus import CorpusEntry, round_trip_corpus
 

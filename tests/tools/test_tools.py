@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from memcp.backend.in_memory import InMemoryBackend
+from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
 from memcp.tools import register_tools
 from memcp.types import EntitiesResult, MemoryAPIError
@@ -1223,7 +1223,7 @@ async def test_import_memories_overwrite_update_error(mcp_with_tools):
 
 async def test_import_memories_overwrite_requires_capability(config):
     """overwrite rejected when backend lacks update_memory capability."""
-    from memcp.backend.in_memory import InMemoryBackend
+    from memcp.backends.in_memory import InMemoryBackend
 
     class NoUpdateBackend(InMemoryBackend):
         def capabilities(self):

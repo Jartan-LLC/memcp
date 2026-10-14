@@ -11,11 +11,11 @@ registered tool** that Mallory can neither read, change, delete nor enumerate
 Alice's memory. It runs against every backend in this repository.
 
 `mem0` is included when `MEM0_API_BASE`/`MEM0_API_KEY` are set (skipped otherwise —
-see `tests/test_backend_mem0.py` for the same gate). It is the one backend where
+see `tests/backends/test_mem0.py` for the same gate). It is the one backend where
 isolation is not structural: `in_memory` and `sqlite` scope every query by `user_id`
 in the query itself, but mem0's single-ID endpoints (GET/PUT/DELETE/history) are
 global on the wire, so the adapter does fetch-then-verify instead
-(`memcp/backend/mem0.py`). That is a correct design and also the kind that fails
+(`memcp/backends/mem0.py`). That is a correct design and also the kind that fails
 silently when one call site forgets the check.
 """
 
@@ -31,7 +31,7 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from memcp.config import Config
-from memcp.server import create_app
+from memcp.http.app import create_app
 
 ALICE_TOKEN = "alice-token-not-a-real-credential"
 MALLORY_TOKEN = "mallory-token-not-a-real-credential"
@@ -293,7 +293,7 @@ async def test_import_cannot_target_another_tenants_memory(
     tmp_path: Any, backend_name: Literal["in_memory", "sqlite", "mem0"]
 ):
     """import_memories only reads content/scope/metadata off each entry
-    (memcp/migrate.py:import_payload) — a caller-supplied `id` is not a field it
+    (memcp/policy/transfer.py:import_payload) — a caller-supplied `id` is not a field it
     looks at, and on_conflict='overwrite' only ever dedup-matches against the
     caller's own tenant (`build_dedup_index` is scoped to `user_id`). So Mallory
     importing an entry that names Alice's memory_id, with content identical to

@@ -64,7 +64,7 @@ A new backend needs an entry in each of:
 
 - `BACKENDS` and `_open` in `tests/conformance/conftest.py`
 - `BACKEND_PARAMS` and `_config` in `tests/test_tenant_isolation.py`
-- `EXPECTED_TOOLS` and the `builders` in `_registered_tools` in `tests/test_tool_surface.py`
+- `EXPECTED_TOOLS` and the `builders` in `_registered_tools` in `tests/tools/test_surface.py`
 
 ## Conventions
 
@@ -73,5 +73,5 @@ A new backend needs an entry in each of:
 - User-facing changes go in `CHANGELOG.md` under `## [Unreleased]`.
 - `docs/tool-surface.json` freezes the MCP tool names, argument schemas and annotations.
   To change them, state in the PR what breaks for a connected client, then run
-  `python -m memcp.toolsurface --write`.
+  `python -m memcp.tools.surface --write`.
 - Report security issues privately via [SECURITY.md](.github/SECURITY.md), not a public issue.

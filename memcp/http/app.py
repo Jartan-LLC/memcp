@@ -14,10 +14,10 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
 from memcp.auth import BearerGate, StaticResolver
-from memcp.backend import MemoryBackend
-from memcp.backend.in_memory import InMemoryBackend
-from memcp.backend.mem0 import Mem0Backend
-from memcp.backend.sqlite import SqliteBackend
+from memcp.backends import MemoryBackend
+from memcp.backends.in_memory import InMemoryBackend
+from memcp.backends.mem0 import Mem0Backend
+from memcp.backends.sqlite import SqliteBackend
 from memcp.config import Config
 from memcp.tools import register_tools
 

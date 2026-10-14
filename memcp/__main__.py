@@ -12,8 +12,8 @@ import uvicorn
 from pydantic import ValidationError
 
 from memcp.config import Config, is_loopback
-from memcp.logging import setup_logging
-from memcp.server import create_app
+from memcp.http.app import create_app
+from memcp.http.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 

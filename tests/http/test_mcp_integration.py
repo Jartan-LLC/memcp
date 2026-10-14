@@ -18,13 +18,13 @@ MCP_HEADERS = {
 
 # A Host the SDK's DNS-rebinding protection admits. The `config` fixture binds
 # loopback, which is exactly the case where the MCP SDK turns that protection on by
-# itself — `http://test` gets a 421 (tests/test_transport_security.py pins the rule).
+# itself — `http://test` gets a 421 (tests/http/test_transport_security.py pins the rule).
 BASE_URL = "http://127.0.0.1:8080"
 
 
 async def test_mcp_endpoint_responds(config: Config):
     """POST to /mcp with a valid MCP initialize request succeeds."""
-    from memcp.server import create_app
+    from memcp.http.app import create_app
 
     app, _backend = create_app(config)
 
@@ -54,7 +54,7 @@ async def test_mcp_endpoint_responds(config: Config):
 
 async def test_mcp_endpoint_with_auth():
     """MCP endpoint rejects unauthenticated, accepts authenticated."""
-    from memcp.server import create_app
+    from memcp.http.app import create_app
 
     auth_config = Config(
         MEMCP_BACKEND="in_memory",

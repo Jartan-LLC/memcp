@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from memcp import toolsurface
+from memcp.tools import surface as toolsurface
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_tool_surface_matches_the_snapshot():
@@ -94,9 +94,9 @@ EXPECTED_TOOLS: dict[str, set[str]] = {
 
 
 def _registered_tools(backend_name: str) -> set[str]:
-    from memcp.backend.in_memory import InMemoryBackend
-    from memcp.backend.mem0 import Mem0Backend
-    from memcp.backend.sqlite import SqliteBackend
+    from memcp.backends.in_memory import InMemoryBackend
+    from memcp.backends.mem0 import Mem0Backend
+    from memcp.backends.sqlite import SqliteBackend
     from memcp.config import Config
     from memcp.tools import register_tools
 

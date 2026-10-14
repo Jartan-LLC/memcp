@@ -5,7 +5,7 @@ from __future__ import annotations
 from httpx import ASGITransport, AsyncClient
 
 from memcp.config import Config
-from memcp.server import create_app
+from memcp.http.app import create_app
 
 
 async def test_health_endpoint_unhealthy():

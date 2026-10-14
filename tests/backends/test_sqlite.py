@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from memcp.backend.sqlite import SqliteBackend
+from memcp.backends.sqlite import SqliteBackend
 from memcp.types import MemoryAPIError
 
 
@@ -88,7 +88,7 @@ async def test_health_reports_the_backend_name(tmp_path: Path):
 
 async def test_search_ranks_the_way_in_memory_ranks(tmp_path: Path):
     """The two backends share a scoring rule, which is what makes the pair portable."""
-    from memcp.backend.in_memory import InMemoryBackend
+    from memcp.backends.in_memory import InMemoryBackend
 
     corpus = ["python and ruff", "python only", "unrelated entirely"]
     sqlite_backend = SqliteBackend(tmp_path / "brain.sqlite3")
