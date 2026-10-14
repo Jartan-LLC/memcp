@@ -6,15 +6,15 @@ mid-task rather than read through. For getting a deployment running, see
 
 ## Requirements
 
-- Docker, for `memcp up`
+- Docker, for `docker-compose.yml`
 - Python 3.12+, to run the server directly
-- For `MEMCP_BACKEND=mem0`: a running [mem0](https://github.com/mem0ai/mem0) instance — or let `memcp up --backend mem0` provision one
+- For `MEMCP_BACKEND=mem0`: a running [mem0](https://github.com/mem0ai/mem0) instance
 
 ## Environment variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `MEMCP_BACKEND` | No | Backend for the server itself: `mem0`, `sqlite` or `in_memory`. Defaults to `mem0` when you run the server directly; `memcp up` provisions `sqlite` unless you pass `--backend` |
+| `MEMCP_BACKEND` | Yes | Backend: `mem0`, `sqlite` or `in_memory`. memcp refuses to start without it |
 | `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
@@ -22,7 +22,7 @@ mid-task rather than read through. For getting a deployment running, see
 | `MEMCP_AUTH_SEATS` | No | Optional token-to-seat mapping, layered onto `MEMCP_AUTH_TOKENS`: `tok1:agent-one,tok2:agent-two`, seat matching `[A-Za-z0-9_.-]+`. What memcp stamps as `author` on every write that token makes. A token named here with no `MEMCP_AUTH_TOKENS` entry is rejected at startup. Two tokens can share a tenant with different seats — that is how one shared token becomes individually attributable — and a token absent from this mapping keeps its seat equal to its tenant, as it always has |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
-| `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. Unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
+| `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. `docker-compose.yml` defaults it to `127.0.0.1:*,localhost:*`; a value replaces that. Without Docker, unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
 | `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
 | `MEMCP_LOG_FORMAT` | No | Log format: `json` or `plain` (default: `json`) |
 
@@ -109,6 +109,6 @@ in [portability.md](portability.md) and asserted against.
 
 ## See also
 
-- [deployment.md](deployment.md) — `memcp up`, backends, credentials, reverse proxies
+- [deployment.md](deployment.md) — Docker Compose, backends, tokens, reverse proxies
 - [conformance.md](conformance.md) — holding a backend to the suite, in this repository or out of it
 - [tests/mem0/README.md](../tests/mem0/README.md) — the conformance run against a real mem0

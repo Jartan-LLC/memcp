@@ -19,7 +19,7 @@ QUESTION = "What linter do I use?"
 
 
 class TestTheReadmeWalkthrough:
-    """The example in README "Try it" has to work on the backend `memcp up` installs."""
+    """The example in README "Try it" has to work on sqlite, the quickstart's backend."""
 
     def test_the_question_finds_the_memory(self):
         assert score(QUESTION, STORED) is not None

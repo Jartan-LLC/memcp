@@ -1,36 +1,23 @@
-# memcp on its own, for someone who wants to hand-manage the stack.
-#
-#   cp .env.example .env    # set MEMCP_AUTH_TOKENS, pick a backend
-#   docker compose up -d
-#
-# `memcp up` is the supported path and does more than this file can: it mints the
-# token, provisions the memory backend beside memcp, pins every image by digest, and
-# prints the MCP client snippet. See docs/deployment.md.
-#
-# Defaults here are the sqlite backend — durable, no API key. For mem0, set
-# MEMCP_BACKEND=mem0 plus MEM0_API_BASE and MEM0_API_KEY in .env and point them at
-# an instance you run.
-#
-# This builds rather than pulling, on purpose. `main` is where the code is developed,
-# so its compose file runs the code in the checkout — a published image here would
-# run something else. The maintained release branches are the ones that deploy a
-# released artifact, and their compose files name ghcr.io/jartan-llc/memcp at an
-# exact version. To run a published release from here, name it directly with
-# `docker run` — see docs/deployment.md.
+# memcp, running the latest release. Set MEMCP_BACKEND and MEMCP_AUTH_TOKENS in .env,
+# then run `docker compose up -d --wait`.
+# Guide: https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md
+
+name: memcp
 
 services:
   memcp:
-    build: .
+    image: ghcr.io/jartan-llc/memcp:latest
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      MEMCP_BACKEND: ${MEMCP_BACKEND:-sqlite}
+      MEMCP_BACKEND: ${MEMCP_BACKEND:?set MEMCP_BACKEND in .env}
       MEMCP_SQLITE_PATH: /data/memcp.sqlite3
       MEMCP_HOST: 0.0.0.0
       MEMCP_PORT: "8080"
-    # Loopback: the server is unreachable from another machine unless you change
-    # this deliberately. memcp refuses to start unauthenticated on any other bind.
+      MEMCP_AUTH_TOKENS: ${MEMCP_AUTH_TOKENS:?set MEMCP_AUTH_TOKENS in .env}
+      # DNS-rebinding protection; the SDK leaves it off on a 0.0.0.0 bind.
+      MEMCP_ALLOWED_HOSTS: ${MEMCP_ALLOWED_HOSTS:-127.0.0.1:*,localhost:*}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

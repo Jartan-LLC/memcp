@@ -29,9 +29,7 @@ class Config(BaseSettings):
 
     model_config = {"env_prefix": "", "populate_by_name": True}
 
-    memcp_backend: Literal["mem0", "in_memory", "sqlite"] = Field(
-        default="mem0", alias="MEMCP_BACKEND"
-    )
+    memcp_backend: Literal["mem0", "in_memory", "sqlite"] = Field(alias="MEMCP_BACKEND")
 
     # mem0 backend config (required when MEMCP_BACKEND=mem0)
     mem0_api_base: str | None = None
@@ -119,8 +117,7 @@ class Config(BaseSettings):
                 "machines and MEMCP_AUTH_TOKENS is unset, so every request would be "
                 "served as one unauthenticated tenant.\n"
                 "  Set MEMCP_AUTH_TOKENS=<token>:<user_id> to serve it authenticated, "
-                "or MEMCP_HOST=127.0.0.1 to keep it on this machine.\n"
-                "  `memcp up` mints a token for you and does neither by accident."
+                "or MEMCP_HOST=127.0.0.1 to keep it on this machine."
             )
         return self
 

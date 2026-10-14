@@ -50,14 +50,10 @@ jobs:
       - name: Decide whether this tag takes `latest`
         id: latest
         run: |
-          version="${GITHUB_REF#refs/tags/v}"
-          # sort -V orders 1.0.0 before 1.0.0-rc1, so drop pre-releases first.
-          highest="$(git tag -l 'v*' | sed 's/^v//' | grep -v -- '-' | sort -V | tail -1)"
-          if [ "$version" = "$highest" ]; then
-            echo "take=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "take=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::v$version is not the highest release (v$highest); leaving :latest alone"
+          take="$(.github/scripts/takes-latest.sh "$GITHUB_REF_NAME")"
+          echo "take=$take" >> "$GITHUB_OUTPUT"
+          if [ "$take" = false ]; then
+            echo "::notice::$GITHUB_REF_NAME is not the highest stable release; leaving :latest alone"
           fi
 
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0

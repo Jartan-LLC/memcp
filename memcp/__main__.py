@@ -1,8 +1,6 @@
-"""python -m memcp entrypoint.
+"""Entrypoint for `memcp` and `python -m memcp`.
 
-With no subcommand, or with `serve`, this runs the MCP server — unchanged, so the
-Docker image's entrypoint and every existing deployment keep working. The
-provisioning subcommands live in memcp.deploy and never run inside the server.
+Runs the MCP server, configured from the environment.
 """
 
 from __future__ import annotations
@@ -19,12 +17,10 @@ from memcp.server import create_app
 
 logger = logging.getLogger(__name__)
 
-DEPLOY_COMMANDS = ("up", "down", "plan", "status", "verify", "rotate-token")
-
 
 def serve() -> None:
     try:
-        config = Config()
+        config = Config()  # pyright: ignore[reportCallIssue]  # fields come from the environment
     except ValidationError as e:
         print(f"Configuration error:\n{e}", file=sys.stderr)
         raise SystemExit(1) from None
@@ -52,20 +48,15 @@ def serve() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     args = sys.argv[1:] if argv is None else argv
-    first = args[0] if args else ""
-
-    if first in DEPLOY_COMMANDS or first in ("-h", "--help"):
-        from memcp.deploy.cli import main as deploy_main
-
-        raise SystemExit(deploy_main(args))
-    if first == "serve":
-        args = args[1:]
+    usage = (
+        "memcp takes no arguments; it is configured through environment variables: "
+        "https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md"
+    )
+    if args in (["-h"], ["--help"]):
+        print(usage)
+        raise SystemExit(0)
     if args:
-        print(
-            f"Unknown argument: {args[0]!r}. Run `memcp --help` for the commands this "
-            "supports; the server itself is configured through environment variables.",
-            file=sys.stderr,
-        )
+        print(f"Unknown argument: {args[0]!r}. {usage}", file=sys.stderr)
         raise SystemExit(2)
     serve()
 

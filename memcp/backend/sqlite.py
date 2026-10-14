@@ -1,9 +1,7 @@
 """SQLite backend — durable local storage with no API key and no signup.
 
-This is the keyless half of memcp's position: `memcp up` reaches a backend that
-survives a restart without anyone holding an LLM provider account. It stores the
-same shapes `in_memory` does, in a file, so the two are interchangeable and the
-round trip between them loses nothing but identity.
+It stores the same shapes `in_memory` does, in a file, so the two are interchangeable
+and the round trip between them loses nothing but identity.
 
 What it is not: a semantic engine. Retrieval is word overlap against stored
 content, the same scoring `in_memory` uses, so results are lexical and
