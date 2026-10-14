@@ -98,6 +98,7 @@ def _registered_tools(backend_name: str) -> set[str]:
     from memcp.backends.mem0 import Mem0Backend
     from memcp.backends.sqlite import SqliteBackend
     from memcp.config import Config
+    from memcp.policy import Policy
     from memcp.tools import register_tools
 
     class _Collector:
@@ -119,7 +120,7 @@ def _registered_tools(backend_name: str) -> set[str]:
     }
     collector = _Collector()
     config = Config.model_validate({"MEMCP_BACKEND": "in_memory", "MEMCP_HOST": "127.0.0.1"})
-    register_tools(collector, builders[backend_name](), config)
+    register_tools(collector, Policy(builders[backend_name]()), config)
     return collector.names
 
 

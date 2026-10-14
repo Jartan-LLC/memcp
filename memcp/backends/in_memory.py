@@ -69,7 +69,7 @@ class InMemoryBackend(MemoryBackend):
             reject_nested_filters(scope)
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        # Reserved keys are stripped here, not just by the tool layer: a caller-
+        # Reserved keys are stripped here, not just by policy: a caller-
         # supplied `_memcp_author` (or any future `_memcp_` key) must never reach
         # storage regardless of who calls this method, because the read path
         # trusts whatever it finds.

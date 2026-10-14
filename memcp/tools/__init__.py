@@ -1,7 +1,8 @@
 """MCP tool registration: `register_tools` wires each tool module onto a server.
 
-Each module's `register` defines its handlers as closures over the backend (and
-config), so there are no module-level globals.
+Each module's `register` defines its handlers as closures over the policy object
+(and config), so there are no module-level globals. A policy refusal or backend
+failure becomes the tool's error response in `translate_errors`.
 """
 
 from __future__ import annotations
@@ -11,9 +12,10 @@ import logging
 import time
 from typing import Any
 
-from memcp.backends import MemoryBackend
 from memcp.config import Config
+from memcp.policy import Policy
 from memcp.tools import bulk, insight, memories, transfer
+from memcp.tools._shared import translate_errors
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ def _log_tool_call(fn: Any) -> Any:
     return wrapper
 
 
-def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
+def register_tools(mcp: Any, policy: Policy, config: Config) -> None:
     """Register all MCP tools on the given server instance."""
 
     # Wrap mcp.tool to auto-apply request logging
@@ -56,13 +58,13 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
 
     def _logged_tool(**kwargs: Any) -> Any:
         def decorator(fn: Any) -> Any:
-            return _original_tool(**kwargs)(_log_tool_call(fn))
+            return _original_tool(**kwargs)(_log_tool_call(translate_errors(fn)))
 
         return decorator
 
     mcp.tool = _logged_tool  # type: ignore[assignment]
 
-    memories.register(mcp, backend)
-    bulk.register(mcp, backend)
-    transfer.register(mcp, backend)
-    insight.register(mcp, backend, config)
+    memories.register(mcp, policy)
+    bulk.register(mcp, policy)
+    transfer.register(mcp, policy)
+    insight.register(mcp, policy, config)

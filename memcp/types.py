@@ -1,4 +1,4 @@
-"""Shared data types and error helpers used by tools and backends."""
+"""Shared data types and error helpers used by policy, tools and backends."""
 
 from __future__ import annotations
 
@@ -112,6 +112,15 @@ class MemoryAPIError(RuntimeError):
         self.status = status
         self.body = body
         super().__init__(f"Backend API {status}: {body[:500]}")
+
+
+class PolicyError(Exception):
+    """A request the policy layer refused, with the error code and message the client gets."""
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(f"{code}: {message}")
 
 
 NOT_FOUND_MSG = (

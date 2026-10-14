@@ -4,24 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from memcp.backends import MemoryBackend
 from memcp.config import Config
-from memcp.identity import get_tenant
-from memcp.policy.scope import ScopeError, validate_scope
-from memcp.tools._shared import READ_ONLY, backend_error
-from memcp.types import (
-    NOT_FOUND_MSG,
-    MemoryAPIError,
-    canonical_error,
-    validate_limit,
-    validate_memory_id,
-)
+from memcp.policy import Policy
+from memcp.tools._shared import READ_ONLY
 
 
-def register(mcp: Any, backend: MemoryBackend, config: Config) -> None:
+def register(mcp: Any, policy: Policy, config: Config) -> None:
     """Register the status, history and entities tools."""
-    allowed_scope_keys = set(backend.scope_keys())
-    caps = backend.capabilities()
+    caps = policy.capabilities()
 
     @mcp.tool(
         annotations=READ_ONLY,
@@ -34,13 +24,13 @@ def register(mcp: Any, backend: MemoryBackend, config: Config) -> None:
         return {
             "backend": config.backend_name,
             "version": config.version,
-            "capabilities": sorted(backend.capabilities()),
-            "scope_keys": backend.scope_keys(),
+            "capabilities": sorted(policy.capabilities()),
+            "scope_keys": policy.scope_keys(),
             # False means add_memory stores content verbatim and ignores `infer`.
             # The argument shape is the same either way, so this is the only way a
             # caller can find out.
-            "extracts_facts": backend.extracts_facts,
-            "retrieval": "semantic" if backend.extracts_facts else "keyword",
+            "extracts_facts": policy.extracts_facts,
+            "retrieval": "semantic" if policy.extracts_facts else "keyword",
         }
 
     if "memory_history" in caps:
@@ -53,17 +43,7 @@ def register(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             ),
         )
         async def memory_history(memory_id: str) -> Any:
-            user_id = get_tenant()
-            try:
-                validate_memory_id(memory_id)
-            except ValueError as e:
-                return canonical_error("validation_error", str(e))
-            try:
-                entries = await backend.history(user_id, memory_id)
-            except MemoryAPIError as e:
-                if e.status in (404, 410):
-                    return canonical_error("not_found", NOT_FOUND_MSG)
-                return backend_error(e)
+            entries = await policy.history(memory_id)
             return {
                 "history": [
                     {
@@ -91,19 +71,7 @@ def register(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             scope: dict[str, Any] | None = None,
             limit: int = 100,
         ) -> Any:
-            try:
-                validate_limit(limit)
-            except ValueError as e:
-                return canonical_error("validation_error", str(e))
-            user_id = get_tenant()
-            try:
-                scope = validate_scope(scope, allowed_scope_keys)
-            except ScopeError as e:
-                return e.error
-            try:
-                result = await backend.entities(user_id, scope=scope, limit=limit)
-            except MemoryAPIError as e:
-                return backend_error(e)
+            result = await policy.entities(scope=scope, limit=limit)
             return {
                 "entities": result.entities,
                 "relationships": result.relationships,

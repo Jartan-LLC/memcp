@@ -25,7 +25,9 @@ All tool errors use the canonical error object:
 - **`message`**: Human/LLM-readable. Describes what went wrong.
 - **`retry`**: Whether retrying the same call might succeed. Only `true` for transient failures (5xx, timeouts).
 
-Use `canonical_error(code, message, retry=False)` from `memcp.types`.
+Policy raises `PolicyError(code, message)` for a request it refuses. `translate_errors` in
+`memcp.tools._shared` turns it into this object with `canonical_error` from `memcp.types`,
+and turns a `MemoryAPIError` into `backend_error` or `timeout`.
 
 ## Standard Codes
 
@@ -43,8 +45,10 @@ Use `canonical_error(code, message, retry=False)` from `memcp.types`.
 
 ## Rules
 
-1. Every tool failure returns the canonical error object — never raw strings or exceptions
+1. Every failure a tool reports is the canonical error object
 2. `retry` is `true` only for transient failures (`e.status >= 500`)
-3. 404 from backends maps to `not_found`, not `backend_error`
-4. Validation errors are caught before backend calls
-5. `MemoryAPIError` is the only exception type tool handlers catch from backends
+3. Map a backend 404 or 410 to `not_found` only on a by-id call (`get`, `update`,
+   `delete`, `history`)
+4. Validate arguments in `Policy` before the backend call. The one exception is `cursor`:
+   the backend raises `ValueError`, and `Policy` reports `validation_error`
+5. Raise `PolicyError` for a refusal; don't catch exceptions in a tool handler

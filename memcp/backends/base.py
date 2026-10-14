@@ -114,7 +114,7 @@ class MemoryBackend(ABC):
         """One page of the tenant's memories, with `next_cursor` set while more remain.
 
         Set `incomplete` on every page when memories may exist beyond what any page
-        reaches (a store's list ceiling).
+        reaches (a store's list ceiling). Raises `ValueError` for a cursor it can't read.
         """
         raise NotImplementedError
 

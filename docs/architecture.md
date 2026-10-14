@@ -22,7 +22,7 @@ that isn't in the tree belongs to that design, not to the code.
 | Scope | `agent_id` and `run_id`: labels that organize memories inside a space. Not a security boundary. |
 | System fields | `system["space"]` (the partition), `system["author"]` (name of the key that last wrote the memory) and `system["created_by"]` (name of the key that created it). Set only by policy. |
 | Policy decision | A decision about what memcp accepts from a client or returns to it: the space a call reaches, what a key's grant allows, scope, authorship, metadata and limits. |
-| Policy object | The one instance of `policy.Policy` that `http/app.py` builds around the backend; `tools/` calls only it. |
+| Policy object | The instance of `policy.Policy` that `http/app.py` builds around the backend; `tools/` calls only it. |
 | Capabilities | What a backend declares about itself: its optional operations (`update`, `list`, `history`, `entities`), its retrieval kind, whether it extracts facts, and its list ceiling (the most memories its `list` can reach), if it has one. |
 
 ## Packages
@@ -37,15 +37,16 @@ Calls go down the table, never up.
 | `memcp/backends/` | One backend per kind of store (mem0, sqlite, in_memory): storing, searching, fetching, history | Makes a policy decision |
 
 Shared by all of them and importing nothing else from memcp: `types.py` (`Memory`,
-`HistoryEntry`, result types, `MemoryAPIError`), `identity.py` (key, grant, the current
-request's key, which has no default: reading it when no key is set raises) and `config.py`.
+`HistoryEntry`, result types, `MemoryAPIError`, `PolicyError`), `identity.py` (key, grant,
+the current request's key, which has no default: reading it when no key is set raises) and
+`config.py`.
 
 ```text
 memcp/
   __main__.py, config.py, types.py, identity.py
   http/       app.py, auth.py (keys file, token resolution), hosts.py, logging.py
   tools/      __init__.py (register_tools), memories.py, bulk.py, transfer.py, insight.py, surface.py,
-              _shared.py (annotations, backend-error mapping)
+              _shared.py (annotations, error responses)
   policy/     __init__.py (one method per operation), access.py, scope.py, metadata.py,
               results.py, transfer.py, audit.py
   backends/   base.py (the contract), capabilities.py, keyword.py, in_memory.py, sqlite.py,
@@ -61,7 +62,7 @@ Tests mirror the packages (`tests/http/`, `tests/tools/`, `tests/policy/`,
    invariants listed under "What a backend guarantees"; don't remove them as duplicates of
    policy's checks. A backend never relaxes or reinterprets a policy decision.
 2. A module imports only from packages below it in the table, or from `types.py`,
-   `identity.py` and `config.py`. Modules inside `backends/` may import each other. A test
+   `identity.py` and `config.py`. Modules inside one package may import each other. A test
    fails on any other import.
 3. In the server, only `http/app.py` constructs a backend, and only `policy/` calls a
    backend method, health and shutdown included. The tool-surface generator constructs its
@@ -71,8 +72,9 @@ Tests mirror the packages (`tests/http/`, `tests/tools/`, `tests/policy/`,
    optional capabilities. Outside `backends/`, change only the backend setting in
    `config.py` and its construction in `http/app.py`. If `tools/` or `policy/` would need
    an edit, extend the contract instead.
-5. Policy validates every argument before calling a backend, and checks every result it can
-   on the way back (the checks are listed per operation below).
+5. Policy validates every argument except `cursor`, which only a backend can read, before
+   calling a backend, and checks every result it can on the way back (the checks are listed
+   per operation below).
 6. Each policy decision has a test that calls `policy/` directly with input that breaks it.
    Each backend guarantee has a test in `tests/conformance`, run against every backend.
 

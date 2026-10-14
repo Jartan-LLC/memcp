@@ -13,6 +13,7 @@ import pytest
 
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
+from memcp.policy import Policy
 from memcp.tools import register_tools
 from memcp.types import EntitiesResult, MemoryAPIError
 
@@ -73,7 +74,7 @@ class GraphBackend(InMemoryBackend):
 @pytest.fixture
 def mcp_with_tools(config: Config, backend: InMemoryBackend) -> tuple[FakeMCP, InMemoryBackend]:
     mcp = FakeMCP()
-    register_tools(mcp, backend, config)
+    register_tools(mcp, Policy(backend), config)
     return mcp, backend
 
 
@@ -81,7 +82,7 @@ def mcp_with_tools(config: Config, backend: InMemoryBackend) -> tuple[FakeMCP, I
 def mcp_with_graph(config: Config) -> tuple[FakeMCP, GraphBackend]:
     mcp = FakeMCP()
     backend = GraphBackend()
-    register_tools(mcp, backend, config)
+    register_tools(mcp, Policy(backend), config)
     return mcp, backend
 
 
@@ -1231,7 +1232,7 @@ async def test_import_memories_overwrite_requires_capability(config):
 
     backend = NoUpdateBackend()
     mcp = FakeMCP()
-    register_tools(mcp, backend, config)
+    register_tools(mcp, Policy(backend), config)
     result = await mcp.call(
         "import_memories",
         memories=[{"content": "test"}],

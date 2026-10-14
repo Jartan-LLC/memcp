@@ -19,6 +19,7 @@ from memcp.backends.sqlite import SqliteBackend
 from memcp.config import Config
 from memcp.http.auth import BearerGate, StaticResolver
 from memcp.http.hosts import transport_security
+from memcp.policy import Policy
 from memcp.tools import register_tools
 
 INSTRUCTIONS = """\
@@ -71,7 +72,8 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
     mcp = MCPServer("memcp", instructions=INSTRUCTIONS)
 
     backend = _create_backend(config)
-    register_tools(mcp, backend, config)
+    policy = Policy(backend)
+    register_tools(mcp, policy, config)
 
     resolver = None
     if config.memcp_auth_tokens:
@@ -106,7 +108,7 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
     mcp_app = BearerGate(_ensure_accept, resolver)
 
     async def health(request: Request) -> JSONResponse:
-        status = await backend.health()
+        status = await policy.health()
         code = 200 if status.status == "healthy" else 503
         return JSONResponse(
             {"status": status.status, "backend": status.backend, "latency_ms": status.latency_ms},
@@ -119,7 +121,7 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
             try:
                 yield
             finally:
-                await backend.close()
+                await policy.close()
 
     app = Starlette(
         routes=[

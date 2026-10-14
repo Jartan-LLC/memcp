@@ -192,7 +192,7 @@ class SqliteBackend(MemoryBackend):
             reject_nested_filters(scope)
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        # Stripped here, not just by the tool layer — see in_memory.add()'s
+        # Stripped here, not just by policy — see in_memory.add()'s
         # comment on the same line; a caller cannot plant the reserved key
         # regardless of which caller reaches this method.
         stored_metadata = strip_reserved_metadata(metadata) or {}
