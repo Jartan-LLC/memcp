@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from memcp.auth import reset_tenant, set_tenant
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
+from memcp.identity import reset_tenant, set_tenant
 
 
 @pytest.fixture

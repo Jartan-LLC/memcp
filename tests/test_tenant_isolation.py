@@ -15,7 +15,7 @@ see `tests/backends/test_mem0.py` for the same gate). It is the one backend wher
 isolation is not structural: `in_memory` and `sqlite` scope every query by `user_id`
 in the query itself, but mem0's single-ID endpoints (GET/PUT/DELETE/history) are
 global on the wire, so the adapter does fetch-then-verify instead
-(`memcp/backends/mem0.py`). That is a correct design and also the kind that fails
+(`memcp/backends/mem0/adapter.py`). That is a correct design and also the kind that fails
 silently when one call site forgets the check.
 """
 

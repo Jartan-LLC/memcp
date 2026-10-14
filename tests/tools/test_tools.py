@@ -758,7 +758,7 @@ async def test_backend_error_on_entities(mcp_with_graph):
 
 async def test_tenant_isolation_through_tools(mcp_with_tools):
     """Two different tenants see completely separate memory pools via tools."""
-    from memcp.auth import reset_tenant, set_tenant
+    from memcp.identity import reset_tenant, set_tenant
 
     mcp, _ = mcp_with_tools
 
@@ -791,7 +791,7 @@ async def test_tenant_isolation_through_tools(mcp_with_tools):
 
 async def test_tenant_isolation_list(mcp_with_tools):
     """list_memories respects tenant boundaries."""
-    from memcp.auth import reset_tenant, set_tenant
+    from memcp.identity import reset_tenant, set_tenant
 
     mcp, _ = mcp_with_tools
 
@@ -810,7 +810,7 @@ async def test_tenant_isolation_list(mcp_with_tools):
 
 async def test_tenant_isolation_delete(mcp_with_tools):
     """One tenant cannot delete another's memories."""
-    from memcp.auth import reset_tenant, set_tenant
+    from memcp.identity import reset_tenant, set_tenant
 
     mcp, _ = mcp_with_tools
 
@@ -833,7 +833,7 @@ async def test_tenant_isolation_delete(mcp_with_tools):
 
 async def test_tenant_isolation_update(mcp_with_tools):
     """One tenant cannot update another's memories."""
-    from memcp.auth import reset_tenant, set_tenant
+    from memcp.identity import reset_tenant, set_tenant
 
     mcp, _ = mcp_with_tools
 
@@ -856,7 +856,7 @@ async def test_tenant_isolation_update(mcp_with_tools):
 
 async def test_tenant_isolation_history(mcp_with_tools):
     """One tenant cannot read another's memory history."""
-    from memcp.auth import reset_tenant, set_tenant
+    from memcp.identity import reset_tenant, set_tenant
 
     mcp, _ = mcp_with_tools
 
@@ -1257,7 +1257,7 @@ async def test_import_memories_scope_injection_stripped(mcp_with_tools):
 
 
 async def test_import_memories_tenant_isolation(mcp_with_tools):
-    from memcp.auth import reset_tenant, set_tenant
+    from memcp.identity import reset_tenant, set_tenant
 
     mcp, _ = mcp_with_tools
 
@@ -1307,7 +1307,7 @@ async def test_export_memories_empty(mcp_with_tools):
 
 async def test_export_memories_tenant_isolation(mcp_with_tools):
     """Export only returns the current tenant's memories."""
-    from memcp.auth import reset_tenant, set_tenant
+    from memcp.identity import reset_tenant, set_tenant
 
     mcp, _ = mcp_with_tools
 

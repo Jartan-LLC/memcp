@@ -1,4 +1,4 @@
-"""Tests for auth: BearerGate middleware, StaticResolver, tenant context."""
+"""Tests for auth: BearerGate middleware and StaticResolver."""
 
 from __future__ import annotations
 
@@ -6,15 +6,8 @@ import json
 
 import pytest
 
-from memcp.auth import (
-    BearerGate,
-    Principal,
-    StaticResolver,
-    get_principal,
-    get_tenant,
-    reset_tenant,
-    set_tenant,
-)
+from memcp.http.auth import BearerGate, StaticResolver
+from memcp.identity import Principal, get_principal, get_tenant
 
 
 async def _make_request(app, headers: list[tuple[bytes, bytes]] | None = None):
@@ -57,25 +50,9 @@ def _resolver() -> StaticResolver:
     )
 
 
-# ---------------------------------------------------------------------------
-# Tenant context isolation
-# ---------------------------------------------------------------------------
-
-
-async def test_contextvar_isolation():
-    """Verify contextvars don't leak between calls."""
-    tok1 = set_tenant("user_one")
-    assert get_tenant() == "user_one"
-    reset_tenant(tok1)
-
-    tok2 = set_tenant("user_two")
-    assert get_tenant() == "user_two"
-    reset_tenant(tok2)
-
-
 async def test_dev_mode_uses_default_user():
     """BearerGate with no resolver sets default_user."""
-    from memcp.auth import _DEFAULT_USER
+    from memcp.identity import DEFAULT_USER
 
     captured_user = None
 
@@ -87,7 +64,7 @@ async def test_dev_mode_uses_default_user():
 
     gate = BearerGate(capture_app, None)
     await _make_request(gate, [])
-    assert captured_user == _DEFAULT_USER
+    assert captured_user == DEFAULT_USER
 
 
 # ---------------------------------------------------------------------------

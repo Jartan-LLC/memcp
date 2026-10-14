@@ -1,7 +1,7 @@
-"""mem0 REST API adapter.
+"""mem0 REST API adapter: memcp's backend contract mapped onto mem0's API.
 
-Talks to a self-hosted mem0 instance. All mem0-specific workarounds
-(flat filters, null-as-not-found, 5xx-on-malformed-id) live here.
+Talks to a self-hosted mem0 instance through `Mem0Client`. All mem0-specific
+workarounds (flat filters, null-as-not-found, 5xx-on-malformed-id) live here.
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
-
+from memcp.backends.base import MemoryBackend
+from memcp.backends.mem0.client import Mem0Client
 from memcp.types import (
     AUTHOR_METADATA_KEY,
     AddResult,
@@ -28,8 +28,6 @@ from memcp.types import (
     split_author,
     strip_reserved_metadata,
 )
-
-from .base import MemoryBackend
 
 logger = logging.getLogger(__name__)
 
@@ -140,12 +138,7 @@ class Mem0Backend(MemoryBackend):
     """Adapter for self-hosted mem0 REST API."""
 
     def __init__(self, base_url: str, api_key: str, *, timeout: float = 30.0):
-        self._http = httpx.AsyncClient(
-            base_url=base_url.rstrip("/"),
-            headers={"X-API-Key": api_key},
-            timeout=httpx.Timeout(timeout),
-            transport=httpx.AsyncHTTPTransport(retries=3),
-        )
+        self._client = Mem0Client(base_url, api_key, timeout=timeout)
         # Unlike sqlite, this backend has no local file to run a one-time cleanse
         # migration against (Thorne, JAR-723 finding 1) — memcp has no way to
         # enumerate every tenant a mem0 install holds, only whichever a request
@@ -159,24 +152,6 @@ class Mem0Backend(MemoryBackend):
             "attribution if any client could have written to it before this "
             "server version was deployed."
         )
-
-    async def _request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        json: dict[str, Any] | None = None,
-    ) -> Any:
-        try:
-            resp = await self._http.request(method, path, params=params, json=json)
-        except httpx.TimeoutException as e:
-            raise MemoryAPIError(408, f"Timeout: {e}") from e
-        except httpx.RequestError as e:
-            raise MemoryAPIError(503, f"Network error: {e}") from e
-        if resp.status_code >= 400:
-            raise MemoryAPIError(resp.status_code, resp.text)
-        return resp.json() if resp.content else None
 
     # --- required ---
 
@@ -208,7 +183,7 @@ class Mem0Backend(MemoryBackend):
         if stored_metadata:
             payload["metadata"] = stored_metadata
 
-        result = await self._request("POST", "/memories", json=payload)
+        result = await self._client.request("POST", "/memories", json=payload)
         if not isinstance(result, dict):
             logger.warning("Unexpected mem0 POST response shape: %s", type(result).__name__)
             return []
@@ -239,7 +214,7 @@ class Mem0Backend(MemoryBackend):
             "top_k": limit,
             "threshold": threshold,
         }
-        result = await self._request("POST", "/search", json=payload)
+        result = await self._client.request("POST", "/search", json=payload)
         raw_results = (result or {}).get("results", []) if isinstance(result, dict) else []
         return [_parse_memory(r, score=r.get("score")) for r in raw_results]
 
@@ -248,7 +223,7 @@ class Mem0Backend(MemoryBackend):
         existing = await self.get(user_id, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Not found")
-        await self._request("DELETE", f"/memories/{memory_id}")
+        await self._client.request("DELETE", f"/memories/{memory_id}")
         return True
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
@@ -265,13 +240,13 @@ class Mem0Backend(MemoryBackend):
                 "with single values that are not empty, '*' or null",
             )
         params = _build_identifier_params(user_id, scope)
-        await self._request("DELETE", "/memories", params=params)
+        await self._client.request("DELETE", "/memories", params=params)
         return None  # mem0 doesn't return a count
 
     async def health(self) -> HealthStatus:
         start = time.monotonic()
         try:
-            await self._request("GET", "/memories", params={"user_id": "__health_check__"})
+            await self._client.request("GET", "/memories", params={"user_id": "__health_check__"})
             latency = (time.monotonic() - start) * 1000
             return HealthStatus(status="healthy", backend="mem0", latency_ms=round(latency, 1))
         except Exception:
@@ -294,7 +269,7 @@ class Mem0Backend(MemoryBackend):
     # --- optional ---
 
     async def get(self, user_id: str, memory_id: str) -> Memory | None:
-        result = await self._request("GET", f"/memories/{memory_id}")
+        result = await self._client.request("GET", f"/memories/{memory_id}")
         if result is None:
             return None
         if result.get("user_id") != user_id:
@@ -328,7 +303,7 @@ class Mem0Backend(MemoryBackend):
             if author is not None:
                 base[AUTHOR_METADATA_KEY] = author
             body["metadata"] = base
-        await self._request("PUT", f"/memories/{memory_id}", json=body)
+        await self._client.request("PUT", f"/memories/{memory_id}", json=body)
         # mem0 PUT returns {"message": "..."}, not the memory. Fetch it.
         updated = await self.get(user_id, memory_id)
         if updated is None:
@@ -348,7 +323,7 @@ class Mem0Backend(MemoryBackend):
         # export and the import dedup index all silently saw only the first 20
         # memories. LIST_CEILING is the server's own maximum; it rejects more.
         params["top_k"] = LIST_CEILING
-        result = await self._request("GET", "/memories", params=params)
+        result = await self._client.request("GET", "/memories", params=params)
         raw = result if isinstance(result, list) else (result or {}).get("results", [])
         # A full response can't tell 1000 memories from more, so it counts as incomplete.
         at_ceiling = len(raw) >= LIST_CEILING
@@ -369,7 +344,7 @@ class Mem0Backend(MemoryBackend):
         existing = await self.get(user_id, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Not found")
-        result = await self._request("GET", f"/memories/{memory_id}/history")
+        result = await self._client.request("GET", f"/memories/{memory_id}/history")
         if not result:
             return []
         # mem0's history log is entirely upstream-managed and carries no metadata
@@ -406,4 +381,4 @@ class Mem0Backend(MemoryBackend):
     # --- lifecycle ---
 
     async def close(self) -> None:
-        await self._http.aclose()
+        await self._client.close()

@@ -1,12 +1,6 @@
-"""Authentication — principal resolution, context propagation, ASGI middleware.
+"""Authentication — bearer token resolution and ASGI middleware.
 
-Identity flows: Bearer token → Resolver → ContextVar → tool handlers.
-
-A `Principal` splits *tenant* (what scopes storage — unchanged, SEC-2026-0094
-conjunct 2 kept the shared store) from *seat* (who the caller is — the subject
-server-side author attribution stamps onto every write). `get_tenant()` keeps
-returning a bare string so every existing scoping call site is untouched;
-`get_principal()` is additive.
+Identity flows: Bearer token → Resolver → ContextVar (`memcp.identity`) → tool handlers.
 """
 
 from __future__ import annotations
@@ -15,79 +9,14 @@ import hmac
 import json
 import logging
 import re
-from contextvars import ContextVar
-from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from memcp.identity import DEFAULT_PRINCIPAL, Principal, reset_tenant, set_principal
 from memcp.types import canonical_error
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Principal + tenant context (per-request via contextvars)
-# ---------------------------------------------------------------------------
-
-_DEFAULT_USER = "default_user"
-
 _SEAT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
-
-
-@dataclass(frozen=True)
-class Principal:
-    """A resolved caller: the tenant it scopes storage under, and the seat that
-    identifies it for attribution."""
-
-    tenant: str
-    seat: str
-
-
-_DEFAULT_PRINCIPAL = Principal(tenant=_DEFAULT_USER, seat=_DEFAULT_USER)
-
-_principal_var: ContextVar[Principal] = ContextVar("principal")
-
-
-def get_tenant() -> str:
-    """Read the current request's user_id. Falls back to default in dev mode."""
-    return _principal_var.get(_DEFAULT_PRINCIPAL).tenant
-
-
-def get_principal() -> Principal:
-    """Read the current request's resolved principal. Falls back to default in dev mode."""
-    return _principal_var.get(_DEFAULT_PRINCIPAL)
-
-
-def is_unattributed(principal: Principal) -> bool:
-    """True when `principal` is the dev-mode fallback — nothing was actually
-    resolved, so a write made under it should not be stamped as attributed
-    (Corin, JAR-723 finding 2).
-
-    Identity, not equality: a real resolved `Principal` that happens to equal
-    `_DEFAULT_PRINCIPAL` by value (a token mapped onto memcp's own default
-    tenant name, e.g. while migrating a no-auth deployment onto tokens) must
-    still count as attributed — that mapping is a legitimate configuration,
-    and a value comparison would misread it as the fallback (Corin, JAR-723
-    finding 3). Only the literal sentinel object, never rebuilt, ever
-    satisfies this — `set_principal(_DEFAULT_PRINCIPAL)` is how a caller opts
-    into it deliberately. `Principal` stays exactly `{tenant, seat}` per item
-    1 and item 6's own check, so this cannot be a third field."""
-    return principal is _DEFAULT_PRINCIPAL
-
-
-def set_tenant(user_id: str) -> Any:
-    """Set the current request's principal from a bare tenant id (seat mirrors
-    tenant). Returns a reset token."""
-    return _principal_var.set(Principal(tenant=user_id, seat=user_id))
-
-
-def set_principal(principal: Principal) -> Any:
-    """Set the current request's principal. Returns a reset token."""
-    return _principal_var.set(principal)
-
-
-def reset_tenant(token: Any) -> None:
-    """Reset the contextvar to its previous value."""
-    _principal_var.reset(token)
-
 
 # ---------------------------------------------------------------------------
 # Resolver protocol
@@ -213,7 +142,7 @@ class BearerGate:
         if not self.resolver:
             # Dev mode: no auth, default user. The literal sentinel, not a
             # freshly-built equal Principal — is_unattributed() checks identity.
-            token = set_principal(_DEFAULT_PRINCIPAL)
+            token = set_principal(DEFAULT_PRINCIPAL)
             try:
                 await self.app(scope, receive, send)
             finally:
