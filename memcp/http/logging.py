@@ -52,7 +52,7 @@ class TenantContextFilter(logging.Filter):
     """Attach tenant user_id from contextvar to every log record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        from memcp.auth import get_tenant
+        from memcp.identity import get_tenant
 
         record.user_id = get_tenant()  # type: ignore[attr-defined]
         return True

@@ -113,14 +113,13 @@ class SqliteBackend(MemoryBackend):
         `add`/`update` strip the reserved namespace from caller-supplied
         metadata unconditionally, so nothing written through this class from
         here on can carry a forged key — but that guard did not always exist.
-        Before it did, `metadata` was entirely unvalidated (correction B), so
-        any bearer-token holder could have stored a `_memcp_author` key
-        directly, and the read path cannot otherwise tell that from a real
-        server stamp (Thorne, JAR-723 finding 1). A row in an existing file
-        predates every version of the write-time guard by definition, so
-        stripping it once, unconditionally, is exact — nothing legitimate is
-        lost, because nothing in this namespace has ever been a caller's to
-        set."""
+        Before it did, `metadata` was unvalidated, so any bearer-token holder
+        could have stored a `_memcp_author` key directly, and the read path
+        cannot otherwise tell that from a real server stamp. A row in an
+        existing file predates every version of the write-time guard by
+        definition, so stripping it once, unconditionally, is exact — nothing
+        legitimate is lost, because nothing in this namespace has ever been a
+        caller's to set."""
         current = self._conn.execute("PRAGMA user_version").fetchone()[0]
         if current >= _RESERVED_METADATA_CLEANSE_VERSION:
             return
@@ -132,9 +131,8 @@ class SqliteBackend(MemoryBackend):
                 # Everything this class ever writes goes out through json.dumps,
                 # so a row this can't parse can't be read normally either —
                 # skipping it loses nothing this cleanse could otherwise have
-                # cleaned, and a boot failure here (Thorne, JAR-723 C4) would be
-                # strictly worse than leaving one unreadable row exactly as it
-                # already was.
+                # cleaned, and a boot failure here would be strictly worse than
+                # leaving one unreadable row exactly as it already was.
                 logger.warning(
                     "Skipped unparsable metadata during reserved-key cleanse for row %s",
                     row["id"],

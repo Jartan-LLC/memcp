@@ -1,4 +1,4 @@
-"""Tests for auth: BearerGate middleware, StaticResolver, tenant context."""
+"""Tests for auth: BearerGate middleware and StaticResolver."""
 
 from __future__ import annotations
 
@@ -6,15 +6,8 @@ import json
 
 import pytest
 
-from memcp.auth import (
-    BearerGate,
-    Principal,
-    StaticResolver,
-    get_principal,
-    get_tenant,
-    reset_tenant,
-    set_tenant,
-)
+from memcp.http.auth import BearerGate, StaticResolver
+from memcp.identity import Principal, get_principal, get_tenant
 
 
 async def _make_request(app, headers: list[tuple[bytes, bytes]] | None = None):
@@ -57,25 +50,9 @@ def _resolver() -> StaticResolver:
     )
 
 
-# ---------------------------------------------------------------------------
-# Tenant context isolation
-# ---------------------------------------------------------------------------
-
-
-async def test_contextvar_isolation():
-    """Verify contextvars don't leak between calls."""
-    tok1 = set_tenant("user_one")
-    assert get_tenant() == "user_one"
-    reset_tenant(tok1)
-
-    tok2 = set_tenant("user_two")
-    assert get_tenant() == "user_two"
-    reset_tenant(tok2)
-
-
 async def test_dev_mode_uses_default_user():
     """BearerGate with no resolver sets default_user."""
-    from memcp.auth import _DEFAULT_USER
+    from memcp.identity import DEFAULT_USER
 
     captured_user = None
 
@@ -87,7 +64,7 @@ async def test_dev_mode_uses_default_user():
 
     gate = BearerGate(capture_app, None)
     await _make_request(gate, [])
-    assert captured_user == _DEFAULT_USER
+    assert captured_user == DEFAULT_USER
 
 
 # ---------------------------------------------------------------------------
@@ -125,10 +102,8 @@ async def test_static_resolver_from_env_whitespace():
 
 
 async def test_static_resolver_from_env_user_id_with_a_colon_is_unchanged():
-    """MEMCP_AUTH_TOKENS parsing is byte-identical to pre-patch — split(':', 1)
-    per pair — so a user_id that itself contains a colon still round-trips as a
-    single tenant, exactly as it did before this fix (Corin, JAR-723 correction
-    A re-verification)."""
+    """MEMCP_AUTH_TOKENS parsing splits each pair once on ':', so a user_id that
+    itself contains a colon round-trips as a single tenant."""
     resolver = StaticResolver.from_env("tok:urn:alice")
     assert await resolver.resolve("tok") == Principal(tenant="urn:alice", seat="urn:alice")
 
@@ -154,7 +129,7 @@ def test_static_resolver_from_env_empty():
 
 
 # ---------------------------------------------------------------------------
-# MEMCP_AUTH_SEATS — construction 2 (JAR-723, Corin's discriminator_poc.py)
+# MEMCP_AUTH_SEATS — a seat per token, in a variable of its own
 # ---------------------------------------------------------------------------
 
 

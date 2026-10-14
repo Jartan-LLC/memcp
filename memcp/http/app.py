@@ -7,18 +7,18 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
-from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
-from memcp.auth import BearerGate, StaticResolver
 from memcp.backends import MemoryBackend
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.backends.mem0 import Mem0Backend
 from memcp.backends.sqlite import SqliteBackend
 from memcp.config import Config
+from memcp.http.auth import BearerGate, StaticResolver
+from memcp.http.hosts import transport_security
 from memcp.tools import register_tools
 
 INSTRUCTIONS = """\
@@ -79,22 +79,8 @@ def create_app(config: Config) -> tuple[Any, MemoryBackend]:
 
     # Initialize the MCP app (creates session manager). `host` only selects the
     # DNS-rebinding defaults; the bind address is uvicorn's, in __main__.
-    #
-    # With MEMCP_ALLOWED_HOSTS set we hand the SDK explicit settings, because its own
-    # rule turns protection on only for a loopback `host` and leaves it off for every
-    # other value — including `0.0.0.0`, which is memcp's default. Origins are derived
-    # from the same list over http and https; a browser Origin memcp does not
-    # recognise is refused rather than served.
-    security = None
-    allowed = config.allowed_hosts_list
-    if allowed:
-        security = TransportSecuritySettings(
-            enable_dns_rebinding_protection=True,
-            allowed_hosts=allowed,
-            allowed_origins=[f"{scheme}://{h}" for h in allowed for scheme in ("http", "https")],
-        )
     mcp_starlette = mcp.streamable_http_app(
-        stateless_http=True, host=config.host, transport_security=security
+        stateless_http=True, host=config.host, transport_security=transport_security(config)
     )
     session_manager = mcp.session_manager
 

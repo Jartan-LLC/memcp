@@ -1,4 +1,5 @@
-"""Server-side author attribution — SEC-2026-0094 conjunct 2, route 2 (JAR-723).
+"""Server-side author attribution: the seat stamped on a write comes from the resolved
+token, never from the caller.
 
 Before this landed, nothing in memcp distinguished which seat wrote a memory: two
 principals sharing a tenant (the live shape of SEC-2026-0038 — one bearer token for
@@ -24,9 +25,9 @@ from typing import Any
 
 import pytest
 
-from memcp.auth import reset_tenant, set_tenant
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
+from memcp.identity import reset_tenant, set_tenant
 from memcp.tools import register_tools
 
 # Mirrors memcp.types._AUTHOR_METADATA_KEY, deliberately not imported: importing a
@@ -108,7 +109,7 @@ async def test_update_memory_relabels_to_the_updating_principal(mcp_with_tools):
     from `tenant` is new in this fix, so this import is local — against the
     pre-patch tree this test errors on the import rather than on an assertion.
     """
-    from memcp.auth import Principal, set_principal
+    from memcp.identity import Principal, set_principal
 
     mcp, _ = mcp_with_tools
     tok = set_principal(Principal(tenant="shared", seat="owner"))
@@ -127,7 +128,7 @@ async def test_update_memory_relabels_to_the_updating_principal(mcp_with_tools):
 async def test_update_memory_re_stamps_even_when_metadata_is_not_touched(mcp_with_tools):
     """update_memory's own contract is that omitted metadata is left alone — the
     re-stamp must not turn 'I'm not touching metadata' into 'wipe it'."""
-    from memcp.auth import Principal, set_principal
+    from memcp.identity import Principal, set_principal
 
     mcp, _ = mcp_with_tools
     tok = set_principal(Principal(tenant="shared", seat="owner"))
@@ -146,7 +147,7 @@ async def test_update_memory_re_stamps_even_when_metadata_is_not_touched(mcp_wit
 
 
 async def test_memory_history_entries_carry_the_acting_principal(mcp_with_tools):
-    from memcp.auth import Principal, set_principal
+    from memcp.identity import Principal, set_principal
 
     mcp, _ = mcp_with_tools
     tok = set_principal(Principal(tenant="shared", seat="creator"))
@@ -199,7 +200,7 @@ async def test_import_memories_overwrite_re_stamps_author_too(mcp_with_tools):
     differ only in seat — the shape a shared bearer token actually produces
     (SEC-2026-0038: one tenant, many seats).
     """
-    from memcp.auth import Principal, set_principal
+    from memcp.identity import Principal, set_principal
 
     mcp, _ = mcp_with_tools
     tok = set_principal(Principal(tenant="shared", seat="owner"))
@@ -221,18 +222,18 @@ async def test_import_memories_overwrite_re_stamps_author_too(mcp_with_tools):
 
 
 async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
-    """Corin, JAR-723 finding 2: with no resolver, nothing authenticated the
-    caller, so a write made under the dev-mode fallback principal must not
-    claim `attributed: true` — that would tell a reader "the server resolved
-    this seat" when it resolved nothing at all.
+    """With no resolver, nothing authenticated the caller, so a write made
+    under the dev-mode fallback principal must not claim `attributed: true` —
+    that would tell a reader "the server resolved this seat" when it resolved
+    nothing at all.
 
-    No `tenant_context` fixture override here: the default `_DEFAULT_PRINCIPAL`
+    No `tenant_context` fixture override here: the default `DEFAULT_PRINCIPAL`
     context (unset contextvar) is exactly the no-`MEMCP_AUTH_TOKENS` shape.
     """
-    from memcp.auth import _DEFAULT_PRINCIPAL, reset_tenant, set_principal
+    from memcp.identity import DEFAULT_PRINCIPAL, reset_tenant, set_principal
 
     mcp, _ = mcp_with_tools
-    tok = set_principal(_DEFAULT_PRINCIPAL)
+    tok = set_principal(DEFAULT_PRINCIPAL)
     try:
         await mcp.call("add_memory", content="no auth configured")
         result = await mcp.call("search_memory", query="no auth")
@@ -245,12 +246,13 @@ async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
 
 
 async def test_real_token_onto_the_default_tenant_name_is_still_attributed(mcp_with_tools):
-    """Corin, JAR-723 finding 3: a real, resolved token that happens to map onto
-    memcp's own dev-mode tenant name ('default_user') is not the dev-mode
-    fallback — something did authenticate it — so it must not be misread as
-    unattributed. The natural way this mapping arises: migrating a no-auth
-    deployment onto tokens while keeping existing data's tenant name."""
-    from memcp.auth import StaticResolver, reset_tenant, set_principal
+    """A real, resolved token that happens to map onto memcp's own dev-mode
+    tenant name ('default_user') is not the dev-mode fallback — something did
+    authenticate it — so it must not be misread as unattributed. The natural
+    way this mapping arises: migrating a no-auth deployment onto tokens while
+    keeping existing data's tenant name."""
+    from memcp.http.auth import StaticResolver
+    from memcp.identity import reset_tenant, set_principal
 
     mcp, _ = mcp_with_tools
     resolved = await StaticResolver.from_env("realtoken:default_user").resolve("realtoken")
