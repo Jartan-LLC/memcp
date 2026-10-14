@@ -1,4 +1,4 @@
-"""Tools for one memory at a time: add, search, get, update, delete."""
+"""Tools that add, find, fetch, change and delete memories: add, search, get, update, delete."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from memcp.types import (
 
 
 def register(mcp: Any, backend: MemoryBackend) -> None:
-    """Register the single-memory tools."""
+    """Register the add, search, get, update and delete tools."""
     allowed_scope_keys = set(backend.scope_keys())
     caps = backend.capabilities()
 

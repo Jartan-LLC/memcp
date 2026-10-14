@@ -1,10 +1,8 @@
 """The current request's identity, propagated through a context variable.
 
-A `Principal` splits *tenant* (what scopes storage — unchanged, SEC-2026-0094
-conjunct 2 kept the shared store) from *seat* (who the caller is — the subject
-server-side author attribution stamps onto every write). `get_tenant()` keeps
-returning a bare string so every existing scoping call site is untouched;
-`get_principal()` is additive.
+A `Principal` splits *tenant* (what scopes storage) from *seat* (who the caller
+is; author attribution stamps it onto every write). `get_tenant()` returns the
+bare tenant string; `get_principal()` returns both.
 """
 
 from __future__ import annotations
@@ -51,8 +49,7 @@ def is_unattributed(principal: Principal) -> bool:
     and a value comparison would misread it as the fallback. Only the literal
     sentinel object, never rebuilt, ever satisfies this —
     `set_principal(DEFAULT_PRINCIPAL)` is how a caller opts into it
-    deliberately. `Principal` is exactly `{tenant, seat}`, so this cannot be a
-    third field."""
+    deliberately."""
     return principal is DEFAULT_PRINCIPAL
 
 

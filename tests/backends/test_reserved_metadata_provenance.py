@@ -10,15 +10,15 @@ write-time guard.
 
 Two closures, each sufficient for the backends it covers:
 - `in_memory`/`sqlite`: `add`/`update` strip the reserved namespace from
-  caller-supplied metadata unconditionally now, regardless of caller — so nothing
-  written through a patched build's backend layer can carry a forged key, even
-  bypassing the tool layer. sqlite additionally runs a one-time, marked cleanse on
-  every row already in a file when a patched build first opens it, closing the gap
-  for genuinely pre-existing data.
+  caller-supplied metadata unconditionally, regardless of caller — so nothing
+  written through the backend layer of a version with the write-time guard can
+  carry a forged key, even bypassing the tool layer. sqlite additionally runs a
+  one-time, marked cleanse on every row already in a file when such a version first
+  opens it, closing the gap for genuinely pre-existing data.
 - `mem0`: has no migration hook (memcp cannot enumerate every tenant a mem0
   install holds), so this backend's closure is operational — a documented
   precondition and a startup warning, not a code guarantee. See `docs/reference.md`
-  and the module docstring in `memcp/backends/mem0/adapter.py`.
+  and the startup warning in `Mem0Backend.__init__` (`memcp/backends/mem0/adapter.py`).
 """
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
-"""Server-side author attribution — SEC-2026-0094 conjunct 2, route 2.
+"""Server-side author attribution: the seat stamped on a write comes from the resolved
+token, never from the caller.
 
 Before this landed, nothing in memcp distinguished which seat wrote a memory: two
 principals sharing a tenant (the live shape of SEC-2026-0038 — one bearer token for

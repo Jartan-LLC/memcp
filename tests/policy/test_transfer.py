@@ -311,7 +311,7 @@ async def test_import_non_dict_metadata_is_a_per_entry_error_not_an_exception(
     """An entry's metadata reaching strip_reserved_metadata() as a non-dict
     used to raise AttributeError straight out of import_payload, which the
     tool handler does not catch — a partial import that told the caller
-    nothing, where earlier versions passed metadata through unvalidated."""
+    nothing."""
     outcome = await import_payload(
         backend,
         TENANT,

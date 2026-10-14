@@ -1,4 +1,4 @@
-"""Scope validation: the rules every tool applies to a caller's scope."""
+"""Scope validation: the rules a tool applies to a caller-supplied scope."""
 
 from __future__ import annotations
 
@@ -36,10 +36,8 @@ def _normalize_agent_id(value: str) -> str:
 def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict[str, Any] | None:
     """Strip user_id, reject nested filters, validate scope keys, normalize agent_id.
 
-    agent_id is normalized identically here on every path — write (add_memory,
-    import_memories) and filter (search_memory, list_memories, delete_all_memories,
-    memory_entities) all call this function, so a write under one casing and a
-    filter under another still land on the same normalized value.
+    agent_id is normalized the same way on write and filter paths, so a write
+    under one casing and a filter under another land on the same value.
     """
     if not scope:
         return scope

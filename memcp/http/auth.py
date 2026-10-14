@@ -59,8 +59,7 @@ class StaticResolver:
         from, not its shape. A token in `MEMCP_AUTH_SEATS` with no
         `MEMCP_AUTH_TOKENS` entry is unresolvable and fails closed, named; a
         seat outside `[A-Za-z0-9_.-]+` does too. A token absent from
-        `MEMCP_AUTH_SEATS` keeps its seat mirroring its tenant, as it always
-        has.
+        `MEMCP_AUTH_SEATS` gets a seat equal to its tenant.
         """
         # Errors name an entry by position, never by content: an entry holds a token,
         # and these messages are logged.
