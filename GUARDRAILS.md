@@ -19,6 +19,10 @@ every Claude Code session loads it; Liza agents also enforce the tiers (Liza's `
   step that commits counts as that instruction; none counts for pushing or opening pull
   requests, which stay human-initiated.
 - State the reason for every dependency you add.
+- Make every policy decision in `memcp/policy/`, and call a backend method only from there
+  (tests excepted). A backend keeps the store checks its contract lists and never relaxes a
+  policy decision. [docs/architecture.md](docs/architecture.md) defines policy decisions,
+  the packages and the rest of the rules.
 
 ## Tier 2 (Strong Defaults)
 <!-- Best-effort under pressure. -->
