@@ -35,6 +35,8 @@ def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict
     """
     if not scope:
         return scope
+    if not isinstance(scope, dict):
+        raise PolicyError("validation_error", "Scope must be an object of keys and values")
     if "user_id" in scope:
         raise PolicyError(
             "invalid_scope", "Scope can't set user_id; the server sets it from your token."

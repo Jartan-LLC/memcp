@@ -64,13 +64,20 @@ def _not_found() -> Iterator[None]:
         raise
 
 
+def _wire(value: Any) -> str:
+    """A scope value as it travels to a store: stores hold and return scope values as text."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def _in_scope(memories: list[Memory], scope: dict[str, Any] | None) -> list[Memory]:
     """Drop, with a warning, any memory a backend returned outside the requested scope."""
     if not scope:
         return memories
     kept: list[Memory] = []
     for memory in memories:
-        if all(str(memory.scope.get(k)) == str(v) for k, v in scope.items()):
+        if all(k in memory.scope and _wire(memory.scope[k]) == _wire(v) for k, v in scope.items()):
             kept.append(memory)
         else:
             logger.warning("Dropped memory %s returned outside the requested scope", memory.id)

@@ -25,10 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Every tool applies the same scope rules, on every backend.**
   - A scope naming `user_id` is refused with `invalid_scope`; it used to be ignored.
-  - An empty, `*` or `null` value is refused with `validation_error` on every tool, not just `delete_all_memories`. On mem0, search and list read such a value as "any".
+  - An empty, `*` or `null` value is refused with `validation_error` on every tool. On mem0, search and list used to read such a value as "any".
   - So is a value with whitespace at either end, and a `run_id` with whitespace inside it, which mem0 trims or refuses.
   - An import entry whose scope breaks one of these rules is listed in `errors`.
-  - A memory a backend returns outside the requested scope is left out of search and list results, and logged.
+  - A memory a backend returns outside the requested scope is left out of search and list results, with a warning from `memcp.policy`.
 - Two log sources have new logger names: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter` (mem0 backend), and `memcp.auth` is now `memcp.http.auth` (rejected requests). Tool-call records keep `memcp.tools`. Update any log filter or alert that matches the old names.
 - **`MEMCP_BACKEND` is required.** It defaulted to `mem0`; a server started without it now refuses to start and names the variable. Set `MEMCP_BACKEND=mem0` to keep a 0.1.x deployment running as before.
 - **Image tags come from `docker/metadata-action`**, converging with scaffold: `{{version}}` and `{{major}}.{{minor}}` instead of one hardcoded pair. `{{major}}` is deliberately absent — pre-1.0 it is an alias for "any version at all", and across minor lines it carries the same ordering defect `latest` had. `flavor: latest=false` turns off metadata-action's own `latest=auto`, which excludes pre-releases but does **not** check whether the tag is the highest version; the explicit guard added earlier makes that decision instead.

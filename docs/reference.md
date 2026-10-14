@@ -64,8 +64,8 @@ applies the same rules:
 
 - `user_id` is refused; the server sets it from your token.
 - Empty, `*` and `null` values are refused.
-- `agent_id` is normalized: lowercased, trimmed, and every run of other characters turned
-  into one hyphen.
+- `agent_id` is normalized: lowercased, trimmed, every run of other characters turned into
+  one hyphen, and hyphens at either end dropped.
 - Any other value with whitespace at either end is refused, and so is a `run_id` with
   whitespace inside it.
 

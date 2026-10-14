@@ -384,6 +384,16 @@ async def test_list_refuses_a_value_the_adapter_would_drop(backend, value):
 
 
 @respx.mock
+@pytest.mark.parametrize("value", ["*", "", None])
+async def test_add_refuses_a_value_the_adapter_would_drop(backend, value):
+    route = respx.post(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    with pytest.raises(MemoryAPIError) as exc:
+        await backend.add(USER, "fact", scope={"run_id": value}, infer=False)
+    assert exc.value.status == 400
+    assert route.call_count == 0
+
+
+@respx.mock
 async def test_delete_all_sends_a_concrete_scope(backend):
     route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
     await backend.delete_all(USER, {"agent_id": "a", "run_id": "r1"})

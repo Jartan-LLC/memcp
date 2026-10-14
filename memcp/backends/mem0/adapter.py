@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 LIST_CEILING = 1000
 
 
-def _norm(value: Any) -> Any:
+def _concrete(value: Any) -> Any:
     """Refuse a value mem0 would read as "any"; mem0 has no way to match it literally."""
     if is_wildcard(value):
         raise MemoryAPIError(400, "scope values must not be empty, '*' or null")
@@ -58,9 +58,7 @@ def _build_search_filters(
     filters: dict[str, Any] = {"user_id": user_id}
     if scope:
         for key, val in _scope_items(scope):
-            val = _norm(val)
-            if val is not None:
-                filters[key] = val
+            filters[key] = _concrete(val)
     return filters
 
 
@@ -72,9 +70,7 @@ def _build_identifier_params(
     params: dict[str, Any] = {"user_id": user_id}
     if scope:
         for key, val in _scope_items(scope):
-            val = _norm(val)
-            if val is not None:
-                params[key] = val
+            params[key] = _concrete(val)
     return params
 
 
@@ -174,9 +170,7 @@ class Mem0Backend(MemoryBackend):
         }
         if scope:
             for key, val in _scope_items(scope):
-                normed = _norm(val)
-                if normed is not None:
-                    payload[key] = normed
+                payload[key] = _concrete(val)
         # Stripped here, not just by policy — see in_memory.add()'s
         # comment on the same line.
         stored_metadata = strip_reserved_metadata(metadata) or {}
@@ -229,7 +223,7 @@ class Mem0Backend(MemoryBackend):
         return True
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
-        # mem0 ignores a key it doesn't filter on, the adapter drops a wildcard value,
+        # mem0 ignores a key it doesn't filter on, reads a wildcard value as "any",
         # and httpx sends an empty list as nothing. Each widens the delete past the
         # scope asked for; only an empty scope may reach the whole tenant.
         if any(

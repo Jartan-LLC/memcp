@@ -166,8 +166,26 @@ async def test_a_returned_memory_outside_the_scope_is_dropped(
     else:
         found = (await policy.list_memories(scope={"agent_id": "a", "run_id": 7})).memories
     assert [m.id for m in found] == ["in"]
-    assert "out" in caplog.text
-    assert "out" not in [m.content for m in found]
+    assert "Dropped memory out " in caplog.text
+
+
+async def test_a_memory_without_the_key_is_outside_its_scope(
+    policy: Policy, backend: InMemoryBackend
+):
+    _returning(backend, "search", [Memory(id="unscoped", content="x", scope={})])
+    assert await policy.search("q", scope={"run_id": "None"}) == []
+
+
+async def test_a_boolean_scope_matches_its_wire_form(policy: Policy, backend: InMemoryBackend):
+    stored = Memory(id="flagged", content="x", scope={"run_id": "true"})
+    _returning(backend, "search", [stored])
+    assert [m.id for m in await policy.search("q", scope={"run_id": True})] == ["flagged"]
+
+
+async def test_import_reports_an_entry_whose_scope_is_not_an_object(policy: Policy):
+    outcome = await policy.import_memories([{"content": "x", "scope": "agent-a"}])
+    assert outcome.imported == []
+    assert outcome.errors[0]["index"] == 0
 
 
 async def test_delete_all_requires_a_scope(policy: Policy):
