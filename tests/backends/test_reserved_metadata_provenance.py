@@ -188,13 +188,12 @@ def _seed_raw_metadata(path: Path, *, memory_id: str, raw_metadata: str) -> None
 async def test_sqlite_cleanse_skips_an_unparseable_row_instead_of_failing_to_boot(
     tmp_path: Path,
 ):
-    """The cleanse used to json.loads() every
-    row unconditionally, so one corrupt metadata blob raised out of
-    SqliteBackend.__init__ and the process would not start at all — turning a
-    single unreadable row into a total boot failure, on the migration path
-    that most needs to not do that. A row this cannot parse cannot be read
-    normally either, so skipping it costs nothing the cleanse could otherwise
-    have delivered."""
+    """The cleanse used to json.loads() every row unconditionally, so one
+    corrupt metadata blob raised out of SqliteBackend.__init__ and the process
+    would not start at all — turning a single unreadable row into a total boot
+    failure, on the migration path that most needs to not do that. A row this
+    cannot parse cannot be read normally either, so skipping it costs nothing
+    the cleanse could otherwise have delivered."""
     path = tmp_path / "legacy.sqlite3"
     _seed_raw_metadata(path, memory_id="corrupt-1", raw_metadata="{not valid json")
     _seed_legacy_row(
