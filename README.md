@@ -10,8 +10,12 @@ persistent long-term memory over streamable HTTP.
 
 ## Quickstart
 
-Needs Docker. This starts memcp on `127.0.0.1:8080` with the `sqlite` backend; for
-search by meaning and fact extraction, [use mem0](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md#use-mem0) instead.
+Either way, memcp runs on `127.0.0.1:8080` with the `sqlite` backend; for search by
+meaning and fact extraction, [use mem0](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md#use-mem0) instead.
+
+### With Docker
+
+Needs Docker.
 
 ```bash
 mkdir memcp && cd memcp &&
@@ -27,6 +31,19 @@ start it:
 ```bash
 docker compose up -d --wait
 ```
+
+### With pip
+
+Needs Python 3.12 or later.
+
+```bash
+pip install memcp-server
+MEMCP_BACKEND=sqlite MEMCP_SQLITE_PATH="$HOME/.memcp/memcp.sqlite3" MEMCP_HOST=127.0.0.1 memcp
+```
+
+Where the system Python refuses `pip install` (an "externally managed" environment),
+use `pipx install memcp-server`. With no `MEMCP_AUTH_TOKENS`, memcp serves one tenant on
+loopback and clients connect without a token.
 
 **No account, no API key.** Memories go to a file on disk and survive a restart.
 Search is keyword matching, so it finds a memory when your question reuses its words
