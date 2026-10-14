@@ -534,6 +534,34 @@ async def test_list_memories_marks_a_full_ceiling_incomplete(backend):
 
 
 @respx.mock
+async def test_list_memories_marks_every_page_of_a_full_ceiling_incomplete(backend):
+    respx.get(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json=_list_rows(LIST_CEILING))
+    )
+    result = await backend.list_memories(USER, limit=10, cursor="990")
+    assert result.next_cursor is None
+    assert result.incomplete is True
+
+
+@respx.mock
+async def test_entities_mark_a_full_ceiling_incomplete(backend):
+    respx.get(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json=_list_rows(LIST_CEILING))
+    )
+    result = await backend.entities(USER)
+    assert result.incomplete is True
+
+
+@respx.mock
+async def test_entities_below_the_ceiling_are_complete(backend):
+    respx.get(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json=_list_rows(LIST_CEILING - 1))
+    )
+    result = await backend.entities(USER)
+    assert result.incomplete is False
+
+
+@respx.mock
 async def test_list_memories_below_the_ceiling_is_complete(backend):
     respx.get(f"{BASE}/memories").mock(
         return_value=httpx.Response(200, json=_list_rows(LIST_CEILING - 1))

@@ -259,7 +259,8 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             annotations=READ_ONLY,
             description=(
                 "Export all memories as JSON. For backup/migration — output "
-                "compatible with import_memories. Browsing: list_memories; "
+                "compatible with import_memories. truncated: true means some "
+                "memories were left out. Browsing: list_memories; "
                 "search: search_memory."
             ),
         )
@@ -281,7 +282,9 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
                 "optional 'scope'/'metadata'. Stored verbatim (no extraction). "
                 "Deduped by content within the same scope — identical content in a "
                 "different scope is a distinct memory. "
-                "on_conflict: skip (default), overwrite, duplicate."
+                "on_conflict: skip (default), overwrite, duplicate. "
+                "dedup_incomplete: true means dedup couldn't see every existing "
+                "memory, so duplicates are possible."
             ),
         )
         async def import_memories(
@@ -342,7 +345,8 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             annotations=READ_ONLY,
             description=(
                 "Browse memories, optionally filtered by scope. Unranked, "
-                "paginated. Semantic queries: use search_memory."
+                "paginated. incomplete: true, on any page, means memories exist "
+                "that no page reaches. Semantic queries: use search_memory."
             ),
         )
         async def list_memories(
@@ -470,6 +474,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             annotations=READ_ONLY,
             description=(
                 "Knowledge graph: entities and relationships from memories. "
+                "incomplete: true means the counts miss some memories. "
                 "Not a search tool — use search_memory for topics."
             ),
         )
@@ -493,6 +498,7 @@ def register_tools(mcp: Any, backend: MemoryBackend, config: Config) -> None:
             return {
                 "entities": result.entities,
                 "relationships": result.relationships,
+                "incomplete": result.incomplete,
             }
 
 

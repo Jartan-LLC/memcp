@@ -174,8 +174,9 @@ importing key's space, writes content as given (`infer=False`), and stamps each 
 that key's write. Export, import's dedup read and `migrate()` follow `next_cursor` until
 the list ends or memcp's export cap (`MAX_EXPORT`) is reached. An export or migration that
 stops at the cap, or reads a list the backend marked incomplete, is marked truncated; an
-import whose dedup read does either reports `dedup_incomplete`, and `list_memories` passes
-the backend's incomplete mark to the client as `incomplete`.
+import or migration whose dedup read does either reports `dedup_incomplete`, and
+`list_memories` and `memory_entities` pass the backend's incomplete mark to the client as
+`incomplete`.
 
 **Migration:** `migrate()` is an operator function for moving memories between backends.
 It isn't reachable by a client. It takes source and target partitions directly, refused

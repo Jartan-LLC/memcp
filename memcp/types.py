@@ -209,6 +209,8 @@ class HistoryEntry:
 class EntitiesResult:
     entities: list[dict[str, Any]] = field(default_factory=list)
     relationships: list[dict[str, Any]] = field(default_factory=list)
+    # True when the counts come from a list the backend marked incomplete.
+    incomplete: bool = False
 
 
 @dataclass

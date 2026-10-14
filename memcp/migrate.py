@@ -94,7 +94,8 @@ async def _list_all(backend: MemoryBackend, user_id: str, limit: int) -> tuple[l
         cursor = page.next_cursor
         if cursor is None or not page.memories or len(memories) > limit:
             break
-    return memories[:limit], incomplete or len(memories) > limit
+    # A cursor left over means the read stopped early: at the cap, or on an empty page.
+    return memories[:limit], incomplete or len(memories) > limit or cursor is not None
 
 
 async def export_payload(
@@ -105,8 +106,9 @@ async def export_payload(
 ) -> ExportPayload:
     """Read every memory for a tenant, capped at `limit`.
 
-    Requires the `list_memories` capability; raises MemoryAPIError on backend
-    failure for the caller to map.
+    `truncated` is True when more than `limit` exist or the backend marked its list
+    incomplete. Requires the `list_memories` capability; raises MemoryAPIError on
+    backend failure for the caller to map.
     """
     memories, truncated = await _list_all(backend, user_id, limit)
     return ExportPayload(

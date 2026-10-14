@@ -39,6 +39,22 @@ class PagedBackend(InMemoryBackend):
         return page
 
 
+class FirstPageIncompleteBackend(PagedBackend):
+    """Marks only the first page incomplete, so a later page can't clear the mark."""
+
+    async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
+        page = await super().list_memories(user_id, scope=scope, limit=limit, cursor=cursor)
+        page.incomplete = cursor is None
+        return page
+
+
+class EmptyPageBackend(InMemoryBackend):
+    """Returns an empty page that still carries a cursor."""
+
+    async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
+        return ListResult(memories=[], next_cursor="more")
+
+
 # ---------------------------------------------------------------------------
 # Dedup identity
 # ---------------------------------------------------------------------------
@@ -129,6 +145,21 @@ async def test_export_flags_an_incomplete_list():
     assert payload.truncated is True
 
 
+async def test_export_keeps_an_incomplete_mark_from_an_earlier_page():
+    backend = FirstPageIncompleteBackend(page_size=2)
+    for i in range(5):
+        await backend.add(TENANT, f"fact {i}", infer=False)
+    payload = await export_payload(backend, TENANT)
+    assert payload.count == 5
+    assert payload.truncated is True
+
+
+async def test_export_flags_an_empty_page_that_still_has_a_cursor():
+    payload = await export_payload(EmptyPageBackend(), TENANT)
+    assert payload.count == 0
+    assert payload.truncated is True
+
+
 async def test_export_isolates_tenants(backend: InMemoryBackend):
     await backend.add(TENANT, "mine", infer=False)
     payload = await export_payload(backend, OTHER)
@@ -177,6 +208,12 @@ async def test_import_skips_a_duplicate_beyond_the_first_page():
 
 async def test_import_reports_a_complete_dedup_read(backend: InMemoryBackend):
     outcome = await import_payload(backend, TENANT, [{"content": "x"}])
+    assert outcome.dedup_incomplete is False
+
+
+async def test_import_duplicate_mode_leaves_dedup_incomplete_false():
+    backend = PagedBackend(page_size=100, incomplete=True)
+    outcome = await import_payload(backend, TENANT, [{"content": "x"}], on_conflict="duplicate")
     assert outcome.dedup_incomplete is False
 
 
@@ -304,6 +341,14 @@ async def test_migrate_reports_an_incomplete_source():
     report = await migrate(source, target, TENANT)
     assert report.truncated is True
     assert report.dedup_incomplete is False
+
+
+async def test_migrate_flags_truncation_across_pages():
+    source, target = PagedBackend(page_size=2), InMemoryBackend()
+    for i in range(5):
+        await source.add(TENANT, f"fact {i}", infer=False)
+    report = await migrate(source, target, TENANT, limit=3)
+    assert (report.exported, report.truncated) == (3, True)
 
 
 async def test_migrate_reports_an_incomplete_target_dedup_read():

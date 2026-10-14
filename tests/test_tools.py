@@ -431,9 +431,25 @@ async def test_memory_entities_returns_structure(mcp_with_graph):
     result = await mcp.call("memory_entities")
     assert "entities" in result
     assert "relationships" in result
+    assert result["incomplete"] is False
     assert len(result["entities"]) >= 1
     assert result["entities"][0]["id"] == "test_user"
     assert result["entities"][0]["total_memories"] >= 1
+
+
+async def test_memory_entities_reports_an_incomplete_count(mcp_with_graph):
+    mcp, backend = mcp_with_graph
+    await mcp.call("add_memory", content="entity test fact")
+    original = backend.entities
+
+    async def incomplete_entities(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        result.incomplete = True
+        return result
+
+    backend.entities = incomplete_entities
+    result = await mcp.call("memory_entities")
+    assert result["incomplete"] is True
 
 
 # ---------------------------------------------------------------------------

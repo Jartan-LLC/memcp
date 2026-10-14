@@ -76,7 +76,7 @@ pre-existing row will read as attributed when it never was.
 | `export_memories` | Export memories as JSON (max 10k, truncates with flag). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
 | `import_memories` | Batch-import from JSON. Dedup via exact content match, scope-aware; `dedup_incomplete: true` means dedup couldn't see every existing memory, so duplicates are possible. `on_conflict`: skip, overwrite, duplicate (requires `list_memories`; overwrite requires `update_memory`) |
 | `memory_history` | Change log for a memory: timestamps and previous/current content per create/update event |
-| `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `mem0` does, `sqlite` and `in_memory` do not, so it is absent on a keyless install. Not a search tool — use `search_memory` for topics |
+| `memory_entities` | Knowledge graph: entities and relationships. Registered only by a backend that has one — `mem0` does, `sqlite` and `in_memory` do not, so it is absent on a keyless install. `incomplete: true` means the counts miss some memories. Not a search tool — use `search_memory` for topics |
 
 ## Known limitations
 
@@ -84,9 +84,9 @@ pre-existing row will read as attributed when it never was.
 
 - Nested boolean filters (AND/OR/NOT) return 502 — use flat scope keys
 - List endpoint does not paginate server-side — full dataset loaded per request
-- List returns at most 1000 memories (mem0's own ceiling) and can't page past it, so a tenant at or above 1000 memories reads as `incomplete` from `list_memories`, `truncated` from `export_memories` and migration, and `dedup_incomplete` from `import_memories`
+- List returns at most 1000 memories (mem0's own ceiling) and can't page past it, so a tenant at or above 1000 memories reads as `incomplete` from `list_memories` and `memory_entities`, `truncated` from `export_memories` and migration, and `dedup_incomplete` from `import_memories` and migration
 - List endpoint does not filter by metadata
-- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, at most 1000 (the list ceiling)
+- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, at most 1000 (the list ceiling, reported as `incomplete`)
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 - `memory_history` entries carry `author: null` for every event — mem0's history log is entirely upstream-managed and has no field to record it in. A memory's current `author` (from `search_memory`, `get_memory`, `list_memories`) is unaffected; only the event-by-event trail cannot be attributed
 
