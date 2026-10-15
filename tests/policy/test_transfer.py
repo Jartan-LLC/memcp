@@ -488,7 +488,14 @@ async def test_migrate_copies_system_and_sets_the_target_space():
     assert [m.system for m in landed.memories] == [{**stamp, "space": OTHER}]
 
 
-class RefusingBackend(InMemoryBackend):
+class UnlistableBackend(InMemoryBackend):
+    """Fails the test if listed, so a migration must refuse before it reads."""
+
+    async def list_memories(self, partition, *, scope=None, limit=100, cursor=None) -> ListResult:
+        raise AssertionError("migrate read the source before checking its partitions")
+
+
+class RefusingBackend(UnlistableBackend):
     """Refuses one partition, as a store that can't match it exactly would."""
 
     def __init__(self, refused: str) -> None:
@@ -502,14 +509,14 @@ class RefusingBackend(InMemoryBackend):
 
 @pytest.mark.parametrize("partition", ["", "*", " * "])
 async def test_migrate_refuses_an_empty_or_wildcard_source(partition: str):
-    source, target = InMemoryBackend(), InMemoryBackend()
+    source, target = UnlistableBackend(), InMemoryBackend()
     with pytest.raises(ValueError, match="empty or a wildcard"):
         await migrate(source, target, partition)
 
 
 @pytest.mark.parametrize("partition", ["", "*"])
 async def test_migrate_refuses_an_empty_or_wildcard_target(partition: str):
-    source, target = InMemoryBackend(), InMemoryBackend()
+    source, target = UnlistableBackend(), InMemoryBackend()
     await source.add(TENANT, "fact", infer=False)
     with pytest.raises(ValueError, match="empty or a wildcard"):
         await migrate(source, target, TENANT, target_partition=partition)
@@ -522,8 +529,8 @@ async def test_migrate_refuses_a_source_partition_its_backend_refuses():
         await migrate(source, target, TENANT, target_partition=OTHER)
 
 
-async def test_migrate_refuses_a_target_partition_its_backend_refuses_before_writing():
-    source, target = InMemoryBackend(), RefusingBackend(OTHER)
+async def test_migrate_refuses_a_target_partition_its_backend_refuses_before_reading():
+    source, target = UnlistableBackend(), RefusingBackend(OTHER)
     await source.add(TENANT, "fact", infer=False)
     with pytest.raises(ValueError, match="exactly"):
         await migrate(source, target, TENANT, target_partition=OTHER)

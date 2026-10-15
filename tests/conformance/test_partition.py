@@ -2,7 +2,8 @@
 every partition it accepts apart from the ones a store might read it as.
 
 Required for every backend, so nothing here skips on capabilities; optional methods are
-called only when declared.
+called only when declared. A pair test skips when the backend refuses one of its
+partitions.
 """
 
 from __future__ import annotations
@@ -121,7 +122,7 @@ async def test_an_accepted_partition_is_apart_from_its_near_variant(
 ):
     probe = NEAR_VARIANTS[variant](tenant)
     if not _accepts(backend, probe):
-        return  # refused, so nothing can reach the store under it
+        pytest.skip("refused by validate_partition, so nothing reaches the store under it")
     await _assert_apart(backend, tenant, probe)
     if probe and probe != "*":
         try:
@@ -135,7 +136,7 @@ async def test_unicode_normalization_forms_are_apart(backend: MemoryBackend, ten
     decomposed = unicodedata.normalize("NFD", composed)
     assert composed != decomposed
     if not (_accepts(backend, composed) and _accepts(backend, decomposed)):
-        return
+        pytest.skip("refused by validate_partition, so nothing reaches the store under it")
     try:
         await _assert_apart(backend, composed, decomposed)
     finally:
