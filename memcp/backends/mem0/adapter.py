@@ -37,9 +37,11 @@ logger = logging.getLogger(__name__)
 LIST_CEILING = 1000
 
 
-def _norm(value: Any) -> Any:
-    """Return None for wildcard/empty sentinels; pass through otherwise."""
-    return None if is_wildcard(value) else value
+def _concrete(value: Any) -> Any:
+    """Refuse a value mem0 would read as "any"; mem0 has no way to match it literally."""
+    if is_wildcard(value):
+        raise MemoryAPIError(400, "scope values must not be empty, '*' or null")
+    return value
 
 
 def _scope_items(scope: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -56,9 +58,7 @@ def _build_search_filters(
     filters: dict[str, Any] = {"user_id": user_id}
     if scope:
         for key, val in _scope_items(scope):
-            val = _norm(val) if isinstance(val, str) else val
-            if val is not None:
-                filters[key] = val
+            filters[key] = _concrete(val)
     return filters
 
 
@@ -70,9 +70,7 @@ def _build_identifier_params(
     params: dict[str, Any] = {"user_id": user_id}
     if scope:
         for key, val in _scope_items(scope):
-            val = _norm(val)
-            if val is not None:
-                params[key] = val
+            params[key] = _concrete(val)
     return params
 
 
@@ -172,9 +170,7 @@ class Mem0Backend(MemoryBackend):
         }
         if scope:
             for key, val in _scope_items(scope):
-                normed = _norm(val)
-                if normed is not None:
-                    payload[key] = normed
+                payload[key] = _concrete(val)
         # Stripped here, not just by policy — see in_memory.add()'s
         # comment on the same line.
         stored_metadata = strip_reserved_metadata(metadata) or {}
@@ -227,17 +223,17 @@ class Mem0Backend(MemoryBackend):
         return True
 
     async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
-        # mem0 ignores a key it doesn't filter on, the adapter drops a wildcard value,
-        # and httpx sends an empty list as nothing. Each widens the delete past the
-        # scope asked for; only an empty scope may reach the whole tenant.
+        # mem0 ignores a key it doesn't filter on, and httpx sends an empty list as
+        # nothing; either widens the delete past the scope asked for. A wildcard value
+        # is refused when the params are built. Only an empty scope reaches the whole tenant.
         if any(
-            k not in self.scope_keys() or not isinstance(v, (str, int, float)) or is_wildcard(v)
+            k not in self.scope_keys() or not isinstance(v, (str, int, float))
             for k, v in scope.items()
         ):
             raise MemoryAPIError(
                 400,
                 f"delete_all scope keys must be among {self.scope_keys()}, "
-                "with single values that are not empty, '*' or null",
+                "each with one string or number value",
             )
         params = _build_identifier_params(user_id, scope)
         await self._client.request("DELETE", "/memories", params=params)

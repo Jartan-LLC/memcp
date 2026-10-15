@@ -355,10 +355,40 @@ def test_entity_rows_skip_missing_and_invalid_timestamps():
 
 @respx.mock
 @pytest.mark.parametrize("value", ["*", "", None, [], [""]])
-async def test_delete_all_refuses_a_value_the_adapter_would_drop(backend, value):
+async def test_delete_all_refuses_a_wildcard_or_list_value(backend, value):
     route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
     with pytest.raises(MemoryAPIError) as exc:
         await backend.delete_all(USER, {"run_id": value})
+    assert exc.value.status == 400
+    assert route.call_count == 0
+
+
+@respx.mock
+@pytest.mark.parametrize("value", ["*", "", None])
+async def test_search_refuses_a_wildcard_value(backend, value):
+    route = respx.post(f"{BASE}/search").mock(return_value=httpx.Response(200, json=[]))
+    with pytest.raises(MemoryAPIError) as exc:
+        await backend.search(USER, "q", scope={"run_id": value})
+    assert exc.value.status == 400
+    assert route.call_count == 0
+
+
+@respx.mock
+@pytest.mark.parametrize("value", ["*", "", None])
+async def test_list_refuses_a_wildcard_value(backend, value):
+    route = respx.get(f"{BASE}/memories").mock(return_value=httpx.Response(200, json=[]))
+    with pytest.raises(MemoryAPIError) as exc:
+        await backend.list_memories(USER, scope={"run_id": value})
+    assert exc.value.status == 400
+    assert route.call_count == 0
+
+
+@respx.mock
+@pytest.mark.parametrize("value", ["*", "", None])
+async def test_add_refuses_a_wildcard_value(backend, value):
+    route = respx.post(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
+    with pytest.raises(MemoryAPIError) as exc:
+        await backend.add(USER, "fact", scope={"run_id": value}, infer=False)
     assert exc.value.status == 400
     assert route.call_count == 0
 

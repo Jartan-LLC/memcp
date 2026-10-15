@@ -163,18 +163,16 @@ async def test_add_memory_with_scope(mcp_with_tools):
     assert len(listing.memories) == 1
 
 
-async def test_add_memory_strips_user_id_from_scope(mcp_with_tools):
+async def test_add_memory_refuses_user_id_in_scope(mcp_with_tools):
     mcp, backend = mcp_with_tools
     result = await mcp.call(
         "add_memory",
         content="scope attack",
         scope={"user_id": "attacker", "agent_id": "a1"},
     )
-    assert "results" in result
-    listing = await backend.list_memories("test_user")
-    assert len(listing.memories) == 1
-    attacker = await backend.list_memories("attacker")
-    assert len(attacker.memories) == 0
+    assert result["error"]["code"] == "invalid_scope"
+    assert (await backend.list_memories("test_user")).memories == []
+    assert (await backend.list_memories("attacker")).memories == []
 
 
 # ---------------------------------------------------------------------------
@@ -210,17 +208,11 @@ async def test_search_memory_empty_results(mcp_with_tools):
     assert result["results"] == []
 
 
-async def test_search_memory_strips_user_id(mcp_with_tools):
+async def test_search_memory_refuses_user_id_in_scope(mcp_with_tools):
     mcp, backend = mcp_with_tools
-    # Add as test_user (via tool) and separately as attacker (directly)
-    await mcp.call("add_memory", content="user secret data")
     await backend.add("attacker", "attacker secret data")
-    # Search with user_id=attacker in scope — should be stripped,
-    # so we get test_user's data, not attacker's
     result = await mcp.call("search_memory", query="secret", scope={"user_id": "attacker"})
-    contents = [r["content"] for r in result["results"]]
-    assert "user secret data" in contents
-    assert "attacker secret data" not in contents
+    assert result["error"]["code"] == "invalid_scope"
 
 
 # ---------------------------------------------------------------------------
@@ -273,10 +265,10 @@ async def test_delete_all_memories_empty_scope_rejected(mcp_with_tools):
     assert result["error"]["code"] == "scope_required"
 
 
-async def test_delete_all_memories_user_id_stripped(mcp_with_tools):
+async def test_delete_all_memories_refuses_user_id(mcp_with_tools):
     mcp, _ = mcp_with_tools
     result = await mcp.call("delete_all_memories", scope={"user_id": "attacker"})
-    assert result["error"]["code"] == "scope_required"
+    assert result["error"]["code"] == "invalid_scope"
 
 
 @pytest.mark.parametrize("value", ["*", "", "  ", None])
@@ -636,9 +628,9 @@ async def test_agent_id_empty_after_normalization_rejected(mcp_with_tools):
 async def test_non_agent_id_scope_values_not_normalized(mcp_with_tools):
     """Only agent_id gets this treatment — other scope keys pass through verbatim."""
     mcp, backend = mcp_with_tools
-    await mcp.call("add_memory", content="fact", scope={"run_id": "Run ABC"})
+    await mcp.call("add_memory", content="fact", scope={"run_id": "Run-ABC"})
     listing = await backend.list_memories("test_user")
-    assert listing.memories[0].scope["run_id"] == "Run ABC"
+    assert listing.memories[0].scope["run_id"] == "Run-ABC"
 
 
 # ---------------------------------------------------------------------------
@@ -1241,20 +1233,19 @@ async def test_import_memories_overwrite_requires_capability(config):
     assert result["error"]["code"] == "not_supported"
 
 
-async def test_import_memories_scope_injection_stripped(mcp_with_tools):
-    """user_id in per-entry scope is stripped, memory stored for real tenant."""
+async def test_import_memories_refuses_user_id_in_an_entry_scope(mcp_with_tools):
+    """An entry naming user_id is rejected; nothing lands in either tenant."""
     mcp, backend = mcp_with_tools
     result = await mcp.call(
         "import_memories",
         memories=[{"content": "attack data", "scope": {"user_id": "victim"}}],
         on_conflict="duplicate",
     )
-    assert result["imported"] == 1
-    # Verify stored for test_user, not victim
-    listing = await backend.list_memories("test_user")
-    assert any(m.content == "attack data" for m in listing.memories)
-    victim = await backend.list_memories("victim")
-    assert len(victim.memories) == 0
+    assert result["imported"] == 0
+    assert result["errors"][0]["index"] == 0
+    assert "user_id" in result["errors"][0]["error"]
+    assert (await backend.list_memories("test_user")).memories == []
+    assert (await backend.list_memories("victim")).memories == []
 
 
 async def test_import_memories_tenant_isolation(mcp_with_tools):

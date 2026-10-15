@@ -61,7 +61,7 @@ def validate_limit(limit: int) -> None:
 
 
 def is_wildcard(value: Any) -> bool:
-    """Whether a scope value is null, empty or "*", which mem0's adapter reads as "any"."""
+    """Whether a scope value is null, empty or "*", which mem0 reads as "any"."""
     return value is None or (isinstance(value, str) and value.strip() in ("", "*"))
 
 

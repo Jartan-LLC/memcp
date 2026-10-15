@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import math
 import re
 from typing import Any
 
@@ -11,11 +11,9 @@ from memcp.types import (
     MAX_SCOPE_KEYS,
     MAX_SCOPE_VALUE_LENGTH,
     PolicyError,
+    is_wildcard,
     reject_nested_filters,
 )
-
-logger = logging.getLogger(__name__)
-
 
 # Collapses anything outside [a-z0-9] (after lowercasing) to a single hyphen —
 # covers whitespace, underscores, and punctuation from live agents' varied naming
@@ -29,16 +27,23 @@ def _normalize_agent_id(value: str) -> str:
 
 
 def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict[str, Any] | None:
-    """Strip user_id, reject nested filters, validate scope keys, normalize agent_id.
+    """Validate a caller's scope and normalize agent_id; raise PolicyError on any refusal.
 
     agent_id is normalized the same way on write and filter paths, so a write
-    under one casing and a filter under another land on the same value.
+    under one casing and a filter under another land on the same value. A value
+    that would mean "any" to some backend, or that some backend would trim, is
+    refused on every operation, so a scope means the same thing on every backend.
     """
+    if scope is None:
+        return None
+    if not isinstance(scope, dict):
+        raise PolicyError("validation_error", "Scope must be an object of keys and values")
     if not scope:
         return scope
     if "user_id" in scope:
-        scope = {k: v for k, v in scope.items() if k != "user_id"}
-        logger.warning("Stripped user_id from scope dict; remaining keys: %s", list(scope.keys()))
+        raise PolicyError(
+            "invalid_scope", "Scope can't set user_id; the server sets it from your token."
+        )
     try:
         reject_nested_filters(scope)
     except ValueError as e:
@@ -56,6 +61,13 @@ def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict
                 "validation_error",
                 f"Scope value for {k!r} must be a string or number, got {type(v).__name__}",
             )
+        if isinstance(v, float) and not math.isfinite(v):
+            raise PolicyError("validation_error", f"Scope value for {k!r} must be a finite number")
+        if is_wildcard(v):
+            raise PolicyError(
+                "validation_error",
+                f"Scope value for {k!r} must be a concrete value, not empty, '*' or null",
+            )
         if isinstance(v, str) and len(v) > MAX_SCOPE_VALUE_LENGTH:
             raise PolicyError(
                 "validation_error",
@@ -67,9 +79,19 @@ def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict
                 raise PolicyError(
                     "validation_error",
                     f"Scope value for 'agent_id' ({v!r}) has no characters left after "
-                    "normalization; use letters, digits, or hyphens.",
+                    "normalization; include at least one letter or digit.",
                 )
             v = normalized
+        elif isinstance(v, str):
+            # mem0 trims both ends of a value and refuses whitespace inside a run_id.
+            if v != v.strip():
+                raise PolicyError(
+                    "validation_error", f"Scope value for {k!r} has whitespace at either end"
+                )
+            if k == "run_id" and any(c.isspace() for c in v):
+                raise PolicyError(
+                    "validation_error", "Scope value for 'run_id' must not contain whitespace"
+                )
         cleaned[k] = v
     unknown = set(cleaned) - allowed_keys
     if unknown:

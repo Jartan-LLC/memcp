@@ -9,7 +9,14 @@ import pytest
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.identity import DEFAULT_PRINCIPAL, Principal, reset_tenant, set_principal, set_tenant
 from memcp.policy import Policy
-from memcp.types import AUTHOR_METADATA_KEY, MAX_IMPORT, MemoryAPIError, PolicyError
+from memcp.types import (
+    AUTHOR_METADATA_KEY,
+    MAX_IMPORT,
+    ListResult,
+    Memory,
+    MemoryAPIError,
+    PolicyError,
+)
 
 
 @pytest.fixture
@@ -90,10 +97,111 @@ async def test_scope_normalizes_agent_id(policy: Policy, backend: InMemoryBacken
     assert [m.content for m in listed.memories] == ["scoped"]
 
 
-async def test_scope_strips_user_id(policy: Policy, backend: InMemoryBackend):
-    await policy.add("x", scope={"user_id": "someone-else", "agent_id": "a"}, infer=False)
+SCOPED: dict[str, Any] = {
+    "add": lambda p, scope: p.add("x", scope=scope, infer=False),
+    "search": lambda p, scope: p.search("q", scope=scope),
+    "list_memories": lambda p, scope: p.list_memories(scope=scope),
+    "delete_all": lambda p, scope: p.delete_all(scope),
+    "entities": lambda p, scope: p.entities(scope=scope),
+}
+
+
+@pytest.mark.parametrize("operation", SCOPED)
+async def test_scope_refuses_user_id(policy: Policy, backend: InMemoryBackend, operation: str):
+    message = await _refused(
+        SCOPED[operation](policy, {"user_id": "someone-else", "agent_id": "a"}), "invalid_scope"
+    )
+    assert "user_id" in message and "token" in message
     assert (await backend.list_memories("someone-else")).memories == []
-    assert len((await backend.list_memories("test_user")).memories) == 1
+
+
+@pytest.mark.parametrize("operation", SCOPED)
+@pytest.mark.parametrize("value", ["*", "", "  ", None])
+async def test_scope_refuses_a_value_that_matches_anything(
+    policy: Policy, operation: str, value: Any
+):
+    await _refused(SCOPED[operation](policy, {"run_id": value}), "validation_error")
+
+
+@pytest.mark.parametrize("value", [" s1", "s1 ", "\ts1"])
+async def test_scope_refuses_whitespace_at_either_end(
+    backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch, value: str
+):
+    monkeypatch.setattr(backend, "scope_keys", lambda: ["agent_id", "run_id", "session"])
+    policy = Policy(backend)
+    await _refused(policy.search("q", scope={"session": value}), "validation_error")
+    await policy.search("q", scope={"session": "s 1"})
+
+
+async def test_scope_refuses_whitespace_inside_a_run_id(policy: Policy):
+    await _refused(policy.search("q", scope={"run_id": "run one"}), "validation_error")
+
+
+@pytest.mark.parametrize("value", [7, 0, 0.0, False])
+async def test_scope_accepts_a_number_or_boolean(policy: Policy, value: Any):
+    await policy.search("q", scope={"run_id": value})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+async def test_scope_refuses_a_number_that_is_not_finite(policy: Policy, value: float):
+    await _refused(policy.search("q", scope={"run_id": value}), "validation_error")
+
+
+def _returning(backend: InMemoryBackend, method: str, memories: list[Memory]) -> None:
+    """Make `method` return `memories` whatever was asked, like a backend that ignores scope."""
+
+    async def ignoring_scope(*args: Any, **kwargs: Any) -> Any:
+        if method == "list_memories":
+            return ListResult(memories=memories)
+        return memories
+
+    setattr(backend, method, ignoring_scope)
+
+
+@pytest.mark.parametrize("method", ["search", "list_memories"])
+async def test_a_returned_memory_outside_the_scope_is_dropped(
+    policy: Policy,
+    backend: InMemoryBackend,
+    method: str,
+    caplog: pytest.LogCaptureFixture,
+):
+    inside = Memory(id="in", content="in", scope={"agent_id": "a", "run_id": "7"})
+    outside = Memory(id="out", content="out", scope={"agent_id": "b"})
+    _returning(backend, method, [inside, outside])
+    if method == "search":
+        found = await policy.search("q", scope={"agent_id": "a", "run_id": 7})
+    else:
+        found = (await policy.list_memories(scope={"agent_id": "a", "run_id": 7})).memories
+    assert [m.id for m in found] == ["in"]
+    assert "Dropped memory out " in caplog.text
+
+
+async def test_a_memory_without_the_key_is_outside_its_scope(
+    policy: Policy, backend: InMemoryBackend
+):
+    _returning(backend, "search", [Memory(id="unscoped", content="x", scope={})])
+    # "None" is what str() makes of a missing value; it must not match.
+    assert await policy.search("q", scope={"run_id": "None"}) == []
+
+
+async def test_a_boolean_scope_matches_its_wire_form(policy: Policy, backend: InMemoryBackend):
+    stored = Memory(id="flagged", content="x", scope={"run_id": "true"})
+    _returning(backend, "search", [stored])
+    assert [m.id for m in await policy.search("q", scope={"run_id": True})] == ["flagged"]
+
+
+@pytest.mark.parametrize("scope", ["agent-a", "", [], 0, False])
+async def test_import_reports_an_entry_whose_scope_is_not_an_object(policy: Policy, scope: Any):
+    outcome = await policy.import_memories([{"content": "x", "scope": scope}])
+    assert outcome.imported == []
+    assert outcome.errors[0]["index"] == 0
+
+
+async def test_a_number_matches_an_equal_number_of_another_type(
+    policy: Policy, backend: InMemoryBackend
+):
+    _returning(backend, "search", [Memory(id="seven", content="x", scope={"run_id": 7})])
+    assert [m.id for m in await policy.search("q", scope={"run_id": 7.0})] == ["seven"]
 
 
 async def test_delete_all_requires_a_scope(policy: Policy):

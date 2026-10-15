@@ -182,7 +182,7 @@ async def import_payload(
             continue
 
         scope = entry.get("scope")
-        if scope and scope_validator is not None:
+        if scope is not None and scope_validator is not None:
             try:
                 scope = scope_validator(scope)
             except ValueError as e:

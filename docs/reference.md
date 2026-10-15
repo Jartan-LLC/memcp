@@ -56,6 +56,24 @@ tenant an install holds — **run a metadata sweep on a `mem0`-backed store
 before serving it with a server version carrying this guard**, or a
 pre-existing row will read as attributed when it never was.
 
+### Scope
+
+A scope labels memories inside a tenant; `memory_status` lists the keys the backend
+supports (`agent_id` and `run_id` on every bundled backend). Every tool that takes a scope
+applies the same rules:
+
+- `user_id` is refused; the server sets it from your token.
+- Empty, `*` and `null` values are refused.
+- `agent_id` is normalized: lowercased, trimmed, every run of other characters turned into
+  one hyphen, and hyphens at either end dropped.
+- An `agent_id` with no letters or digits is refused.
+- Any other value with whitespace at either end is refused, and so is a `run_id` with
+  whitespace inside it.
+- A number that isn't finite (NaN or infinity) is refused.
+
+Search and list leave out a memory the backend returns outside the requested scope, and log
+a warning (`memcp.policy`).
+
 ### Universal — registered on every backend
 
 | Tool | Description |

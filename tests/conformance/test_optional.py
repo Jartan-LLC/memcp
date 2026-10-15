@@ -160,6 +160,16 @@ async def test_list_paginates(backend: MemoryBackend, tenant: str):
 
 
 @pytest.mark.conformance("list_memories")
+async def test_list_returns_the_stored_scope(backend: MemoryBackend, tenant: str):
+    """Policy drops a result whose scope doesn't match the request, so the scope must come back."""
+    _require(backend, "list_memories")
+    scope = {key: f"listed_{key}" for key in backend.scope_keys()}
+    await backend.add(tenant, "list scope round trip", scope=scope, infer=False)
+    result = await backend.list_memories(tenant, scope=scope)
+    assert [{k: str(m.scope.get(k)) for k in scope} for m in result.memories] == [scope]
+
+
+@pytest.mark.conformance("list_memories")
 async def test_list_cursors_reach_every_memory_once(backend: MemoryBackend, tenant: str):
     _require(backend, "list_memories")
     added = set()
