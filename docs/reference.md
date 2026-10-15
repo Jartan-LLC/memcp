@@ -33,14 +33,14 @@ mid-task rather than read through. For getting a deployment running, see
 Names, argument schemas and behaviour annotations are frozen in
 [tool-surface.json](tool-surface.json); a test fails on any drift.
 
-Every memory a read tool returns carries `author` (the seat `MEMCP_AUTH_TOKENS`
-resolved at write time, server-stamped — a caller cannot set it) and `attributed`
-(`false` when `author` is `null`, which is every row written before this field
-existed). It is a record of what some client stored, not a verified fact — see
-the server's own MCP instructions for how a client is told to treat it.
+Every memory a read tool returns carries `author`: the seat `MEMCP_AUTH_TOKENS` resolved
+for the write that last changed it, set by the server — a caller cannot set it. It is
+`null` for a write made without tokens configured, and for a memory written before memcp
+recorded authors. It records which key wrote the memory, not where the facts came from —
+see the server's own MCP instructions for how a client is told to treat it.
 
-**`attributed: true` only means a server version that validates `metadata`
-produced this stamp — it is not a statement about a store's entire history.**
+**A non-null `author` only means a server version that validates `metadata` set it — it
+is not a statement about a store's entire history.**
 Before this field existed, `metadata` was entirely unvalidated, so any caller
 holding a bearer token could have written the reserved key directly, and a row
 like that would read back exactly like a real stamp. `sqlite` and `in_memory`
@@ -54,7 +54,7 @@ the guarded version that reopens it afterward will not know to look again.
 `mem0` has no local file this server can scan and no way to enumerate every
 tenant an install holds — **run a metadata sweep on a `mem0`-backed store
 before serving it with a server version carrying this guard**, or a
-pre-existing row will read as attributed when it never was.
+pre-existing row can carry an `author` no server set.
 
 ### Scope
 
@@ -119,6 +119,7 @@ succeed later.
 | `scope_required` | `delete_all_memories` got an empty scope | `false` |
 | `not_found` | The memory doesn't exist or belongs to another tenant | `false` |
 | `not_supported` | `import_memories` with `on_conflict=overwrite` on a backend without `update_memory` | `false` |
+| `internal_error` | A memory the backend returned is stored under another tenant; none of it is returned, and the server logs `isolation_violation` | `false` |
 | `timeout` | The backend didn't answer in time | `true` |
 | `backend_error` | The backend returned an error | `true` for a 5xx, otherwise `false` |
 

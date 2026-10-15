@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from memcp.types import (
-    AUTHOR_METADATA_KEY,
     AddResult,
     EntitiesResult,
     HealthStatus,
@@ -20,11 +19,11 @@ from memcp.types import (
     ListResult,
     Memory,
     MemoryAPIError,
+    System,
     paginate,
     reject_nested_filters,
     scope_as_text,
     scope_text,
-    split_author,
     strip_reserved_metadata,
 )
 
@@ -33,16 +32,16 @@ from .keyword import score as _score
 
 
 def _entry_to_memory(mid: str, entry: dict[str, Any], *, score: float | None = None) -> Memory:
-    author, metadata = split_author(entry.get("metadata", {}))
     return Memory(
         id=mid,
         content=entry["content"],
         score=score,
         scope=entry.get("scope", {}),
-        metadata=metadata,
-        author=author,
+        metadata=entry.get("metadata", {}),
         created_at=entry["created_at"],
         updated_at=entry.get("updated_at"),
+        partition=entry["user_id"],
+        system=System(**entry["system"]),
     )
 
 
@@ -52,7 +51,7 @@ class InMemoryBackend(MemoryBackend):
     retrieval = "keyword"
 
     def __init__(self) -> None:
-        # {memory_id: {user_id, content, scope, metadata, created_at, updated_at}}
+        # {memory_id: {user_id, content, scope, metadata, system, created_at, updated_at}}
         self._store: dict[str, dict[str, Any]] = {}
         # {memory_id: [HistoryEntry, ...]}
         self._history: dict[str, list[dict[str, Any]]] = {}
@@ -67,24 +66,20 @@ class InMemoryBackend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
-        author: str | None = None,
+        system: System | None = None,
     ) -> list[AddResult]:
         if scope:
             reject_nested_filters(scope)
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        # Reserved keys are stripped here, not just by policy: a caller-
-        # supplied `_memcp_author` (or any future `_memcp_` key) must never reach
-        # storage regardless of who calls this method, because the read path
-        # trusts whatever it finds.
-        stored_metadata = strip_reserved_metadata(metadata) or {}
-        if author is not None:
-            stored_metadata[AUTHOR_METADATA_KEY] = author
+        # Reserved keys are stripped here as well as by policy: whoever calls this
+        # method, a `_memcp_` key must never reach storage.
         self._store[memory_id] = {
             "user_id": partition,
             "content": content,
             "scope": scope_as_text(scope or {}),
-            "metadata": stored_metadata,
+            "metadata": strip_reserved_metadata(metadata) or {},
+            "system": dict(system or {}),
             "created_at": now,
             "updated_at": None,
         }
@@ -94,7 +89,7 @@ class InMemoryBackend(MemoryBackend):
                 "timestamp": now,
                 "content_before": None,
                 "content_after": content,
-                "author": author,
+                "author": (system or {}).get("author"),
             }
         ]
         return [AddResult(id=memory_id, status="ready", created_at=now)]
@@ -174,7 +169,7 @@ class InMemoryBackend(MemoryBackend):
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
-        author: str | None = None,
+        system: System | None = None,
     ) -> Memory:
         entry = self._store.get(memory_id)
         if entry is None or entry["user_id"] != partition:
@@ -183,12 +178,10 @@ class InMemoryBackend(MemoryBackend):
         old_content = entry["content"]
         entry["content"] = content
         entry["updated_at"] = now
-        if metadata is not None or author is not None:
-            base = metadata if metadata is not None else entry["metadata"]
-            new_metadata = strip_reserved_metadata(base) or {}
-            if author is not None:
-                new_metadata[AUTHOR_METADATA_KEY] = author
-            entry["metadata"] = new_metadata
+        if metadata is not None:
+            entry["metadata"] = strip_reserved_metadata(metadata) or {}
+        if system is not None:
+            entry["system"] = dict(system)
         if memory_id in self._history:
             self._history[memory_id].append(
                 {
@@ -196,7 +189,7 @@ class InMemoryBackend(MemoryBackend):
                     "timestamp": now,
                     "content_before": old_content,
                     "content_after": content,
-                    "author": author,
+                    "author": entry["system"].get("author"),
                 }
             )
         return _entry_to_memory(memory_id, entry)

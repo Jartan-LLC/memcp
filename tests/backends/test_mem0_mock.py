@@ -14,7 +14,7 @@ import pytest
 import respx
 
 from memcp.backends.mem0 import LIST_CEILING, Mem0Backend
-from memcp.backends.mem0.adapter import _entity_rows
+from memcp.backends.mem0.adapter import _entity_rows, _parse_memory, _split_system
 from memcp.types import Memory, MemoryAPIError
 
 BASE = "https://mem0.test"
@@ -673,3 +673,65 @@ async def test_history_wrong_user_raises(backend):
 
 async def test_declares_semantic_retrieval_and_its_list_ceiling(backend):
     assert (backend.retrieval, backend.list_ceiling) == ("semantic", LIST_CEILING)
+
+
+# ---------------------------------------------------------------------------
+# system fields under _memcp_system
+# ---------------------------------------------------------------------------
+
+SYSTEM = {"space": USER, "author": "writer", "created_by": "creator"}
+
+
+def test_split_system_without_the_key_is_empty():
+    assert _split_system({"source": "test"}) == ({}, {"source": "test"})
+
+
+def test_split_system_strips_every_reserved_key():
+    stored = {"_memcp_system": SYSTEM, "_memcp_author": "old", "k": "v"}
+    assert _split_system(stored) == (SYSTEM, {"k": "v"})
+
+
+@pytest.mark.parametrize("value", [12345, "forged", {"author": 7}, {"unknown": "x"}], ids=str)
+def test_split_system_ignores_a_value_that_is_not_system_fields(value):
+    assert _split_system({"_memcp_system": value})[0] == {}
+
+
+def test_a_parsed_memory_carries_its_user_id_as_the_partition():
+    raw = {**MEMORY_RESPONSE, "metadata": {"_memcp_system": SYSTEM}}
+    memory = _parse_memory(raw)
+    assert (memory.partition, memory.system, memory.metadata) == (USER, SYSTEM, {})
+
+
+@respx.mock
+async def test_add_sends_system_under_the_reserved_key(backend):
+    added = respx.post(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    await backend.add(USER, "fact", metadata={"k": "v"}, system=SYSTEM, infer=False)
+    sent = json.loads(added.calls.last.request.content)["metadata"]
+    assert sent == {"k": "v", "_memcp_system": SYSTEM}
+
+
+@respx.mock
+async def test_update_with_metadata_only_resends_the_stored_system(backend):
+    stored = {**MEMORY_RESPONSE, "metadata": {"_memcp_system": SYSTEM, "old": "x"}}
+    respx.get(f"{BASE}/memories/mem-1").mock(return_value=httpx.Response(200, json=stored))
+    put = respx.put(f"{BASE}/memories/mem-1").mock(
+        return_value=httpx.Response(200, json={"message": "updated"})
+    )
+    await backend.update(USER, "mem-1", "new content", metadata={"k": "v"})
+    sent = json.loads(put.calls.last.request.content)["metadata"]
+    assert sent == {"k": "v", "_memcp_system": SYSTEM}
+
+
+@respx.mock
+async def test_update_with_system_replaces_it_and_keeps_metadata(backend):
+    stored = {**MEMORY_RESPONSE, "metadata": {"_memcp_system": SYSTEM, "old": "x"}}
+    respx.get(f"{BASE}/memories/mem-1").mock(return_value=httpx.Response(200, json=stored))
+    put = respx.put(f"{BASE}/memories/mem-1").mock(
+        return_value=httpx.Response(200, json={"message": "updated"})
+    )
+    changed = {**SYSTEM, "author": "editor"}
+    await backend.update(USER, "mem-1", "new content", system=changed)
+    sent = json.loads(put.calls.last.request.content)["metadata"]
+    assert sent == {"old": "x", "_memcp_system": changed}

@@ -9,8 +9,8 @@ an anonymous instruction channel — a memory injected by any seat looked exactl
 one any other seat wrote, and a caller could claim any label it liked. These tests
 drive the MCP tool surface (not backend internals).
 
-Most fail against the pre-patch tree on a real assertion: `author`/`attributed` were
-not keys `serialize_memory` produced at all, so the key-presence and equality
+Most fail against the pre-patch tree on a real assertion: `author` was
+not a key `serialize_memory` produced at all, so the key-presence and equality
 assertions raise `KeyError` there, not just return a different value. The four tests
 that need `Principal`/`set_principal` import them locally rather than at module
 scope — `seat` as an axis distinct from `tenant` is itself new in this fix, so
@@ -31,11 +31,11 @@ from memcp.identity import reset_tenant, set_tenant
 from memcp.policy import Policy
 from memcp.tools import register_tools
 
-# Mirrors memcp.types._AUTHOR_METADATA_KEY, deliberately not imported: importing a
+# Mirrors memcp.types.SYSTEM_METADATA_KEY, deliberately not imported: importing a
 # reserved-metadata concept that does not exist pre-patch would turn the forgery
 # test below into a collection error rather than a real assertion failure — the
 # forged key must simply survive untouched in metadata on the unpatched tree.
-_AUTHOR_METADATA_KEY = "_memcp_author"
+_SYSTEM_METADATA_KEY = "_memcp_system"
 
 
 class FakeMCP:
@@ -68,7 +68,7 @@ async def test_add_memory_stamps_the_resolved_seat(mcp_with_tools):
     result = await mcp.call("search_memory", query="fact")
     memory = result["results"][0]
     assert memory["author"] == "test_user"
-    assert memory["attributed"] is True
+    assert "attributed" not in memory
 
 
 async def test_search_result_is_unattributed_when_backend_holds_no_stamp(mcp_with_tools):
@@ -79,7 +79,6 @@ async def test_search_result_is_unattributed_when_backend_holds_no_stamp(mcp_wit
     result = await mcp.call("search_memory", query="pre-existing")
     memory = result["results"][0]
     assert memory["author"] is None
-    assert memory["attributed"] is False
 
 
 async def test_add_memory_caller_cannot_forge_author_via_metadata(mcp_with_tools):
@@ -89,13 +88,13 @@ async def test_add_memory_caller_cannot_forge_author_via_metadata(mcp_with_tools
     await mcp.call(
         "add_memory",
         content="spoof attempt",
-        metadata={_AUTHOR_METADATA_KEY: "root", "note": "kept"},
+        metadata={_SYSTEM_METADATA_KEY: {"author": "root"}, "note": "kept"},
     )
     result = await mcp.call("search_memory", query="spoof")
     memory = result["results"][0]
     assert memory["author"] == "test_user"
     assert memory["metadata"] == {"note": "kept"}
-    assert _AUTHOR_METADATA_KEY not in memory["metadata"]
+    assert _SYSTEM_METADATA_KEY not in memory["metadata"]
 
 
 async def test_update_memory_relabels_to_the_updating_principal(mcp_with_tools):
@@ -224,9 +223,9 @@ async def test_import_memories_overwrite_re_stamps_author_too(mcp_with_tools):
 
 async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
     """With no resolver, nothing authenticated the caller, so a write made
-    under the dev-mode fallback principal must not claim `attributed: true` —
-    that would tell a reader "the server resolved this seat" when it resolved
-    nothing at all.
+    under the dev-mode fallback principal must record no author — one would
+    tell a reader "the server resolved this seat" when it resolved nothing at
+    all.
 
     No `tenant_context` fixture override here: the default `DEFAULT_PRINCIPAL`
     context (unset contextvar) is exactly the no-`MEMCP_AUTH_TOKENS` shape.
@@ -243,7 +242,6 @@ async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
 
     memory = result["results"][0]
     assert memory["author"] is None
-    assert memory["attributed"] is False
 
 
 async def test_real_token_onto_the_default_tenant_name_is_still_attributed(mcp_with_tools):
@@ -267,4 +265,3 @@ async def test_real_token_onto_the_default_tenant_name_is_still_attributed(mcp_w
 
     memory = result["results"][0]
     assert memory["author"] == "default_user"
-    assert memory["attributed"] is True

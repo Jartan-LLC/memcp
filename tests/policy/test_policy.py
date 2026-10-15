@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
@@ -10,8 +11,8 @@ from memcp.backends.in_memory import InMemoryBackend
 from memcp.identity import DEFAULT_PRINCIPAL, Principal, reset_tenant, set_principal, set_tenant
 from memcp.policy import Policy
 from memcp.types import (
-    AUTHOR_METADATA_KEY,
     MAX_IMPORT,
+    SYSTEM_METADATA_KEY,
     ListResult,
     Memory,
     MemoryAPIError,
@@ -185,8 +186,10 @@ async def test_a_returned_memory_outside_the_scope_is_dropped(
     method: str,
     caplog: pytest.LogCaptureFixture,
 ):
-    inside = Memory(id="in", content="in", scope={"agent_id": "a", "run_id": "7"})
-    outside = Memory(id="out", content="out", scope={"agent_id": "b"})
+    inside = Memory(
+        id="in", content="in", partition="test_user", scope={"agent_id": "a", "run_id": "7"}
+    )
+    outside = Memory(id="out", content="out", partition="test_user", scope={"agent_id": "b"})
     _returning(backend, method, [inside, outside])
     if method == "search":
         found = await policy.search("q", scope={"agent_id": "a", "run_id": 7})
@@ -199,13 +202,15 @@ async def test_a_returned_memory_outside_the_scope_is_dropped(
 async def test_a_memory_without_the_key_is_outside_its_scope(
     policy: Policy, backend: InMemoryBackend
 ):
-    _returning(backend, "search", [Memory(id="unscoped", content="x", scope={})])
+    _returning(
+        backend, "search", [Memory(id="unscoped", content="x", partition="test_user", scope={})]
+    )
     # "None" is what str() makes of a missing value; it must not match.
     assert await policy.search("q", scope={"run_id": "None"}) == []
 
 
 async def test_a_boolean_scope_matches_its_wire_form(policy: Policy, backend: InMemoryBackend):
-    stored = Memory(id="flagged", content="x", scope={"run_id": "true"})
+    stored = Memory(id="flagged", content="x", partition="test_user", scope={"run_id": "true"})
     _returning(backend, "search", [stored])
     assert [m.id for m in await policy.search("q", scope={"run_id": True})] == ["flagged"]
 
@@ -221,7 +226,11 @@ async def test_import_reports_an_entry_whose_scope_is_not_an_object(policy: Poli
 async def test_a_value_equal_only_as_python_is_outside_its_scope(
     policy: Policy, backend: InMemoryBackend, stored: object, requested: object
 ):
-    _returning(backend, "search", [Memory(id="m", content="x", scope={"run_id": stored})])
+    _returning(
+        backend,
+        "search",
+        [Memory(id="m", content="x", partition="test_user", scope={"run_id": stored})],
+    )
     assert await policy.search("q", scope={"run_id": requested}) == []
 
 
@@ -290,14 +299,14 @@ def _record_metadata(backend: InMemoryBackend, method: str) -> list[Any]:
 
 async def test_add_strips_reserved_metadata(policy: Policy, backend: InMemoryBackend):
     passed = _record_metadata(backend, "add")
-    await policy.add("x", metadata={AUTHOR_METADATA_KEY: "forged", "k": "v"}, infer=False)
+    await policy.add("x", metadata={SYSTEM_METADATA_KEY: "forged", "k": "v"}, infer=False)
     assert passed == [{"k": "v"}]
 
 
 async def test_update_strips_reserved_metadata(policy: Policy, backend: InMemoryBackend):
     memory_id = await _add_one(policy)
     passed = _record_metadata(backend, "update")
-    await policy.update(memory_id, "x", metadata={AUTHOR_METADATA_KEY: "forged", "k": "v"})
+    await policy.update(memory_id, "x", metadata={SYSTEM_METADATA_KEY: "forged", "k": "v"})
     assert passed == [{"k": "v"}]
 
 
@@ -355,3 +364,231 @@ async def test_import_reports_an_entry_with_a_bad_scope(policy: Policy):
     assert outcome.imported == []
     assert outcome.errors[0]["index"] == 0
     assert "Unknown scope keys" in outcome.errors[0]["error"]
+
+
+# ---------------------------------------------------------------------------
+# space check
+# ---------------------------------------------------------------------------
+
+LEAKED = "content from another space"
+TENANT = "test_user"
+
+
+def _foreign(**changes: Any) -> Memory:
+    fields: dict[str, Any] = {
+        "id": "foreign",
+        "content": LEAKED,
+        "partition": TENANT,
+        "system": {"space": TENANT},
+    }
+    fields.update(changes)
+    return Memory(**fields)
+
+
+FOREIGN = [
+    pytest.param({"partition": "someone_else"}, id="partition"),
+    pytest.param({"system": {"space": "someone_else"}}, id="system-space"),
+]
+
+
+def _get_returns(backend: InMemoryBackend, memory: Memory) -> None:
+    async def get(*args: Any, **kwargs: Any) -> Memory:
+        return memory
+
+    backend.get = get  # type: ignore[method-assign]
+
+
+async def _isolation_refused(call: Any, caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="memcp.policy"):
+        await _refused(call, "internal_error")
+    assert any("isolation_violation" in r.getMessage() for r in caplog.records)
+    assert LEAKED not in caplog.text
+
+
+READS: dict[str, Any] = {
+    "search": ("search", lambda p: p.search("q")),
+    "list": ("list_memories", lambda p: p.list_memories()),
+    "export": ("list_memories", lambda p: p.export_memories()),
+}
+
+
+@pytest.mark.parametrize("changes", FOREIGN)
+@pytest.mark.parametrize("read", READS)
+async def test_a_read_returning_another_space_fails_closed(
+    policy: Policy,
+    backend: InMemoryBackend,
+    caplog: pytest.LogCaptureFixture,
+    read: str,
+    changes: dict[str, Any],
+):
+    method, call = READS[read]
+    _returning(backend, method, [_foreign(**changes)])
+    await _isolation_refused(call(policy), caplog)
+
+
+@pytest.mark.parametrize("changes", FOREIGN)
+@pytest.mark.parametrize("operation", BY_ID)
+async def test_a_by_id_call_reaching_another_space_fails_closed(
+    policy: Policy,
+    backend: InMemoryBackend,
+    caplog: pytest.LogCaptureFixture,
+    operation: str,
+    changes: dict[str, Any],
+):
+    memory_id = await _add_one(policy)
+    _get_returns(backend, _foreign(id=memory_id, **changes))
+    await _isolation_refused(BY_ID[operation](policy, memory_id), caplog)
+    assert memory_id in backend._store, "the refused call still changed the memory"  # pyright: ignore[reportPrivateUsage]
+    assert backend._store[memory_id]["content"] == "a fact"  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("changes", FOREIGN)
+async def test_an_add_whose_memory_lands_in_another_space_fails_closed(
+    policy: Policy,
+    backend: InMemoryBackend,
+    caplog: pytest.LogCaptureFixture,
+    changes: dict[str, Any],
+):
+    _get_returns(backend, _foreign(**changes))
+    await _isolation_refused(policy.add("x", infer=False), caplog)
+
+
+async def test_an_add_whose_memory_cannot_be_read_back_fails_closed(
+    policy: Policy, backend: InMemoryBackend, caplog: pytest.LogCaptureFixture
+):
+    async def get(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    backend.get = get  # type: ignore[method-assign]
+    await _isolation_refused(policy.add("x", infer=False), caplog)
+
+
+@pytest.mark.parametrize("changes", FOREIGN)
+async def test_an_update_that_returns_another_space_fails_closed(
+    policy: Policy,
+    backend: InMemoryBackend,
+    caplog: pytest.LogCaptureFixture,
+    changes: dict[str, Any],
+):
+    memory_id = await _add_one(policy)
+
+    async def update(*args: Any, **kwargs: Any) -> Memory:
+        return _foreign(id=memory_id, **changes)
+
+    backend.update = update  # type: ignore[method-assign]
+    await _isolation_refused(policy.update(memory_id, "x"), caplog)
+
+
+async def test_a_memory_without_system_fields_passes_on_its_partition(
+    policy: Policy, backend: InMemoryBackend
+):
+    _get_returns(backend, _foreign(system={}))
+    assert (await policy.get("foreign")).id == "foreign"
+
+
+# ---------------------------------------------------------------------------
+# system stamps
+# ---------------------------------------------------------------------------
+
+
+def _as(seat: str) -> Any:
+    return set_principal(Principal(tenant=TENANT, seat=seat))
+
+
+async def _stored_system(backend: InMemoryBackend, memory_id: str) -> Any:
+    stored = await backend.get(TENANT, memory_id)
+    assert stored is not None
+    return stored.system
+
+
+async def test_add_stamps_the_caller_as_author_and_creator(
+    policy: Policy, backend: InMemoryBackend
+):
+    token = _as("laptop")
+    try:
+        memory_id = await _add_one(policy)
+    finally:
+        reset_tenant(token)
+    assert await _stored_system(backend, memory_id) == {
+        "space": TENANT,
+        "author": "laptop",
+        "created_by": "laptop",
+    }
+
+
+async def test_update_keeps_the_creator_and_stamps_the_caller(
+    policy: Policy, backend: InMemoryBackend
+):
+    token = _as("laptop")
+    try:
+        memory_id = await _add_one(policy)
+    finally:
+        reset_tenant(token)
+    token = _as("phone")
+    try:
+        await policy.update(memory_id, "changed")
+    finally:
+        reset_tenant(token)
+    assert await _stored_system(backend, memory_id) == {
+        "space": TENANT,
+        "author": "phone",
+        "created_by": "laptop",
+    }
+
+
+async def test_update_of_a_memory_without_a_creator_adds_none(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "older memory", infer=False))[0].id
+    token = _as("phone")
+    try:
+        await policy.update(memory_id, "changed")
+    finally:
+        reset_tenant(token)
+    assert await _stored_system(backend, memory_id) == {"space": TENANT, "author": "phone"}
+
+
+async def test_a_dev_mode_write_stamps_only_the_space(policy: Policy, backend: InMemoryBackend):
+    token = set_principal(DEFAULT_PRINCIPAL)
+    try:
+        memory_id = await _add_one(policy)
+        stored = await backend.get(DEFAULT_PRINCIPAL.tenant, memory_id)
+    finally:
+        reset_tenant(token)
+    assert stored is not None
+    assert stored.system == {"space": DEFAULT_PRINCIPAL.tenant}
+
+
+async def test_import_stamps_the_importer_whatever_the_entry_says(
+    policy: Policy, backend: InMemoryBackend
+):
+    token = _as("importer")
+    try:
+        outcome = await policy.import_memories(
+            [{"content": "imported", "author": "forged", "system": {"created_by": "forged"}}]
+        )
+    finally:
+        reset_tenant(token)
+    assert await _stored_system(backend, outcome.imported[0]["id"]) == {
+        "space": TENANT,
+        "author": "importer",
+        "created_by": "importer",
+    }
+
+
+async def test_an_import_overwrite_keeps_the_creator(policy: Policy, backend: InMemoryBackend):
+    token = _as("laptop")
+    try:
+        memory_id = await _add_one(policy, "shared fact")
+    finally:
+        reset_tenant(token)
+    token = _as("importer")
+    try:
+        await policy.import_memories([{"content": "shared fact"}], on_conflict="overwrite")
+    finally:
+        reset_tenant(token)
+    assert await _stored_system(backend, memory_id) == {
+        "space": TENANT,
+        "author": "importer",
+        "created_by": "laptop",
+    }

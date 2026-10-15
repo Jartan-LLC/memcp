@@ -14,7 +14,7 @@ from typing import Any
 from memcp.backends.base import MemoryBackend
 from memcp.backends.mem0.client import Mem0Client
 from memcp.types import (
-    AUTHOR_METADATA_KEY,
+    SYSTEM_METADATA_KEY,
     AddResult,
     EntitiesResult,
     HealthStatus,
@@ -22,11 +22,11 @@ from memcp.types import (
     ListResult,
     Memory,
     MemoryAPIError,
+    System,
     is_wildcard,
     paginate,
     reject_nested_filters,
     scope_text,
-    split_author,
     strip_reserved_metadata,
 )
 
@@ -75,18 +75,29 @@ def _build_identifier_params(
     return params
 
 
+def _split_system(stored: dict[str, Any]) -> tuple[System, dict[str, Any]]:
+    """The system fields kept under SYSTEM_METADATA_KEY, and the rest without reserved keys."""
+    raw = stored.get(SYSTEM_METADATA_KEY)
+    fields = raw if isinstance(raw, dict) else {}
+    system = System(
+        **{k: v for k, v in fields.items() if k in System.__annotations__ and isinstance(v, str)}
+    )
+    return system, strip_reserved_metadata(stored) or {}
+
+
 def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
     """Convert mem0's response shape to canonical Memory."""
-    author, metadata = split_author(raw.get("metadata") or {})
+    system, metadata = _split_system(raw.get("metadata") or {})
     return Memory(
         id=raw.get("id", ""),
         content=raw.get("memory", raw.get("text", "")),
         score=score if score is not None else raw.get("score"),
         scope={k: v for k, v in raw.items() if k in ("agent_id", "run_id") and v is not None},
         metadata=metadata,
-        author=author,
         created_at=raw.get("created_at", ""),
         updated_at=raw.get("updated_at"),
+        partition=raw.get("user_id") or "",
+        system=system,
     )
 
 
@@ -144,10 +155,10 @@ class Mem0Backend(MemoryBackend):
         # migration against — memcp has no way to enumerate every tenant a mem0
         # install holds, only whichever a request addresses. A row written by a
         # server version that did not validate `metadata` may carry a
-        # caller-planted reserved key that reads back as server-attributed. See
+        # caller-planted reserved key that reads back as server-set. See
         # docs/reference.md.
         logger.warning(
-            "mem0 backend: memory attribution (`author`/`attributed`) is only as "
+            "mem0 backend: memory attribution (`author`) is only as "
             "trustworthy as this store's write history. memcp has no migration "
             "hook for mem0 — run a metadata sweep on it before trusting "
             "attribution if any client could have written to it before this "
@@ -164,7 +175,7 @@ class Mem0Backend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
-        author: str | None = None,
+        system: System | None = None,
     ) -> list[AddResult]:
         payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": content}],
@@ -177,8 +188,8 @@ class Mem0Backend(MemoryBackend):
         # Stripped here, not just by policy — see in_memory.add()'s
         # comment on the same line.
         stored_metadata = strip_reserved_metadata(metadata) or {}
-        if author is not None:
-            stored_metadata[AUTHOR_METADATA_KEY] = author
+        if system:
+            stored_metadata[SYSTEM_METADATA_KEY] = dict(system)
         if stored_metadata:
             payload["metadata"] = stored_metadata
 
@@ -276,26 +287,22 @@ class Mem0Backend(MemoryBackend):
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
-        author: str | None = None,
+        system: System | None = None,
     ) -> Memory:
         # Fetch-then-verify: mem0 PUT is global, check ownership first. `existing`
-        # also supplies the base metadata to re-stamp onto when the caller passes
-        # no metadata of its own — mem0's PUT has no partial-merge semantics, so
-        # sending a fresh metadata dict with only the new author would drop
-        # whatever else was stored.
+        # also supplies whichever of metadata and system the caller didn't pass, so
+        # the PUT never drops either.
         existing = await self.get(partition, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Memory not found")
         body: dict[str, Any] = {"text": content}
-        if metadata is not None or author is not None:
-            # existing.metadata is already reserved-key-free (it came back through
-            # _parse_memory/split_author); a caller-supplied metadata still needs
-            # the same strip _parse_memory would have applied.
-            raw = metadata if metadata is not None else existing.metadata
-            base = strip_reserved_metadata(raw) or {}
-            if author is not None:
-                base[AUTHOR_METADATA_KEY] = author
-            body["metadata"] = base
+        if metadata is not None or system is not None:
+            base = strip_reserved_metadata(metadata if metadata is not None else existing.metadata)
+            stored = base or {}
+            kept = existing.system if system is None else system
+            if kept:
+                stored[SYSTEM_METADATA_KEY] = dict(kept)
+            body["metadata"] = stored
         await self._client.request("PUT", f"/memories/{memory_id}", json=body)
         # mem0 PUT returns {"message": "..."}, not the memory. Fetch it.
         updated = await self.get(partition, memory_id)

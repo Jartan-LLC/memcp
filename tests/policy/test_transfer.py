@@ -13,7 +13,7 @@ from memcp.policy.transfer import (
     migrate,
     scope_key,
 )
-from memcp.types import ListResult, MemoryAPIError
+from memcp.types import ListResult, Memory, MemoryAPIError, PolicyError, System
 
 TENANT = "tenant_a"
 OTHER = "tenant_b"
@@ -61,6 +61,18 @@ class EmptyPageBackend(InMemoryBackend):
         if self.calls > 3:
             raise AssertionError("a reader kept following a cursor past an empty page")
         return ListResult(memories=[], next_cursor="more")
+
+
+class ForeignPartitionBackend(InMemoryBackend):
+    """Lists the requested tenant's memories as though they were stored under another."""
+
+    async def list_memories(self, partition, *, scope=None, limit=100, cursor=None) -> ListResult:
+        page = await super().list_memories(partition, scope=scope, limit=limit, cursor=cursor)
+        page.memories = [
+            Memory(id=m.id, content=m.content, partition="elsewhere", system=m.system)
+            for m in page.memories
+        ]
+        return page
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +126,6 @@ async def test_export_returns_wire_shapes(backend: InMemoryBackend):
         "created_at",
         "updated_at",
         "author",
-        "attributed",
     }
 
 
@@ -468,3 +479,42 @@ async def test_migrate_is_idempotent_on_a_second_run():
     second = await migrate(source, target, TENANT)
     assert (second.imported, second.skipped) == (0, 1)
     assert len((await target.list_memories(TENANT)).memories) == 1
+
+
+async def test_migrate_copies_system_and_sets_the_target_space():
+    source, target = InMemoryBackend(), InMemoryBackend()
+    stamp: System = {"space": TENANT, "author": "writer", "created_by": "creator"}
+    await source.add(TENANT, "moved fact", system=stamp, infer=False)
+    await migrate(source, target, TENANT, target_user_id=OTHER)
+    landed = await target.list_memories(OTHER)
+    assert [m.system for m in landed.memories] == [{**stamp, "space": OTHER}]
+
+
+# ---------------------------------------------------------------------------
+# Space check on every listed memory
+# ---------------------------------------------------------------------------
+
+
+async def test_export_refuses_a_memory_from_another_partition():
+    backend = ForeignPartitionBackend()
+    await backend.add(TENANT, "fact", infer=False)
+    with pytest.raises(PolicyError) as refused:
+        await export_payload(backend, TENANT)
+    assert refused.value.code == "internal_error"
+
+
+async def test_import_dedup_refuses_a_memory_from_another_partition():
+    backend = ForeignPartitionBackend()
+    await backend.add(TENANT, "fact", infer=False)
+    with pytest.raises(PolicyError) as refused:
+        await import_payload(backend, TENANT, [{"content": "fact"}])
+    assert refused.value.code == "internal_error"
+
+
+async def test_migrate_refuses_a_source_memory_from_another_partition():
+    source, target = ForeignPartitionBackend(), InMemoryBackend()
+    await source.add(TENANT, "fact", infer=False)
+    with pytest.raises(PolicyError) as refused:
+        await migrate(source, target, TENANT, target_user_id=OTHER)
+    assert refused.value.code == "internal_error"
+    assert (await target.list_memories(OTHER)).memories == []

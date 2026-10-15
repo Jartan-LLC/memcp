@@ -2,7 +2,8 @@
 provenance.
 
 `metadata` was unvalidated before the write-time guard existed, so any bearer-token
-holder could have stored `_memcp_author` directly, on any backend. The tool-layer
+holder could have stored a reserved key such as `_memcp_system` directly, on any
+backend. The tool-layer
 strip (`tests/test_attribution.py`) only guards a caller reaching
 `add_memory`/`update_memory`/`import_memories` through the MCP surface; these tests
 are about the backend layer itself, and about data that predates any version of the
@@ -33,46 +34,46 @@ import respx
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.backends.mem0 import Mem0Backend
 from memcp.backends.sqlite import SCHEMA, SqliteBackend
-from memcp.types import AUTHOR_METADATA_KEY, serialize_memory
+from memcp.types import SYSTEM_METADATA_KEY, serialize_memory
 
 # ---------------------------------------------------------------------------
 # in_memory / sqlite — the write path itself refuses a forged key, regardless
 # of caller. This is the pre-patch call shape: metadata passed straight
-# through, no `author` kwarg — exactly how a caller reached these methods
+# through, no `system` kwarg — exactly how a caller reached these methods
 # before this fix's guard existed at all.
 # ---------------------------------------------------------------------------
 
 
 async def test_in_memory_add_refuses_a_caller_supplied_reserved_key():
     backend = InMemoryBackend()
-    await backend.add("t", "planted", metadata={AUTHOR_METADATA_KEY: "forged", "note": "kept"})
+    await backend.add("t", "planted", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"})
     memory_id = next(iter(backend._store))
     memory = await backend.get("t", memory_id)
 
     assert memory is not None
     assert memory.author is None
-    assert serialize_memory(memory)["attributed"] is False
+    assert serialize_memory(memory)["author"] is None
     assert memory.metadata == {"note": "kept"}
 
 
 async def test_in_memory_update_refuses_a_caller_supplied_reserved_key():
     backend = InMemoryBackend()
-    added = await backend.add("t", "original", author="trusted")
+    added = await backend.add("t", "original", system={"author": "trusted"})
     memory_id = added[0].id
 
     await backend.update(
-        "t", memory_id, "edited", metadata={AUTHOR_METADATA_KEY: "forged", "note": "kept"}
+        "t", memory_id, "edited", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"}
     )
     memory = await backend.get("t", memory_id)
 
     assert memory is not None
-    assert memory.author is None
+    assert memory.author == "trusted"
     assert memory.metadata == {"note": "kept"}
 
 
 async def test_sqlite_add_refuses_a_caller_supplied_reserved_key(tmp_path: Path):
     backend = SqliteBackend(tmp_path / "gate.sqlite3")
-    await backend.add("t", "planted", metadata={AUTHOR_METADATA_KEY: "forged", "note": "kept"})
+    await backend.add("t", "planted", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"})
     memory = (await backend.list_memories("t")).memories[0]
 
     assert memory.author is None
@@ -82,16 +83,16 @@ async def test_sqlite_add_refuses_a_caller_supplied_reserved_key(tmp_path: Path)
 
 async def test_sqlite_update_refuses_a_caller_supplied_reserved_key(tmp_path: Path):
     backend = SqliteBackend(tmp_path / "gate.sqlite3")
-    added = await backend.add("t", "original", author="trusted")
+    added = await backend.add("t", "original", system={"author": "trusted"})
     memory_id = added[0].id
 
     await backend.update(
-        "t", memory_id, "edited", metadata={AUTHOR_METADATA_KEY: "forged", "note": "kept"}
+        "t", memory_id, "edited", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"}
     )
     memory = await backend.get("t", memory_id)
 
     assert memory is not None
-    assert memory.author is None
+    assert memory.author == "trusted"
     assert memory.metadata == {"note": "kept"}
     await backend.close()
 
@@ -99,7 +100,7 @@ async def test_sqlite_update_refuses_a_caller_supplied_reserved_key(tmp_path: Pa
 # ---------------------------------------------------------------------------
 # sqlite — the one-time cleanse. A row inserted directly into the file, the
 # way a genuinely pre-patch memcp version (or a bearer-token holder, since
-# metadata was unvalidated) would have written it, with no `author` kwarg
+# metadata was unvalidated) would have written it, with no `system` kwarg
 # concept and no strip at all. A patched build must not trust it on first
 # open, and must not need to be told to look for it.
 # ---------------------------------------------------------------------------
@@ -122,7 +123,7 @@ async def test_sqlite_cleanses_a_genuinely_pre_existing_forged_row_on_first_open
 ):
     path = tmp_path / "legacy.sqlite3"
     _seed_legacy_row(
-        path, memory_id="legacy-1", metadata={AUTHOR_METADATA_KEY: "forged", "note": "kept"}
+        path, memory_id="legacy-1", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"}
     )
 
     backend = SqliteBackend(path)  # first open by a patched build
@@ -139,7 +140,7 @@ async def test_sqlite_cleanses_a_genuinely_pre_existing_forged_row_on_first_open
         .execute("SELECT metadata FROM memories WHERE id = 'legacy-1'")
         .fetchone()[0]
     )
-    assert AUTHOR_METADATA_KEY not in json.loads(raw)
+    assert SYSTEM_METADATA_KEY not in json.loads(raw)
     await backend.close()
 
 
@@ -197,7 +198,7 @@ async def test_sqlite_cleanse_skips_an_unparseable_row_instead_of_failing_to_boo
     path = tmp_path / "legacy.sqlite3"
     _seed_raw_metadata(path, memory_id="corrupt-1", raw_metadata="{not valid json")
     _seed_legacy_row(
-        path, memory_id="legacy-2", metadata={AUTHOR_METADATA_KEY: "forged", "note": "kept"}
+        path, memory_id="legacy-2", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"}
     )
 
     backend = SqliteBackend(path)  # must not raise
@@ -232,7 +233,7 @@ async def test_mem0_has_no_migration_hook_for_genuinely_pre_existing_data():
     upstream_row = {
         "id": "legacy-1",
         "memory": "pre-existing content",
-        "metadata": {AUTHOR_METADATA_KEY: "forged", "note": "kept"},
+        "metadata": {SYSTEM_METADATA_KEY: {"author": "forged"}, "note": "kept"},
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": None,
         "user_id": "t",
@@ -244,7 +245,5 @@ async def test_mem0_has_no_migration_hook_for_genuinely_pre_existing_data():
         memory = await backend.get("t", "legacy-1")
 
     assert memory is not None
-    wire = serialize_memory(memory)
-    assert wire["author"] == "forged"
-    assert wire["attributed"] is True
+    assert serialize_memory(memory)["author"] == "forged"
     await backend.close()

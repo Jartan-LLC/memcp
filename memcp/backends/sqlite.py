@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import Any
 
 from memcp.types import (
-    AUTHOR_METADATA_KEY,
     AddResult,
     EntitiesResult,
     HealthStatus,
@@ -36,11 +35,11 @@ from memcp.types import (
     ListResult,
     Memory,
     MemoryAPIError,
+    System,
     paginate,
     reject_nested_filters,
     scope_as_text,
     scope_text,
-    split_author,
     strip_reserved_metadata,
 )
 
@@ -56,6 +55,7 @@ CREATE TABLE IF NOT EXISTS memories (
     content     TEXT NOT NULL,
     scope       TEXT NOT NULL DEFAULT '{}',
     metadata    TEXT NOT NULL DEFAULT '{}',
+    system      TEXT NOT NULL DEFAULT '{}',
     created_at  TEXT NOT NULL,
     updated_at  TEXT
 );
@@ -162,16 +162,16 @@ class SqliteBackend(MemoryBackend):
 
     @staticmethod
     def _row_to_memory(row: sqlite3.Row, score: float | None = None) -> Memory:
-        author, metadata = split_author(json.loads(row["metadata"]))
         return Memory(
             id=row["id"],
             content=row["content"],
             score=score,
             scope=json.loads(row["scope"]),
-            metadata=metadata,
-            author=author,
+            metadata=json.loads(row["metadata"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            partition=row["user_id"],
+            system=System(**json.loads(row["system"])),
         )
 
     def _owned_row(self, partition: str, memory_id: str) -> sqlite3.Row | None:
@@ -190,37 +190,35 @@ class SqliteBackend(MemoryBackend):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
-        author: str | None = None,
+        system: System | None = None,
     ) -> list[AddResult]:
         if scope:
             reject_nested_filters(scope)
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        # Stripped here, not just by policy — see in_memory.add()'s
-        # comment on the same line; a caller cannot plant the reserved key
-        # regardless of which caller reaches this method.
+        # Stripped here as well as by policy — see in_memory.add().
         stored_metadata = strip_reserved_metadata(metadata) or {}
-        if author is not None:
-            stored_metadata[AUTHOR_METADATA_KEY] = author
+        stored_system = dict(system or {})
 
         def op() -> None:
             with self._conn:
                 self._conn.execute(
-                    "INSERT INTO memories (id, user_id, content, scope, metadata, created_at,"
-                    " updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL)",
+                    "INSERT INTO memories (id, user_id, content, scope, metadata, system,"
+                    " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
                     (
                         memory_id,
                         partition,
                         content,
                         json.dumps(scope_as_text(scope or {})),
                         json.dumps(stored_metadata),
+                        json.dumps(stored_system),
                         now,
                     ),
                 )
                 self._conn.execute(
                     "INSERT INTO history (memory_id, action, timestamp, content_before,"
                     " content_after, author) VALUES (?, 'created', ?, NULL, ?, ?)",
-                    (memory_id, now, content, author),
+                    (memory_id, now, content, stored_system.get("author")),
                 )
 
         await self._run(op)
@@ -323,7 +321,7 @@ class SqliteBackend(MemoryBackend):
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
-        author: str | None = None,
+        system: System | None = None,
     ) -> Memory:
         now = datetime.now(UTC).isoformat()
 
@@ -331,23 +329,22 @@ class SqliteBackend(MemoryBackend):
             row = self._owned_row(partition, memory_id)
             if row is None:
                 raise MemoryAPIError(404, "Not found")
-            if metadata is not None or author is not None:
-                raw = metadata if metadata is not None else json.loads(row["metadata"])
-                base = strip_reserved_metadata(raw) or {}
-                if author is not None:
-                    base[AUTHOR_METADATA_KEY] = author
-                new_metadata = json.dumps(base)
-            else:
-                new_metadata = row["metadata"]
+            new_metadata = (
+                row["metadata"]
+                if metadata is None
+                else json.dumps(strip_reserved_metadata(metadata) or {})
+            )
+            new_system = json.loads(row["system"]) if system is None else dict(system)
             with self._conn:
                 self._conn.execute(
-                    "UPDATE memories SET content = ?, updated_at = ?, metadata = ? WHERE id = ?",
-                    (content, now, new_metadata, memory_id),
+                    "UPDATE memories SET content = ?, updated_at = ?, metadata = ?, system = ?"
+                    " WHERE id = ?",
+                    (content, now, new_metadata, json.dumps(new_system), memory_id),
                 )
                 self._conn.execute(
                     "INSERT INTO history (memory_id, action, timestamp, content_before,"
                     " content_after, author) VALUES (?, 'updated', ?, ?, ?, ?)",
-                    (memory_id, now, row["content"], content, author),
+                    (memory_id, now, row["content"], content, new_system.get("author")),
                 )
             updated = self._owned_row(partition, memory_id)
             if updated is None:  # pragma: no cover - written in the same transaction

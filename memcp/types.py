@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,10 @@ MAX_EXPORT = 10_000
 MAX_IMPORT = 1_000
 
 # Metadata keys in this namespace are server-only: a caller cannot set them, and
-# they never appear in a Memory's public `metadata`. `AUTHOR_METADATA_KEY` is where
-# a resolved seat is stamped so it survives in storage that has no dedicated column
-# for it (SEC-2026-0094 conjunct 2).
+# they never appear in a Memory's public `metadata`. `SYSTEM_METADATA_KEY` holds a
+# memory's system fields on a store with nowhere else to keep them (mem0).
 RESERVED_METADATA_PREFIX = "_memcp_"
-AUTHOR_METADATA_KEY = f"{RESERVED_METADATA_PREFIX}author"
+SYSTEM_METADATA_KEY = f"{RESERVED_METADATA_PREFIX}system"
 
 
 def validate_memory_id(memory_id: str) -> str:
@@ -104,20 +103,6 @@ def strip_reserved_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] |
     return {k: v for k, v in metadata.items() if not k.startswith(RESERVED_METADATA_PREFIX)}
 
 
-def split_author(metadata: dict[str, Any] | None) -> tuple[str | None, dict[str, Any]]:
-    """Pull the server-stamped author out of a stored metadata blob.
-
-    Returns (author, metadata-without-the-reserved-key) so a backend's read path
-    can populate `Memory.author` without leaking the reserved key into the public
-    `metadata` a caller sees. A row stored before this field existed, or by a
-    caller that bypassed attribution, has no reserved key and comes back as
-    (None, metadata) — never inferred, never back-filled.
-    """
-    metadata = dict(metadata or {})
-    author = metadata.pop(AUTHOR_METADATA_KEY, None)
-    return (author if isinstance(author, str) else None), metadata
-
-
 # ---------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------
@@ -175,6 +160,18 @@ def canonical_error(code: str, message: str, *, retry: bool = False) -> dict[str
 # ---------------------------------------------------------------------------
 
 
+class System(TypedDict, total=False):
+    """Fields only policy sets: the memory's space, and the keys that last wrote and created it.
+
+    A key is absent when nothing resolved it (dev mode), or when the memory was written
+    before memcp recorded it.
+    """
+
+    space: str
+    author: str
+    created_by: str
+
+
 @dataclass
 class Memory:
     id: str
@@ -184,10 +181,13 @@ class Memory:
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     updated_at: str | None = None
-    # The seat the server resolved at write time, or None where it was not
-    # attributed (written before this field existed, or by a caller that
-    # bypassed the auth layer directly). Never inferred, never back-filled.
-    author: str | None = None
+    partition: str = ""
+    system: System = field(default_factory=lambda: System())
+
+    @property
+    def author(self) -> str | None:
+        """The key that last wrote this memory, or None when nothing recorded one."""
+        return self.system.get("author")
 
 
 @dataclass
@@ -200,9 +200,8 @@ class AddResult:
 def serialize_memory(m: Memory) -> dict[str, Any]:
     """Wire shape for a Memory — the export/import payload and MCP tool results.
 
-    `author` is a record of what some client stored, not a verified fact — see
-    `memcp.http.app.INSTRUCTIONS`. `attributed` is False whenever `author` is null,
-    so a caller does not have to special-case the string "null".
+    The partition and the rest of `system` stay server-side. `author` records which key
+    wrote the memory, not who the facts came from — see `memcp.http.app.INSTRUCTIONS`.
     """
     return {
         "id": m.id,
@@ -213,7 +212,6 @@ def serialize_memory(m: Memory) -> dict[str, Any]:
         "created_at": m.created_at,
         "updated_at": m.updated_at,
         "author": m.author,
-        "attributed": m.author is not None,
     }
 
 
