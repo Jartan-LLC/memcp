@@ -138,7 +138,7 @@ async def test_scope_refuses_whitespace_inside_a_run_id(policy: Policy):
 
 
 @pytest.mark.parametrize("value", [7, 0, 0.0, False])
-async def test_scope_accepts_a_number(policy: Policy, value: Any):
+async def test_scope_accepts_a_number_or_boolean(policy: Policy, value: Any):
     await policy.search("q", scope={"run_id": value})
 
 
@@ -180,6 +180,7 @@ async def test_a_memory_without_the_key_is_outside_its_scope(
     policy: Policy, backend: InMemoryBackend
 ):
     _returning(backend, "search", [Memory(id="unscoped", content="x", scope={})])
+    # "None" is what str() makes of a missing value; it must not match.
     assert await policy.search("q", scope={"run_id": "None"}) == []
 
 

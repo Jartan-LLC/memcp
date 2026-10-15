@@ -79,7 +79,7 @@ def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict
                 raise PolicyError(
                     "validation_error",
                     f"Scope value for 'agent_id' ({v!r}) has no characters left after "
-                    "normalization; use letters, digits, or hyphens.",
+                    "normalization; include at least one letter or digit.",
                 )
             v = normalized
         elif isinstance(v, str):

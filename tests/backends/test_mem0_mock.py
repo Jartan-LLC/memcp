@@ -355,7 +355,7 @@ def test_entity_rows_skip_missing_and_invalid_timestamps():
 
 @respx.mock
 @pytest.mark.parametrize("value", ["*", "", None, [], [""]])
-async def test_delete_all_refuses_a_wildcard_value(backend, value):
+async def test_delete_all_refuses_a_wildcard_or_list_value(backend, value):
     route = respx.delete(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={}))
     with pytest.raises(MemoryAPIError) as exc:
         await backend.delete_all(USER, {"run_id": value})

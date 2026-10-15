@@ -58,8 +58,8 @@ pre-existing row will read as attributed when it never was.
 
 ### Scope
 
-A scope labels memories inside a tenant; `memory_status` lists the keys a backend
-supports, `agent_id` and `run_id` on every backend here. Every tool that takes a scope
+A scope labels memories inside a tenant; `memory_status` lists the keys the backend
+supports (`agent_id` and `run_id` on every bundled backend). Every tool that takes a scope
 applies the same rules:
 
 - `user_id` is refused; the server sets it from your token.
