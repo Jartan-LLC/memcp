@@ -33,7 +33,7 @@ def author_for(principal: Principal) -> str | None:
 
 
 def system_for(partition: str, author: str | None, created_by: str | None) -> System:
-    """The system fields to write, leaving out a key nothing resolved."""
+    """The system fields to write, leaving out `author` and `created_by` when they are None."""
     system = System(space=partition)
     if author is not None:
         system["author"] = author

@@ -8,15 +8,6 @@ reached storage and came back out completely unvalidated. That made the shared s
 an anonymous instruction channel — a memory injected by any seat looked exactly like
 one any other seat wrote, and a caller could claim any label it liked. These tests
 drive the MCP tool surface (not backend internals).
-
-Most fail against the pre-patch tree on a real assertion: `author` was
-not a key `serialize_memory` produced at all, so the key-presence and equality
-assertions raise `KeyError` there, not just return a different value. The four tests
-that need `Principal`/`set_principal` import them locally rather than at module
-scope — `seat` as an axis distinct from `tenant` is itself new in this fix, so
-against the pre-patch tree those four fail on the import rather than on an
-assertion; there is no pre-patch behaviour for "same tenant, different seat" to
-assert against, because the tenant was the only identity axis that existed.
 """
 
 from __future__ import annotations
@@ -30,12 +21,7 @@ from memcp.config import Config
 from memcp.identity import reset_tenant, set_tenant
 from memcp.policy import Policy
 from memcp.tools import register_tools
-
-# Mirrors memcp.types.SYSTEM_METADATA_KEY, deliberately not imported: importing a
-# reserved-metadata concept that does not exist pre-patch would turn the forgery
-# test below into a collection error rather than a real assertion failure — the
-# forged key must simply survive untouched in metadata on the unpatched tree.
-_SYSTEM_METADATA_KEY = "_memcp_system"
+from memcp.types import SYSTEM_METADATA_KEY
 
 
 class FakeMCP:
@@ -88,13 +74,13 @@ async def test_add_memory_caller_cannot_forge_author_via_metadata(mcp_with_tools
     await mcp.call(
         "add_memory",
         content="spoof attempt",
-        metadata={_SYSTEM_METADATA_KEY: {"author": "root"}, "note": "kept"},
+        metadata={SYSTEM_METADATA_KEY: {"author": "root"}, "note": "kept"},
     )
     result = await mcp.call("search_memory", query="spoof")
     memory = result["results"][0]
     assert memory["author"] == "test_user"
     assert memory["metadata"] == {"note": "kept"}
-    assert _SYSTEM_METADATA_KEY not in memory["metadata"]
+    assert SYSTEM_METADATA_KEY not in memory["metadata"]
 
 
 async def test_update_memory_relabels_to_the_updating_principal(mcp_with_tools):
@@ -105,9 +91,7 @@ async def test_update_memory_relabels_to_the_updating_principal(mcp_with_tools):
     Same tenant, different seat throughout: update_memory only reaches a memory
     within its own tenant (a cross-tenant update is a separate, already-tested
     isolation boundary, not what this test is about), and this is the actual
-    shape one shared bearer token produces (SEC-2026-0038). `seat` as distinct
-    from `tenant` is new in this fix, so this import is local — against the
-    pre-patch tree this test errors on the import rather than on an assertion.
+    shape one shared bearer token produces (SEC-2026-0038).
     """
     from memcp.identity import Principal, set_principal
 

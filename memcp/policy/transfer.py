@@ -162,10 +162,10 @@ async def import_payload(
     unusable `on_conflict`, MemoryAPIError if the dedup index cannot be read, and
     PolicyError if a memory read or written fails the space check.
 
-    `stamp` gives each created or overwritten memory its system fields; without it
-    they carry none. `operation` names the caller in a space-check log. Only an
-    entry's `content`, `scope` and `metadata` are read, so an exported `author` is
-    never imported back.
+    `stamp` gives each created or overwritten memory its system fields; without it a
+    created memory carries none and an overwritten one keeps its own. `operation`
+    names the caller in a space-check log. Only an entry's `content`, `scope` and
+    `metadata` are read, so an exported `author` is never imported back.
     """
     if on_conflict not in ON_CONFLICT_CHOICES:
         raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")

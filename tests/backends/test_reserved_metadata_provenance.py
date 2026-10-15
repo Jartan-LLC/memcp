@@ -3,9 +3,9 @@ provenance.
 
 `metadata` was unvalidated before the write-time guard existed, so any bearer-token
 holder could have stored a reserved key such as `_memcp_system` directly, on any
-backend. The tool-layer
-strip (`tests/test_attribution.py`) only guards a caller reaching
-`add_memory`/`update_memory`/`import_memories` through the MCP surface; these tests
+backend. The policy-layer strip (`memcp/policy/metadata.py`, driven through the MCP
+surface in `tests/test_attribution.py`) only guards a caller reaching
+`add_memory`/`update_memory`/`import_memories`; these tests
 are about the backend layer itself, and about data that predates any version of the
 write-time guard.
 
@@ -33,10 +33,8 @@ from memcp.backends.sqlite import SqliteBackend
 from memcp.types import SYSTEM_METADATA_KEY, serialize_memory
 
 # ---------------------------------------------------------------------------
-# in_memory / sqlite — the write path itself refuses a forged key, regardless
-# of caller. This is the pre-patch call shape: metadata passed straight
-# through, no `system` kwarg — exactly how a caller reached these methods
-# before this fix's guard existed at all.
+# in_memory / sqlite — the write path strips a reserved key whoever calls it:
+# metadata passed straight through, with no `system` argument.
 # ---------------------------------------------------------------------------
 
 
@@ -101,12 +99,11 @@ async def test_sqlite_update_refuses_a_caller_supplied_reserved_key(tmp_path: Pa
 
 async def test_mem0_has_no_migration_hook_for_genuinely_pre_existing_data():
     """mem0 keeps system fields in metadata, and memcp can't enumerate a mem0
-    install's tenants to scan them, so a `_memcp_system` key that reached the store
-    before this server version — by any client, since `metadata` was unvalidated
-    pre-patch — reads back as server-set. The precondition is operational: sweep the
-    store for that key before a patched build serves it (docs/reference.md). This
-    test documents the current, known shape of that gap rather than asserting it is
-    safe."""
+    install's tenants to scan them, so a `_memcp_system` key stored by 0.1.2 or
+    earlier, which kept callers' metadata as given, reads back as server-set. The
+    precondition is operational: sweep the store for that key (docs/reference.md).
+    This test documents the current, known shape of that gap rather than asserting it
+    is safe."""
     base = "https://mem0.test"
     backend = Mem0Backend(base, "key")
     upstream_row = {

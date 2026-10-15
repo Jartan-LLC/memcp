@@ -161,10 +161,10 @@ def canonical_error(code: str, message: str, *, retry: bool = False) -> dict[str
 
 
 class System(TypedDict, total=False):
-    """Fields only policy sets: the memory's space, and the keys that last wrote and created it.
+    """Fields only policy sets: the memory's space, and the seats that last wrote and created it.
 
-    A key is absent when nothing resolved it (dev mode), or when the memory was written
-    before memcp recorded it.
+    `author` and `created_by` are absent for a write no token resolved (dev mode), and any
+    field is absent on a memory written before memcp recorded it.
     """
 
     space: str
@@ -186,7 +186,7 @@ class Memory:
 
     @property
     def author(self) -> str | None:
-        """The key that last wrote this memory, or None when nothing recorded one."""
+        """The seat that last wrote this memory, or None when none was recorded."""
         return self.system.get("author")
 
 
@@ -200,7 +200,7 @@ class AddResult:
 def serialize_memory(m: Memory) -> dict[str, Any]:
     """Wire shape for a Memory — the export/import payload and MCP tool results.
 
-    The partition and the rest of `system` stay server-side. `author` records which key
+    The partition and the rest of `system` stay server-side. `author` records which seat
     wrote the memory, not who the facts came from — see `memcp.http.app.INSTRUCTIONS`.
     """
     return {

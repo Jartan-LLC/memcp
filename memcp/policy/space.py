@@ -8,7 +8,7 @@ from memcp.types import Memory, PolicyError
 
 logger = logging.getLogger(__name__)
 
-INTERNAL_ERROR_MSG = "The request failed an internal check and was refused."
+INTERNAL_ERROR_MSG = "The request failed an internal check."
 
 
 def check_space(memory: Memory | None, partition: str, operation: str, memory_id: str) -> Memory:
