@@ -312,9 +312,8 @@ class Mem0Backend(MemoryBackend):
         cursor: str | None = None,
     ) -> ListResult:
         params = _build_identifier_params(partition, scope)
-        # Without an explicit top_k, mem0 returns its default of 20 — so list,
-        # export and the import dedup index all silently saw only the first 20
-        # memories. The list ceiling is the server's own maximum; it rejects more.
+        # mem0 defaults top_k to 20, which would hide the rest from list, export and the
+        # import dedup index. The list ceiling is mem0's own maximum; it rejects more.
         params["top_k"] = self.list_ceiling
         result = await self._client.request("GET", "/memories", params=params)
         raw = result if isinstance(result, list) else (result or {}).get("results", [])

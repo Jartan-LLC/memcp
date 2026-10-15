@@ -1,4 +1,4 @@
-"""Required-method conformance: the abstract methods every backend implements.
+"""Required conformance: the methods and declarations every backend implements.
 
 Every backend runs every test here. None of it is capability-gated, so nothing in
 this module may skip.

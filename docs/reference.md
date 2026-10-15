@@ -71,8 +71,9 @@ applies the same rules:
   whitespace inside it.
 - A number that isn't finite (NaN or infinity) is refused.
 
-Scope values come back as text: a `run_id` stored as `7` reads back as `"7"`, and `true` as
-`"true"`.
+Scope values are stored as text: a `run_id` sent as `7` reads back as `"7"`, and `true` as
+`"true"`. A filter matches on that text, so `7` and `"7"` find the same memories and `7.0`
+does not.
 
 Search and list leave out a memory the backend returns outside the requested scope, and log
 a warning (`memcp.policy`).
@@ -83,15 +84,15 @@ a warning (`memcp.policy`).
 |---|---|
 | `add_memory` | Store a fact/preference/decision. On `mem0`, extracts facts by default (may store nothing) and `infer=false` stores verbatim. On `sqlite` and `in_memory` there is no model, so content is always stored verbatim and `infer` has no effect — the tool's own description says which, per deployment. Bulk: use `import_memories` |
 | `search_memory` | Ranked search — semantic on `mem0`, keyword on `sqlite` and `in_memory`. `threshold` filters by minimum score (0-1). For browsing: `list_memories` |
+| `get_memory` | Fetch one memory by ID. Returns full content, scope, and metadata |
 | `delete_memory` | Delete one memory by ID. Confirm with user first |
 | `delete_all_memories` | Bulk-delete by scope (e.g. agent_id, run_id), not content. Requires at least one scope key, each with a concrete value (not empty, `*` or null). Confirm first |
 | `memory_status` | Returns server version, backend type, capabilities, valid scope keys, whether the backend extracts facts, and whether retrieval is semantic or keyword. No memory content |
 
-### Optional — registered only by a backend that implements them
+### Optional — registered only when the backend declares the operation behind them
 
 | Tool | Description |
 |---|---|
-| `get_memory` | Fetch one memory by ID. Returns full content, scope, and metadata |
 | `update_memory` | Full-replace a memory's content (not a patch). Scope immutable — to change scope, add new + delete old |
 | `list_memories` | Browse memories, optionally filtered by scope. Unranked, paginated; `incomplete: true` means memories may exist beyond the backend's list ceiling. For semantic queries: `search_memory` |
 | `export_memories` | Export memories as JSON (max 10k; `truncated: true` when it stops there or the backend's list may be incomplete). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |

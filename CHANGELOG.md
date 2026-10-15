@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - An empty, `*` or `null` value is refused with `validation_error` on every tool. On mem0, search and list used to read such a value as "any".
   - So is a value with whitespace at either end, which mem0 trims, and a `run_id` with whitespace inside it, which mem0 refuses. `agent_id` is normalized instead.
   - A NaN or infinite number is refused with `validation_error`.
-  - On in_memory, scope values come back as text, as on mem0: a `run_id` stored as `7` reads back as `"7"`.
+  - Scope values are stored and returned as text. On in_memory, a `run_id` sent as `7` now reads back as `"7"`. On mem0, a numeric or boolean `run_id`, which mem0 refused, is now stored as text.
   - An import entry whose scope breaks one of these rules is listed in `errors`.
   - A memory a backend returns outside the requested scope is left out of search and list results, with a warning from `memcp.policy`.
 - Two log sources have new logger names: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter` (mem0 backend), and `memcp.auth` is now `memcp.http.auth` (rejected requests). Tool-call records keep `memcp.tools`. Update any log filter or alert that matches the old names.

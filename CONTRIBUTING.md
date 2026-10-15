@@ -53,10 +53,9 @@ as a release deployment.
 
 ## Backend conformance suite
 
-`tests/conformance` holds every backend to the same contract: the required methods,
-tenant isolation on each, every optional capability the backend declares (and a
-`NotImplementedError` for each it doesn't), and a round trip between every pair of
-backends that checks content, scope and retrieval survive. `pytest tests/conformance`
+`tests/conformance` holds every backend to the contract in `memcp/backends/base.py`, and
+runs a round trip between every pair of backends that checks content, scope and retrieval
+survive. `pytest tests/conformance`
 runs it against `in_memory` and `sqlite`, as `make test` does. To include mem0, start a
 local one first ([tests/mem0/README.md](tests/mem0/README.md)).
 

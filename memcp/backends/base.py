@@ -1,4 +1,4 @@
-"""MemoryBackend ABC — @experimental, will change in v0.2 when second backend is added."""
+"""MemoryBackend, the contract every backend implements. @experimental."""
 
 from __future__ import annotations
 
@@ -21,8 +21,7 @@ RETRIEVAL_KINDS: tuple[Retrieval, ...] = get_args(Retrieval)
 class MemoryBackend(ABC):
     """Abstract base class for memory storage backends.
 
-    @experimental — validated against mem0 and in-memory adapters.
-    Will be refined when Cognee adapter is added in v0.2.
+    @experimental — validated against the mem0, sqlite and in_memory backends.
     """
 
     # Whether add(infer=True) actually extracts facts, or stores content verbatim.
@@ -38,7 +37,8 @@ class MemoryBackend(ABC):
     # override an abstract property.
     retrieval: Retrieval
 
-    # The most memories one list call can reach, or None when nothing caps it.
+    # The most memories list_memories can reach across all its pages, or None when
+    # nothing caps it.
     list_ceiling: int | None = None
 
     # --- required (universal tools) ---
@@ -134,7 +134,7 @@ class MemoryBackend(ABC):
         """Raises MemoryAPIError(404) if not found or in another partition.
 
         Note: action strings are backend-specific (e.g. "created"/"updated" vs
-        "add"/"update"). Normalize in v0.2 when the Protocol stabilizes.
+        "add"/"update"); they are not normalized yet.
         """
         raise NotImplementedError
 

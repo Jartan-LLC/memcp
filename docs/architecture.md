@@ -288,8 +288,8 @@ The reserved metadata set and the wildcard and empty-value check are defined onc
 - **Capabilities:** a tool exists only when the backend declares the operation behind it;
   export and import need `list`, and import with `on_conflict=overwrite` also needs
   `update`.
-  `memory_status` reports the backend's capabilities, retrieval kind and whether it
-  extracts facts.
+  `memory_status` reports the tools the backend's capabilities register, including
+  `get_memory`, its retrieval kind and whether it extracts facts.
 
 ## Backend-specific tools (planned)
 
