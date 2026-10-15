@@ -13,6 +13,7 @@ from memcp.policy import Policy
 from memcp.types import (
     MAX_IMPORT,
     SYSTEM_METADATA_KEY,
+    AddResult,
     ListResult,
     Memory,
     MemoryAPIError,
@@ -422,7 +423,7 @@ async def test_a_read_returning_another_space_fails_closed(
     changes: dict[str, Any],
 ):
     method, call = READS[read]
-    _returning(backend, method, [_foreign(**changes)])
+    _returning(backend, method, [_foreign(id="first"), _foreign(**changes)])
     await _isolation_refused(call(policy), caplog)
 
 
@@ -449,7 +450,16 @@ async def test_an_add_whose_memory_lands_in_another_space_fails_closed(
     caplog: pytest.LogCaptureFixture,
     changes: dict[str, Any],
 ):
-    _get_returns(backend, _foreign(**changes))
+    """Two items, the second foreign, so a check of only the first would pass."""
+
+    async def add(*args: Any, **kwargs: Any) -> list[AddResult]:
+        return [AddResult(id="first"), AddResult(id="second")]
+
+    async def get(partition: str, memory_id: str) -> Memory:
+        return _foreign(id=memory_id, **(changes if memory_id == "second" else {}))
+
+    backend.add = add  # type: ignore[method-assign]
+    backend.get = get  # type: ignore[method-assign]
     await _isolation_refused(policy.add("x", infer=False), caplog)
 
 

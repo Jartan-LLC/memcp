@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 def strip_reserved(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Strip caller-supplied keys in memcp's reserved metadata namespace — the
-    author stamp lives there and the caller cannot set it."""
+    """Strip caller-supplied keys in memcp's reserved metadata namespace — mem0 keeps
+    system fields there and the caller cannot set them."""
     cleaned = strip_reserved_metadata(metadata)
     if cleaned is not None and metadata is not None and len(cleaned) != len(metadata):
         logger.warning(

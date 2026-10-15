@@ -118,7 +118,7 @@ class SqliteBackend(MemoryBackend):
         metadata unconditionally, so nothing written through this class from
         here on can carry a forged key — but that guard did not always exist.
         Before it did, `metadata` was unvalidated, so any bearer-token holder
-        could have stored a `_memcp_author` key directly, and the read path
+        could have stored a reserved key directly, and the read path
         cannot otherwise tell that from a real server stamp. A row in an
         existing file predates every version of the write-time guard by
         definition, so stripping it once, unconditionally, is exact — nothing

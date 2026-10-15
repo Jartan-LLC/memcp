@@ -79,8 +79,14 @@ def _split_system(stored: dict[str, Any]) -> tuple[System, dict[str, Any]]:
     """The system fields kept under SYSTEM_METADATA_KEY, and the rest without reserved keys."""
     raw = stored.get(SYSTEM_METADATA_KEY)
     fields = raw if isinstance(raw, dict) else {}
+    # A malformed space is kept, not dropped, so the space check fails on it instead
+    # of passing on the partition alone.
     system = System(
-        **{k: v for k, v in fields.items() if k in System.__annotations__ and isinstance(v, str)}
+        **{
+            k: v
+            for k, v in fields.items()
+            if k in System.__annotations__ and (isinstance(v, str) or k == "space")
+        }
     )
     return system, strip_reserved_metadata(stored) or {}
 

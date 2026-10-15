@@ -258,7 +258,11 @@ async def import_payload(
             continue
         items = result if isinstance(result, list) else [result]
         for r in items:
-            stored = await backend.get(user_id, r.id)
+            try:
+                stored = await backend.get(user_id, r.id)
+            except MemoryAPIError as e:
+                record_backend_failure(i, e)
+                continue
             existing[key] = check_space(stored, user_id, "import", r.id)
             outcome.imported.append({"id": r.id, "index": i, "action": "created"})
 

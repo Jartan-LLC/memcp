@@ -518,3 +518,56 @@ async def test_migrate_refuses_a_source_memory_from_another_partition():
         await migrate(source, target, TENANT, target_user_id=OTHER)
     assert refused.value.code == "internal_error"
     assert (await target.list_memories(OTHER)).memories == []
+
+
+class ReadBackBackend(InMemoryBackend):
+    """Answers `get` for the ids in `failing` with a 503, and `update` with a foreign memory."""
+
+    def __init__(self, *, failing: int | None = None, foreign_update: bool = False) -> None:
+        super().__init__()
+        self.failing = failing
+        self.foreign_update = foreign_update
+        self.gets = 0
+
+    async def get(self, partition, memory_id):
+        self.gets += 1
+        if self.gets == self.failing:
+            raise MemoryAPIError(503, "down")
+        return await super().get(partition, memory_id)
+
+    async def update(self, partition, memory_id, content, *, metadata=None, system=None):
+        updated = await super().update(
+            partition, memory_id, content, metadata=metadata, system=system
+        )
+        if self.foreign_update:
+            updated.partition = "elsewhere"
+        return updated
+
+
+async def test_import_records_a_failed_read_back_and_carries_on():
+    backend = ReadBackBackend(failing=2)
+    entries = [{"content": f"fact {i}"} for i in range(3)]
+    outcome = await import_payload(backend, TENANT, entries, on_conflict="duplicate")
+    assert [e["index"] for e in outcome.errors] == [1]
+    assert [e["index"] for e in outcome.imported] == [0, 2]
+
+
+async def test_import_refuses_a_created_memory_from_another_partition():
+    class ForeignGet(InMemoryBackend):
+        async def get(self, partition, memory_id):
+            memory = await super().get(partition, memory_id)
+            if memory is not None:
+                memory.partition = "elsewhere"
+            return memory
+
+    with pytest.raises(PolicyError) as refused:
+        await import_payload(ForeignGet(), TENANT, [{"content": "x"}], on_conflict="duplicate")
+    assert refused.value.code == "internal_error"
+
+
+async def test_import_refuses_an_overwrite_that_returns_another_partition():
+    backend = ReadBackBackend(foreign_update=True)
+    await backend.add(TENANT, "shared", infer=False)
+    with pytest.raises(PolicyError) as refused:
+        await import_payload(backend, TENANT, [{"content": "shared"}], on_conflict="overwrite")
+    assert refused.value.code == "internal_error"

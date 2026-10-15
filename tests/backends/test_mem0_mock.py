@@ -735,3 +735,7 @@ async def test_update_with_system_replaces_it_and_keeps_metadata(backend):
     await backend.update(USER, "mem-1", "new content", system=changed)
     sent = json.loads(put.calls.last.request.content)["metadata"]
     assert sent == {"old": "x", "_memcp_system": changed}
+
+
+def test_split_system_keeps_a_malformed_space_so_the_space_check_fails():
+    assert _split_system({"_memcp_system": {"space": 7}})[0] == {"space": 7}

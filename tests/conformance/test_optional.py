@@ -43,7 +43,7 @@ async def test_update_replaces_content(backend: MemoryBackend, tenant: str):
 @pytest.mark.conformance("update")
 async def test_update_stores_the_system_it_is_given(backend: MemoryBackend, tenant: str):
     created: System = {"space": tenant, "author": "writer-a", "created_by": "writer-a"}
-    changed: System = {"space": tenant, "author": "writer-b", "created_by": "writer-a"}
+    changed: System = {"space": f"stored-{tenant}", "author": "writer-b", "created_by": "writer-a"}
     _require(backend, "update")
     memory_id = _first_id(
         await backend.add(tenant, "conformance system before", system=created, infer=False)

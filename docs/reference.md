@@ -119,7 +119,7 @@ succeed later.
 | `scope_required` | `delete_all_memories` got an empty scope | `false` |
 | `not_found` | The memory doesn't exist or belongs to another tenant | `false` |
 | `not_supported` | `import_memories` with `on_conflict=overwrite` on a backend without `update_memory` | `false` |
-| `internal_error` | A memory the backend returned is stored under another tenant; none of it is returned, and the server logs `isolation_violation` | `false` |
+| `internal_error` | A memory the backend returned, or one memcp is about to change or has just stored, is under another tenant or can't be read back. Nothing from it is returned, and the server logs `isolation_violation` | `false` |
 | `timeout` | The backend didn't answer in time | `true` |
 | `backend_error` | The backend returned an error | `true` for a 5xx, otherwise `false` |
 

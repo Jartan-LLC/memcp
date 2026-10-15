@@ -331,8 +331,10 @@ async def test_scope_values_come_back_as_text(
 
 
 async def test_memories_carry_their_partition_and_system(backend: MemoryBackend, tenant: str):
-    """Policy's space check reads both, so every read path returns them as stored."""
-    system = _stamp(tenant, "conformance-writer")
+    """Policy's space check reads both, so every read path returns them as stored.
+
+    The stored space differs from the tenant, so one rebuilt from the partition fails."""
+    system = _stamp(f"stored-{tenant}", "conformance-writer")
     memory_id = _first_id(
         await backend.add(tenant, "conformance system stamp", system=system, infer=False)
     )
