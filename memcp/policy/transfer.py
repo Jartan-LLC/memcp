@@ -215,6 +215,7 @@ async def import_payload(
         try:
             if metadata is not None:
                 validate_metadata(metadata, nulls=False)
+            check_metadata_size(metadata or {})
         except ValueError as e:
             outcome.errors.append({"index": i, "error": str(e)})
             continue
@@ -226,26 +227,20 @@ async def import_payload(
             outcome.skipped.append({"index": i, "existing_id": dup.id})
             continue
 
-        # An overwrite leaves the memory with the entry's metadata: it sets the entry's keys
-        # and removes the others, except a reserved key, which no client can remove. An
-        # entry without `metadata` leaves the stored metadata as it is.
-        patch = None
-        if dup and on_conflict == "overwrite" and metadata is not None:
-            patch = MetadataPatch(
-                set=metadata,
-                remove=frozenset(
-                    k
-                    for k in dup.metadata
-                    if k not in metadata and not is_reserved_metadata_key(k)
-                ),
-            )
-        try:
-            check_metadata_size(metadata or {})
-        except ValueError as e:
-            outcome.errors.append({"index": i, "error": str(e)})
-            continue
-
         if dup and on_conflict == "overwrite":
+            # The memory ends with the entry's metadata: its keys set, the others removed,
+            # except a reserved key, which no client can remove. An entry without
+            # `metadata` leaves the stored metadata as it is.
+            patch = None
+            if metadata is not None:
+                patch = MetadataPatch(
+                    set=metadata,
+                    remove=frozenset(
+                        k
+                        for k in dup.metadata
+                        if k not in metadata and not is_reserved_metadata_key(k)
+                    ),
+                )
             system = stamp(i, dup.system) if stamp else None
             try:
                 updated = await backend.update(

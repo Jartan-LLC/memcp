@@ -251,7 +251,7 @@ import them.
   catches a backend that copies the requested partition into its results;
 - paging past the page size, and the incomplete mark past the list ceiling;
 - on update, a key outside the patch survives, a removed key reads back absent from get,
-  list, search and export, removing a missing key does nothing, and a content-only or
+  list and search, removing a missing key does nothing, and a content-only or
   metadata-only update leaves the other unchanged;
 - a `_memcp_` or reserved key refused on add, and on update both to set and to remove;
 - on a backend that extracts facts, a second key's add that updates an existing memory
@@ -270,7 +270,7 @@ import them.
   update, `metadata` is a patch: a key with a value is set, a key set to `null` is removed,
   and keys left out are kept; a client never sees `null`. Policy refuses, with a
   `validation_error` naming the key, a `null` value outside an update's patch, a nested
-  object, a mixed list, a number that isn't finite, a key under the prefix `_memcp_`, and
+  object, a list holding anything but strings, a number that isn't finite, a key under the prefix `_memcp_`, and
   a key in the reserved set
   (`backends/base.py`), the same on every backend.
   `update_memory`'s `content` is optional. An update must give `content`, a non-empty

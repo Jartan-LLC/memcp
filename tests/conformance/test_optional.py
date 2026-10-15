@@ -306,9 +306,11 @@ async def test_history_records_a_metadata_only_update_without_changing_the_text(
         pytest.skip("needs update to produce a second history entry")
     original = "conformance history metadata only"
     memory_id = _first_id(await backend.add(tenant, original, infer=False))
+    before = len(await backend.history(tenant, memory_id))
     await backend.update(tenant, memory_id, patch=MetadataPatch(set={"k": "v"}))
-    latest = (await backend.history(tenant, memory_id))[-1]
-    assert latest.content_after == original, [latest.content_before, latest.content_after]
+    after = await backend.history(tenant, memory_id)
+    assert len(after) > before, "a metadata-only update added no history entry"
+    assert after[-1].content_after == original, [after[-1].content_before, after[-1].content_after]
 
 
 @pytest.mark.conformance("history")

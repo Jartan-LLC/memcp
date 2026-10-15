@@ -536,6 +536,17 @@ def test_a_patch_cannot_set_and_remove_the_same_key():
         MetadataPatch(set={"k": "v"}, remove=frozenset({"k"}))
 
 
+async def test_a_skipped_duplicate_over_the_cap_is_an_error(
+    policy: Policy, backend: InMemoryBackend
+):
+    """An over-cap entry is listed in `errors` like any other bad metadata, even as a duplicate."""
+    await backend.add(TENANT, "dup fact")
+    outcome = await policy.import_memories(
+        [{"content": "dup fact", "metadata": _exactly(16 * 1024 + 1)}], on_conflict="skip"
+    )
+    assert (outcome.skipped, len(outcome.errors)) == ([], 1)
+
+
 def test_the_reference_lists_every_reserved_metadata_key():
     reference = (Path(__file__).parents[2] / "docs" / "reference.md").read_text()
     listed = reference.split("The reserved keys\n  are", 1)[1].split("\n- ", 1)[0]
