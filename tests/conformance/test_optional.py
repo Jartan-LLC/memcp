@@ -375,8 +375,13 @@ async def test_entities_never_name_the_partition(backend: MemoryBackend, tenant:
 @pytest.mark.conformance("entities")
 async def test_entities_isolate_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
     _require(backend, "entities")
-    await backend.add(tenant, "conformance entity isolation own tenant", infer=False)
-    await backend.add(other_tenant, "conformance entity isolation other tenant", infer=False)
+    key = backend.scope_keys()[0]
+    await backend.add(tenant, "conformance entity isolation own", scope={key: "own"}, infer=False)
+    await backend.add(
+        other_tenant, "conformance entity isolation other", scope={key: "other"}, infer=False
+    )
     mine = await backend.entities(tenant)
     identifiers = {e.get("id") for e in mine.entities}
+    assert "own" in identifiers, "entities() left out the tenant's own scope value"
+    assert "other" not in identifiers, "entities() leaked another tenant's scope value"
     assert other_tenant not in identifiers, "entities() leaked another tenant"
