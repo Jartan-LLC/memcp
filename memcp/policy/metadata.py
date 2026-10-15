@@ -37,7 +37,8 @@ def validate_metadata(metadata: Mapping[str, Any], *, nulls: bool) -> None:
             raise ValueError(f"metadata key {key!r} is null; only update_memory takes null")
         if not _is_value(value):
             raise ValueError(
-                f"metadata key {key!r} must be a string, number, boolean or list of strings"
+                f"metadata key {key!r} must be a string, a finite number, a boolean "
+                "or a list of strings"
             )
 
 
@@ -48,14 +49,17 @@ def _size(metadata: Mapping[str, Any]) -> int:
 def check_metadata_size(
     metadata: Mapping[str, Any], *, stored: Mapping[str, Any] | None = None
 ) -> None:
-    """Raise ValueError when `metadata`, stored, would pass the size cap.
+    """Raise ValueError when `metadata`, once stored, would be over the size cap.
 
-    With `stored`, a write that doesn't grow the metadata passes even over the cap, so
+    With `stored`, a write that doesn't grow the metadata is accepted even over the cap, so
     metadata stored before the cap existed can still be shrunk.
     """
     size = _size(metadata)
     if size > MAX_METADATA_BYTES and (stored is None or size > _size(stored)):
-        raise ValueError(f"metadata would be {size} bytes as JSON; the limit is 16 KiB")
+        raise ValueError(
+            f"metadata would be {size} bytes as JSON; "
+            f"the limit is {MAX_METADATA_BYTES // 1024} KiB"
+        )
 
 
 def as_patch(metadata: Mapping[str, Any]) -> MetadataPatch:

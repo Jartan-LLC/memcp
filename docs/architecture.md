@@ -240,8 +240,7 @@ can't delete a metadata key. The mem0 backend drops null-valued keys from everyt
 returns.
 
 The reserved metadata set is defined once, in `backends/base.py`, and the `_memcp_`
-prefix and the wildcard and empty-value check in `types.py`; policy and every backend
-import them.
+prefix and the wildcard and empty-value check in `types.py`; nothing else keeps a copy.
 
 `tests/conformance` checks each guarantee against every backend, including:
 
@@ -270,14 +269,15 @@ import them.
   update, `metadata` is a patch: a key with a value is set, a key set to `null` is removed,
   and keys left out are kept; a client never sees `null`. Policy refuses, with a
   `validation_error` naming the key, a `null` value outside an update's patch, a nested
-  object, a list holding anything but strings, a number that isn't finite, a key under the prefix `_memcp_`, and
-  a key in the reserved set
-  (`backends/base.py`), the same on every backend.
+  object, a list holding anything but strings, a number that isn't finite, a key under the
+  prefix `_memcp_`, and a key in the reserved set (`backends/base.py`), the same on every
+  backend.
   `update_memory`'s `content` is optional. An update must give `content`, a non-empty
   `metadata`, or both; otherwise it gets `validation_error`. `_memcp_` keys are removed
   from output.
 - **Limits:** page sizes, result counts and import sizes outside their ranges are refused,
-  and so is metadata past 16 KiB as JSON or with a key past 64 characters.
+  and so is metadata past 16 KiB as JSON or with a key past 64 characters, except that an
+  update that doesn't grow the metadata, or only removes keys, is accepted.
 - **Errors:** policy raises `PolicyError(code, message)` for a request it refuses, and turns a
   backend 404 or 410 into `not_found` on a by-id call (`get`, `update`, `delete`,
   `history`). A tool handler catches nothing: `translate_errors` returns `PolicyError` and

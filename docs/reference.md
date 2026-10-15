@@ -72,9 +72,7 @@ a warning (`memcp.policy`).
 ### Metadata
 
 `add_memory`, `update_memory` and `import_memories` take `metadata`: a flat map of keys to
-strings, numbers, booleans or lists of strings. The same rules apply on every backend. A
-write that breaks one gets `validation_error`, which names the key for every rule but the
-size cap, and nothing is stored; `import_memories` lists the entry in its `errors` instead:
+strings, numbers, booleans or lists of strings. The same rules apply on every backend:
 
 - A reserved key is refused, and so is any key starting with `_memcp_`. The reserved keys
   are `actor_id`, `agent_id`, `attributed_to`, `created_at`, `data`, `expiration_date`,
@@ -84,7 +82,12 @@ size cap, and nothing is stored; `import_memories` lists the entry in its `error
   refused.
 - A key is at most 64 characters, and a memory's metadata is at most 16 KiB as JSON. An
   update that removes keys, or otherwise doesn't grow the metadata, is accepted even when
-  it is still over the cap, so metadata stored before these rules can be cleaned up.
+  it is still over the cap, and it can remove a key over 64 characters, so metadata
+  stored before these rules can be cleaned up.
+
+A write that breaks a rule gets `validation_error`, and nothing is stored. The message
+names the key for every rule but the size cap. `import_memories` lists the entry in its
+`errors` instead.
 
 On `update_memory`, `metadata` is a patch: a key with a value is set, a key sent as `null`
 is removed, and a key left out is kept. Removing a key that isn't there does nothing, and a

@@ -24,8 +24,9 @@ RETRIEVAL_KINDS: tuple[Retrieval, ...] = get_args(Retrieval)
 
 MetadataValue = str | int | float | bool | list[str]
 
-# Keys a store gives its own meaning to (mem0 acts on `expiration_date`, for one), so a
-# client can't set or remove them on any backend; so is any key under the prefix.
+# Keys a store gives its own meaning to (mem0 acts on `expiration_date`, for one). A
+# client can't set or remove them, or any key under RESERVED_METADATA_PREFIX, on any
+# backend.
 RESERVED_METADATA_KEYS = frozenset(
     {
         "actor_id",

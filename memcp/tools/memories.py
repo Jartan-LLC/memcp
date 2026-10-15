@@ -89,11 +89,11 @@ def register(mcp: Any, policy: Policy) -> None:
         @mcp.tool(
             annotations={"idempotentHint": True, "destructiveHint": True},
             description=(
-                "Update a memory by memory_id. `content` (optional) replaces its text. "
-                "`metadata` (optional) is a patch: keys you list are set, a key set to "
-                "null is removed, keys you leave out are kept. Values: string, number, "
-                "boolean, or a list of strings. Returns the updated memory. Scope is "
-                "immutable; to change it, add a new memory and delete the old one."
+                "Update a memory by memory_id. Give `content`, `metadata` or both. "
+                "`content` replaces its text. `metadata` is a patch: keys you list are "
+                "set, a key set to null is removed, keys you leave out are kept. Returns "
+                "the updated memory. Scope is immutable; to change it, add a new memory "
+                "and delete the old one."
             ),
         )
         async def update_memory(

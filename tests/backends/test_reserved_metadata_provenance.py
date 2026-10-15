@@ -38,7 +38,7 @@ from memcp.types import SYSTEM_METADATA_KEY, MemoryAPIError, serialize_memory
 # metadata passed straight through, with no `system` argument.
 # ---------------------------------------------------------------------------
 
-FORGED = {SYSTEM_METADATA_KEY: {"author": "forged"}, "note": "kept"}
+FORGED = {SYSTEM_METADATA_KEY: {"author": "forged"}, "note": "refused with it"}
 
 
 def _backends(tmp_path: Path) -> list[InMemoryBackend | SqliteBackend]:

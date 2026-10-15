@@ -687,7 +687,7 @@ def test_split_system_without_the_key_is_empty():
     assert _split_system({"source": "test"}) == ({}, {"source": "test"})
 
 
-def test_split_system_strips_every_reserved_key():
+def test_split_system_drops_every_memcp_key():
     stored = {"_memcp_system": SYSTEM, "_memcp_author": "old", "k": "v"}
     assert _split_system(stored) == (SYSTEM, {"k": "v"})
 
