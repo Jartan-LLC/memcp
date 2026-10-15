@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import os
 import uuid
+import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -41,11 +42,26 @@ def _open(name: str, directory: Path) -> MemoryBackend:
 
 
 async def _wipe(backend: MemoryBackend, *tenants: str) -> None:
-    """Empty each tenant. The backend method takes an empty scope; the MCP tool does not."""
+    """Empty each tenant: list all its memories, then delete each by id."""
+    if "list" not in backend.capabilities():
+        warnings.warn(
+            f"{type(backend).__name__} can't list, so teardown left its memories", stacklevel=2
+        )
+        return
     for tenant_id in tenants:
         # Teardown must never mask the failure that is already being reported.
         with contextlib.suppress(Exception):
-            await backend.delete_all(tenant_id, {})
+            # Every id first: the cursor is an offset, so deleting mid-walk skips memories.
+            ids: list[str] = []
+            cursor = None
+            while True:
+                page = await backend.list_memories(tenant_id, limit=100, cursor=cursor)
+                ids.extend(m.id for m in page.memories)
+                cursor = page.next_cursor
+                if cursor is None:
+                    break
+            for memory_id in ids:
+                await backend.delete(tenant_id, memory_id)
 
 
 @pytest.fixture

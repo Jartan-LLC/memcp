@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from memcp.backends.capabilities import ALL_CAPABILITIES
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
 from memcp.policy import Policy
@@ -54,20 +55,20 @@ class GraphBackend(InMemoryBackend):
     """
 
     def capabilities(self) -> set[str]:
-        return super().capabilities() | {"memory_entities"}
+        return super().capabilities() | {"entities"}
 
     async def entities(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        count = sum(1 for e in self._store.values() if e["user_id"] == user_id)
+        count = sum(1 for e in self._store.values() if e["user_id"] == partition)
         if count == 0:
             return EntitiesResult(entities=[], relationships=[])
         return EntitiesResult(
-            entities=[{"id": user_id, "type": "user", "total_memories": count}],
+            entities=[{"id": partition, "type": "user", "total_memories": count}],
             relationships=[],
         )
 
@@ -126,7 +127,7 @@ async def test_entities_tool_is_absent_without_the_capability(mcp_with_tools):
     """
     mcp, backend = mcp_with_tools
     assert "memory_entities" not in mcp.tool_names
-    assert "memory_entities" not in backend.capabilities()
+    assert "entities" not in backend.capabilities()
 
 
 async def test_entities_tool_is_present_with_the_capability(mcp_with_graph):
@@ -140,6 +141,14 @@ async def test_memory_status_reports_extraction_and_retrieval(mcp_with_tools):
     status = await mcp.call("memory_status")
     assert status["extracts_facts"] is False
     assert status["retrieval"] == "keyword"
+
+
+async def test_memory_status_names_a_registered_tool_for_every_capability(mcp_with_graph):
+    mcp, backend = mcp_with_graph
+    assert backend.capabilities() == set(ALL_CAPABILITIES)
+    status = await mcp.call("memory_status")
+    assert len(status["capabilities"]) == len(ALL_CAPABILITIES) + 1
+    assert set(status["capabilities"]) <= mcp.tool_names
 
 
 # ---------------------------------------------------------------------------
@@ -294,8 +303,19 @@ async def test_memory_status(mcp_with_tools):
     result = await mcp.call("memory_status")
     assert result["backend"] == "in_memory"
     assert result["version"]
-    assert isinstance(result["capabilities"], list)
+    assert result["capabilities"] == [
+        "get_memory",
+        "list_memories",
+        "memory_history",
+        "update_memory",
+    ]
     assert isinstance(result["scope_keys"], list)
+
+
+async def test_memory_status_names_the_entities_tool(mcp_with_graph):
+    mcp, _ = mcp_with_graph
+    result = await mcp.call("memory_status")
+    assert "memory_entities" in result["capabilities"]
 
 
 # ---------------------------------------------------------------------------
@@ -1278,12 +1298,12 @@ async def test_import_memories_overwrite_update_error(mcp_with_tools):
 
 
 async def test_import_memories_overwrite_requires_capability(config):
-    """overwrite rejected when backend lacks update_memory capability."""
+    """overwrite rejected when backend lacks the update capability."""
     from memcp.backends.in_memory import InMemoryBackend
 
     class NoUpdateBackend(InMemoryBackend):
         def capabilities(self):
-            return super().capabilities() - {"update_memory"}
+            return super().capabilities() - {"update"}
 
     backend = NoUpdateBackend()
     mcp = FakeMCP()

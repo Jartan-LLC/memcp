@@ -1,4 +1,4 @@
-"""Required-method conformance: the abstract methods every backend implements.
+"""Required conformance: the methods and declarations every backend implements.
 
 Every backend runs every test here. None of it is capability-gated, so nothing in
 this module may skip.
@@ -20,6 +20,12 @@ MISSING_ID = "00000000-0000-4000-8000-000000000000"
 def _ids(result: AddResult | list[AddResult]) -> list[str]:
     items = result if isinstance(result, list) else [result]
     return [r.id for r in items]
+
+
+def _first_id(result: AddResult | list[AddResult]) -> str:
+    ids = _ids(result)
+    assert ids, "add() stored nothing"
+    return ids[0]
 
 
 async def test_capabilities_are_known_names(backend: MemoryBackend):
@@ -208,3 +214,108 @@ async def test_undeclared_capabilities_raise_not_implemented(backend: MemoryBack
             "NotImplementedError — narrowing by omission alone leaves working code no "
             "caller can reach and this suite cannot check."
         )
+
+
+# ---------------------------------------------------------------------------
+# get
+# ---------------------------------------------------------------------------
+
+
+async def test_get_returns_the_memory(backend: MemoryBackend, tenant: str):
+    content = "conformance get returns full content"
+    memory_id = _first_id(await backend.add(tenant, content, infer=False))
+    memory = await backend.get(tenant, memory_id)
+    assert memory is not None
+    assert memory.id == memory_id
+    assert memory.content == content
+
+
+async def test_get_missing_returns_none(backend: MemoryBackend, tenant: str):
+    assert await backend.get(tenant, MISSING_ID) is None
+
+
+async def test_get_isolates_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
+    memory_id = _first_id(await backend.add(tenant, "conformance get isolation", infer=False))
+    assert await backend.get(other_tenant, memory_id) is None, (
+        "get() returned another tenant's memory"
+    )
+
+
+async def test_get_preserves_scope_and_metadata(backend: MemoryBackend, tenant: str):
+    scope_key = backend.scope_keys()[0]
+    scope = {scope_key: "conformance_get_scope"}
+    metadata = {"source": "conformance", "revision": "3"}
+    memory_id = _first_id(
+        await backend.add(
+            tenant,
+            "conformance scope and metadata survive a write",
+            scope=scope,
+            metadata=metadata,
+            infer=False,
+        )
+    )
+    memory = await backend.get(tenant, memory_id)
+    assert memory is not None
+    assert memory.scope.get(scope_key) == scope[scope_key], (
+        f"scope key {scope_key!r} did not survive add() -> get(): {memory.scope}"
+    )
+    assert memory.metadata == metadata, (
+        f"metadata did not survive add() -> get(): {memory.metadata}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# declarations, scores and scope values
+# ---------------------------------------------------------------------------
+
+
+async def test_backend_declares_retrieval_and_list_ceiling(backend: MemoryBackend):
+    assert backend.retrieval in ("keyword", "semantic")
+    assert backend.list_ceiling is None or backend.list_ceiling > 0
+
+
+async def test_search_scores_are_in_range_and_sorted(backend: MemoryBackend, tenant: str):
+    # Graded overlap with the query, so the scores differ and the order is tested.
+    for content in (
+        "conformance harbour lighthouse keeper",
+        "conformance harbour lighthouse at dusk",
+        "conformance harbour gulls",
+    ):
+        await backend.add(tenant, content, infer=False)
+    hits = await backend.search(tenant, "harbour lighthouse keeper", limit=10)
+    assert hits, "search found none of the memories just added"
+    scores = [m.score for m in hits if m.score is not None]
+    assert len(scores) == len(hits), "every search result needs a score"
+    assert all(0.0 <= s <= 1.0 for s in scores), scores
+    assert len(set(scores)) >= 2, f"graded matches scored alike: {scores}"
+    assert scores == sorted(scores, reverse=True), scores
+
+
+@pytest.mark.parametrize(("value", "text"), [(7, "7"), (True, "true"), (1.5, "1.5")])
+async def test_scope_values_come_back_as_text(
+    backend: MemoryBackend, tenant: str, value: object, text: str
+):
+    scope_key = backend.scope_keys()[-1]
+
+    async def add() -> str:
+        result = await backend.add(
+            tenant, "conformance scope as text", scope={scope_key: value}, infer=False
+        )
+        return _first_id(result)
+
+    memory_id = await add()
+    memory = await backend.get(tenant, memory_id)
+    assert memory is not None
+    assert memory.scope.get(scope_key) == text
+    for requested in (value, text):
+        scope = {scope_key: requested}
+        hits = await backend.search(tenant, "scope as text", scope=scope, limit=10)
+        assert memory_id in [m.id for m in hits], f"search by {requested!r} missed the memory"
+        if "list" in backend.capabilities():
+            listed = await backend.list_memories(tenant, scope=scope)
+            assert memory_id in [m.id for m in listed.memories], f"list by {requested!r} missed it"
+
+    for requested in (value, text):
+        await backend.delete_all(tenant, {scope_key: requested})
+        assert await backend.get(tenant, memory_id) is None, f"delete_all by {requested!r} kept it"
+        memory_id = await add()

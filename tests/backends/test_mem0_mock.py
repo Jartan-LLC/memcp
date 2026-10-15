@@ -367,6 +367,23 @@ async def test_delete_all_refuses_a_wildcard_or_list_value(backend, value):
 
 
 @respx.mock
+@pytest.mark.parametrize(("value", "text"), [(7, "7"), (True, "true"), (1.5, "1.5")])
+async def test_search_and_add_send_scope_values_as_text(backend, value, text):
+    searched = respx.post(f"{BASE}/search").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    added = respx.post(f"{BASE}/memories").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+
+    await backend.search(USER, "q", scope={"run_id": value})
+    await backend.add(USER, "fact", scope={"run_id": value}, infer=False)
+
+    assert json.loads(searched.calls.last.request.content)["filters"]["run_id"] == text
+    assert json.loads(added.calls.last.request.content)["run_id"] == text
+
+
+@respx.mock
 @pytest.mark.parametrize("value", ["*", "", None])
 async def test_search_refuses_a_wildcard_value(backend, value):
     route = respx.post(f"{BASE}/search").mock(return_value=httpx.Response(200, json=[]))
@@ -652,3 +669,7 @@ async def test_history_wrong_user_raises(backend):
         await backend.history(OTHER, "mem-1")
     assert not_found.value.body == "Not found"
     assert history_route.call_count == 0, "History endpoint should not be called for wrong user"
+
+
+async def test_declares_semantic_retrieval_and_its_list_ceiling(backend):
+    assert (backend.retrieval, backend.list_ceiling) == ("semantic", LIST_CEILING)

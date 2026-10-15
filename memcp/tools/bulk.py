@@ -24,7 +24,7 @@ def register(mcp: Any, policy: Policy) -> None:
     async def delete_all_memories(scope: dict[str, Any]) -> Any:
         return {"deleted_count": await policy.delete_all(scope)}
 
-    if "list_memories" in caps:
+    if "list" in caps:
 
         @mcp.tool(
             annotations=READ_ONLY,

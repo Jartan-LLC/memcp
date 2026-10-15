@@ -13,6 +13,8 @@ from contextlib import contextmanager
 from typing import Any
 
 from memcp.backends import MemoryBackend
+from memcp.backends.base import RETRIEVAL_KINDS, Retrieval
+from memcp.backends.capabilities import ALL_CAPABILITIES
 from memcp.identity import get_principal, get_tenant
 from memcp.policy.metadata import author_for, strip_reserved
 from memcp.policy.scope import validate_scope
@@ -35,6 +37,7 @@ from memcp.types import (
     Memory,
     MemoryAPIError,
     PolicyError,
+    scope_text,
     validate_content,
     validate_limit,
     validate_memory_id,
@@ -64,16 +67,9 @@ def _not_found() -> Iterator[None]:
         raise
 
 
-def _wire(value: Any) -> str:
-    """A scope value as mem0 holds it: mem0 stores and returns scope values as text."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value)
-
-
 def _matches(stored: Any, requested: Any) -> bool:
-    """Whether a returned value is the requested one, as Python or as text (mem0)."""
-    return stored == requested or _wire(stored) == _wire(requested)
+    """Whether a returned value is the requested one, compared as stored text."""
+    return scope_text(stored) == scope_text(requested)
 
 
 def _in_scope(memories: list[Memory], scope: dict[str, Any] | None) -> list[Memory]:
@@ -93,14 +89,31 @@ class Policy:
     """The one object that stands between the tools and a backend."""
 
     def __init__(self, backend: MemoryBackend):
-        self._backend = backend
+        """Raises TypeError for a backend whose retrieval kind or capabilities are unknown."""
+        name = type(backend).__name__
+        retrieval = getattr(backend, "retrieval", None)
+        if retrieval not in RETRIEVAL_KINDS:
+            raise TypeError(
+                f"{name}.retrieval must be one of {RETRIEVAL_KINDS}, not {retrieval!r}"
+            )
         self._capabilities = backend.capabilities()
+        unknown = self._capabilities - set(ALL_CAPABILITIES)
+        if unknown:
+            raise TypeError(
+                f"{name} declares unknown capabilities {sorted(unknown)}; "
+                f"the known ones are {ALL_CAPABILITIES}"
+            )
+        self._backend = backend
         self._scope_key_list = backend.scope_keys()
         self._scope_keys = set(self._scope_key_list)
 
     @property
     def extracts_facts(self) -> bool:
         return self._backend.extracts_facts
+
+    @property
+    def retrieval(self) -> Retrieval:
+        return self._backend.retrieval
 
     def capabilities(self) -> set[str]:
         """The optional operations the backend declares."""
@@ -258,9 +271,9 @@ class Policy:
             raise PolicyError(
                 "validation_error", "on_conflict must be 'skip', 'overwrite', or 'duplicate'"
             )
-        if on_conflict == "overwrite" and "update_memory" not in self._capabilities:
+        if on_conflict == "overwrite" and "update" not in self._capabilities:
             raise PolicyError(
-                "not_supported", "on_conflict='overwrite' requires update_memory capability"
+                "not_supported", "on_conflict='overwrite' requires the backend's update capability"
             )
 
         principal = get_principal()

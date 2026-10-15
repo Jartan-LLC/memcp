@@ -8,6 +8,14 @@ from memcp.config import Config
 from memcp.policy import Policy
 from memcp.tools._shared import READ_ONLY
 
+# memory_status reports tools, not backend operations: a client picks tools from the list.
+_TOOL_FOR = {
+    "update": "update_memory",
+    "list": "list_memories",
+    "history": "memory_history",
+    "entities": "memory_entities",
+}
+
 
 def register(mcp: Any, policy: Policy, config: Config) -> None:
     """Register the status, history and entities tools."""
@@ -24,16 +32,16 @@ def register(mcp: Any, policy: Policy, config: Config) -> None:
         return {
             "backend": config.backend_name,
             "version": config.version,
-            "capabilities": sorted(policy.capabilities()),
+            "capabilities": sorted({"get_memory", *(_TOOL_FOR[c] for c in caps)}),
             "scope_keys": policy.scope_keys(),
             # False means add_memory stores content verbatim and ignores `infer`.
             # The argument shape is the same either way, so this is the only way a
             # caller can find out.
             "extracts_facts": policy.extracts_facts,
-            "retrieval": "semantic" if policy.extracts_facts else "keyword",
+            "retrieval": policy.retrieval,
         }
 
-    if "memory_history" in caps:
+    if "history" in caps:
 
         @mcp.tool(
             annotations=READ_ONLY,
@@ -57,7 +65,7 @@ def register(mcp: Any, policy: Policy, config: Config) -> None:
                 ]
             }
 
-    if "memory_entities" in caps:
+    if "entities" in caps:
 
         @mcp.tool(
             annotations=READ_ONLY,

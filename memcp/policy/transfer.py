@@ -19,6 +19,7 @@ from memcp.types import (
     Memory,
     MemoryAPIError,
     log_backend_error,
+    scope_text,
     serialize_memory,
     strip_reserved_metadata,
     validate_content,
@@ -33,15 +34,14 @@ DedupKey = tuple[str, ScopeKey]
 
 
 def scope_key(scope: Mapping[str, Any] | None) -> ScopeKey:
-    """Order-independent, stringified scope identity. None-valued keys are absent.
+    """Order-independent scope identity, values as stored text. None-valued keys are absent.
 
-    Backends report scope differently — the mem0 adapter only reconstructs keys it
-    finds set, the in-memory one echoes whatever was stored — so both sides of a
-    dedup comparison have to be normalised the same way.
+    Backends return scope values as text, and an import entry carries them as JSON
+    values, so both sides of a dedup comparison go through `scope_text`.
     """
     if not scope:
         return ()
-    return tuple(sorted((str(k), str(v)) for k, v in scope.items() if v is not None))
+    return tuple(sorted((str(k), scope_text(v)) for k, v in scope.items() if v is not None))
 
 
 def dedup_key(content: str, scope: Mapping[str, Any] | None) -> DedupKey:
@@ -109,7 +109,7 @@ async def export_payload(
     """Read every memory for a tenant, capped at `limit`.
 
     `truncated` is True when the read missed memories (see `_list_all`). Requires the
-    `list_memories` capability; raises MemoryAPIError on backend failure for the caller
+    `list` capability; raises MemoryAPIError on backend failure for the caller
     to map.
     """
     memories, truncated = await _list_all(backend, user_id, limit)
@@ -161,8 +161,8 @@ async def import_payload(
     """
     if on_conflict not in ON_CONFLICT_CHOICES:
         raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
-    if on_conflict == "overwrite" and "update_memory" not in backend.capabilities():
-        raise ValueError("on_conflict='overwrite' requires the update_memory capability")
+    if on_conflict == "overwrite" and "update" not in backend.capabilities():
+        raise ValueError("on_conflict='overwrite' requires the backend's update capability")
 
     existing: dict[DedupKey, str] = {}
     outcome = ImportOutcome()
@@ -270,7 +270,7 @@ async def migrate(
     """Copy one tenant's memories from `source` into `target` (GitHub #27).
 
     `target_user_id` defaults to `user_id` — pass it to land the memories under a
-    different tenant on the target. Both backends need the `list_memories`
+    different tenant on the target. Both backends need the `list`
     capability. What does not survive the trip is listed in `docs/reference.md`
     ("Moving memories between backends"). `author`, when given, is stamped onto
     the target's copies as the principal running the migration — see

@@ -63,16 +63,14 @@ def register(mcp: Any, policy: Policy) -> None:
     async def delete_memory(memory_id: str) -> Any:
         return {"deleted": await policy.delete(memory_id)}
 
-    if "get_memory" in caps:
+    @mcp.tool(
+        annotations=READ_ONLY,
+        description="Fetch a single memory by ID. Returns full content, scope, and metadata.",
+    )
+    async def get_memory(memory_id: str) -> Any:
+        return serialize_memory(await policy.get(memory_id))
 
-        @mcp.tool(
-            annotations=READ_ONLY,
-            description="Fetch a single memory by ID. Returns full content, scope, and metadata.",
-        )
-        async def get_memory(memory_id: str) -> Any:
-            return serialize_memory(await policy.get(memory_id))
-
-    if "update_memory" in caps:
+    if "update" in caps:
 
         @mcp.tool(
             annotations={"idempotentHint": True, "destructiveHint": True},

@@ -152,7 +152,7 @@ class _EveryCapability(InMemoryBackend):
         return set(ALL_CAPABILITIES)
 
     async def entities(
-        self, user_id: str, *, scope: dict[str, Any] | None = None, limit: int = 100
+        self, partition: str, *, scope: dict[str, Any] | None = None, limit: int = 100
     ) -> EntitiesResult:
         return EntitiesResult()
 

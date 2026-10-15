@@ -1,9 +1,9 @@
-"""MemoryBackend ABC — @experimental, will change in v0.2 when second backend is added."""
+"""MemoryBackend, the contract every backend implements. @experimental."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Literal, get_args
 
 from memcp.types import (
     AddResult,
@@ -14,12 +14,14 @@ from memcp.types import (
     Memory,
 )
 
+Retrieval = Literal["keyword", "semantic"]
+RETRIEVAL_KINDS: tuple[Retrieval, ...] = get_args(Retrieval)
+
 
 class MemoryBackend(ABC):
     """Abstract base class for memory storage backends.
 
-    @experimental — validated against mem0 and in-memory adapters.
-    Will be refined when Cognee adapter is added in v0.2.
+    @experimental — validated against the mem0, sqlite and in_memory backends.
     """
 
     # Whether add(infer=True) actually extracts facts, or stores content verbatim.
@@ -30,12 +32,21 @@ class MemoryBackend(ABC):
     # every optional *method* with a capability, and this gates no tool.
     extracts_facts: bool = False
 
+    # Whether search ranks by meaning ("semantic") or by matching words ("keyword").
+    # Required, and checked when Policy is built: pyright won't let a class attribute
+    # override an abstract property.
+    retrieval: Retrieval
+
+    # The most memories list_memories can reach across all its pages, or None when
+    # nothing caps it.
+    list_ceiling: int | None = None
+
     # --- required (universal tools) ---
 
     @abstractmethod
     async def add(
         self,
-        user_id: str,
+        partition: str,
         content: str,
         *,
         scope: dict[str, Any] | None = None,
@@ -53,7 +64,7 @@ class MemoryBackend(ABC):
     @abstractmethod
     async def search(
         self,
-        user_id: str,
+        partition: str,
         query: str,
         *,
         scope: dict[str, Any] | None = None,
@@ -62,12 +73,12 @@ class MemoryBackend(ABC):
     ) -> list[Memory]: ...
 
     @abstractmethod
-    async def delete(self, user_id: str, memory_id: str) -> bool:
-        """Raises MemoryAPIError(404) if not found or not owned by user_id."""
+    async def delete(self, partition: str, memory_id: str) -> bool:
+        """Raises MemoryAPIError(404) if not found or in another partition."""
         ...
 
     @abstractmethod
-    async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
+    async def delete_all(self, partition: str, scope: dict[str, Any]) -> int | None:
         """Returns count of deleted memories, or None if backend doesn't report counts."""
         ...
 
@@ -80,22 +91,23 @@ class MemoryBackend(ABC):
     @abstractmethod
     def scope_keys(self) -> list[str]: ...
 
-    # --- optional (declared in capabilities()) ---
+    @abstractmethod
+    async def get(self, partition: str, memory_id: str) -> Memory | None:
+        """Returns None if not found or in another partition."""
+        ...
 
-    async def get(self, user_id: str, memory_id: str) -> Memory | None:
-        """Returns None if not found or not owned by user_id."""
-        raise NotImplementedError
+    # --- optional (declared in capabilities()) ---
 
     async def update(
         self,
-        user_id: str,
+        partition: str,
         memory_id: str,
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
         author: str | None = None,
     ) -> Memory:
-        """Raises MemoryAPIError(404) if not found or not owned by user_id.
+        """Raises MemoryAPIError(404) if not found or in another partition.
 
         `author`, when given, always re-stamps — it is never inherited from the
         memory's prior author, even when `metadata` is omitted. Inheriting it
@@ -105,7 +117,7 @@ class MemoryBackend(ABC):
 
     async def list_memories(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,
@@ -118,17 +130,17 @@ class MemoryBackend(ABC):
         """
         raise NotImplementedError
 
-    async def history(self, user_id: str, memory_id: str) -> list[HistoryEntry]:
-        """Raises MemoryAPIError(404) if not found or not owned by user_id.
+    async def history(self, partition: str, memory_id: str) -> list[HistoryEntry]:
+        """Raises MemoryAPIError(404) if not found or in another partition.
 
         Note: action strings are backend-specific (e.g. "created"/"updated" vs
-        "add"/"update"). Normalize in v0.2 when the Protocol stabilizes.
+        "add"/"update"); they are not normalized yet.
         """
         raise NotImplementedError
 
     async def entities(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,

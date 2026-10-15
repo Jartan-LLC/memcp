@@ -27,86 +27,30 @@ def _require(backend: MemoryBackend, capability: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_memory
+# update
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.conformance("get_memory")
-async def test_get_returns_the_memory(backend: MemoryBackend, tenant: str):
-    _require(backend, "get_memory")
-    content = "conformance get returns full content"
-    memory_id = _first_id(await backend.add(tenant, content, infer=False))
-    memory = await backend.get(tenant, memory_id)
-    assert memory is not None
-    assert memory.id == memory_id
-    assert memory.content == content
-
-
-@pytest.mark.conformance("get_memory")
-async def test_get_missing_returns_none(backend: MemoryBackend, tenant: str):
-    _require(backend, "get_memory")
-    assert await backend.get(tenant, MISSING_ID) is None
-
-
-@pytest.mark.conformance("get_memory")
-async def test_get_isolates_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
-    _require(backend, "get_memory")
-    memory_id = _first_id(await backend.add(tenant, "conformance get isolation", infer=False))
-    assert await backend.get(other_tenant, memory_id) is None, (
-        "get() returned another tenant's memory"
-    )
-
-
-@pytest.mark.conformance("get_memory")
-async def test_get_preserves_scope_and_metadata(backend: MemoryBackend, tenant: str):
-    _require(backend, "get_memory")
-    scope_key = backend.scope_keys()[0]
-    scope = {scope_key: "conformance_get_scope"}
-    metadata = {"source": "conformance", "revision": "3"}
-    memory_id = _first_id(
-        await backend.add(
-            tenant,
-            "conformance scope and metadata survive a write",
-            scope=scope,
-            metadata=metadata,
-            infer=False,
-        )
-    )
-    memory = await backend.get(tenant, memory_id)
-    assert memory is not None
-    assert memory.scope.get(scope_key) == scope[scope_key], (
-        f"scope key {scope_key!r} did not survive add() -> get(): {memory.scope}"
-    )
-    assert memory.metadata == metadata, (
-        f"metadata did not survive add() -> get(): {memory.metadata}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# update_memory
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.conformance("update_memory")
+@pytest.mark.conformance("update")
 async def test_update_replaces_content(backend: MemoryBackend, tenant: str):
-    _require(backend, "update_memory")
+    _require(backend, "update")
     memory_id = _first_id(await backend.add(tenant, "conformance before update", infer=False))
     updated = await backend.update(tenant, memory_id, "conformance after update")
     assert updated.content == "conformance after update"
     assert updated.id == memory_id
 
 
-@pytest.mark.conformance("update_memory")
+@pytest.mark.conformance("update")
 async def test_update_missing_raises_404(backend: MemoryBackend, tenant: str):
-    _require(backend, "update_memory")
+    _require(backend, "update")
     with pytest.raises(MemoryAPIError) as exc:
         await backend.update(tenant, MISSING_ID, "conformance no such memory")
     assert exc.value.status == 404
 
 
-@pytest.mark.conformance("update_memory")
+@pytest.mark.conformance("update")
 async def test_update_isolates_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
-    _require(backend, "update_memory")
+    _require(backend, "update")
     memory_id = _first_id(await backend.add(tenant, "conformance update isolation", infer=False))
     with pytest.raises(MemoryAPIError) as exc:
         await backend.update(other_tenant, memory_id, "conformance hijacked")
@@ -114,13 +58,13 @@ async def test_update_isolates_tenants(backend: MemoryBackend, tenant: str, othe
 
 
 # ---------------------------------------------------------------------------
-# list_memories
+# list
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.conformance("list_memories")
+@pytest.mark.conformance("list")
 async def test_list_returns_added_memories(backend: MemoryBackend, tenant: str):
-    _require(backend, "list_memories")
+    _require(backend, "list")
     contents = {f"conformance list entry {i}" for i in range(3)}
     for content in sorted(contents):
         await backend.add(tenant, content, infer=False)
@@ -129,9 +73,9 @@ async def test_list_returns_added_memories(backend: MemoryBackend, tenant: str):
     assert contents <= {m.content for m in result.memories}
 
 
-@pytest.mark.conformance("list_memories")
+@pytest.mark.conformance("list")
 async def test_list_filters_by_scope(backend: MemoryBackend, tenant: str):
-    _require(backend, "list_memories")
+    _require(backend, "list")
     scope_key = backend.scope_keys()[0]
     wanted = {scope_key: "conformance_list_wanted"}
     other = {scope_key: "conformance_list_other"}
@@ -144,9 +88,9 @@ async def test_list_filters_by_scope(backend: MemoryBackend, tenant: str):
     assert "conformance in the other scope" not in contents
 
 
-@pytest.mark.conformance("list_memories")
+@pytest.mark.conformance("list")
 async def test_list_paginates(backend: MemoryBackend, tenant: str):
-    _require(backend, "list_memories")
+    _require(backend, "list")
     for i in range(5):
         await backend.add(tenant, f"conformance pagination entry {i}", infer=False)
     first = await backend.list_memories(tenant, limit=2)
@@ -159,19 +103,19 @@ async def test_list_paginates(backend: MemoryBackend, tenant: str):
     )
 
 
-@pytest.mark.conformance("list_memories")
+@pytest.mark.conformance("list")
 async def test_list_returns_the_stored_scope(backend: MemoryBackend, tenant: str):
     """Policy drops a result whose scope doesn't match the request, so the scope must come back."""
-    _require(backend, "list_memories")
+    _require(backend, "list")
     scope = {key: f"listed_{key}" for key in backend.scope_keys()}
     await backend.add(tenant, "list scope round trip", scope=scope, infer=False)
     result = await backend.list_memories(tenant, scope=scope)
     assert [{k: str(m.scope.get(k)) for k in scope} for m in result.memories] == [scope]
 
 
-@pytest.mark.conformance("list_memories")
+@pytest.mark.conformance("list")
 async def test_list_cursors_reach_every_memory_once(backend: MemoryBackend, tenant: str):
-    _require(backend, "list_memories")
+    _require(backend, "list")
     added = set()
     for i in range(5):
         result = await backend.add(tenant, f"conformance cursor entry {i}", infer=False)
@@ -188,22 +132,22 @@ async def test_list_cursors_reach_every_memory_once(backend: MemoryBackend, tena
     assert sorted(seen) == sorted(added), "following next_cursor must return each memory once"
 
 
-@pytest.mark.conformance("list_memories")
+@pytest.mark.conformance("list")
 async def test_list_isolates_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
-    _require(backend, "list_memories")
+    _require(backend, "list")
     await backend.add(tenant, "conformance list isolation marker", infer=False)
     result = await backend.list_memories(other_tenant, limit=100)
     assert "conformance list isolation marker" not in {m.content for m in result.memories}
 
 
 # ---------------------------------------------------------------------------
-# memory_history
+# history
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.conformance("memory_history")
+@pytest.mark.conformance("history")
 async def test_history_records_creation(backend: MemoryBackend, tenant: str):
-    _require(backend, "memory_history")
+    _require(backend, "history")
     memory_id = _first_id(await backend.add(tenant, "conformance history subject", infer=False))
     entries = await backend.history(tenant, memory_id)
     assert entries, "history() returned nothing for a memory that was just created"
@@ -212,11 +156,11 @@ async def test_history_records_creation(backend: MemoryBackend, tenant: str):
     )
 
 
-@pytest.mark.conformance("memory_history")
+@pytest.mark.conformance("history")
 async def test_history_records_an_update(backend: MemoryBackend, tenant: str):
-    _require(backend, "memory_history")
-    if "update_memory" not in backend.capabilities():
-        pytest.skip("needs update_memory to produce a second history entry")
+    _require(backend, "history")
+    if "update" not in backend.capabilities():
+        pytest.skip("needs update to produce a second history entry")
     memory_id = _first_id(await backend.add(tenant, "conformance history original", infer=False))
     before = len(await backend.history(tenant, memory_id))
     await backend.update(tenant, memory_id, "conformance history revised")
@@ -227,17 +171,17 @@ async def test_history_records_an_update(backend: MemoryBackend, tenant: str):
     )
 
 
-@pytest.mark.conformance("memory_history")
+@pytest.mark.conformance("history")
 async def test_history_missing_raises_404(backend: MemoryBackend, tenant: str):
-    _require(backend, "memory_history")
+    _require(backend, "history")
     with pytest.raises(MemoryAPIError) as exc:
         await backend.history(tenant, MISSING_ID)
     assert exc.value.status == 404
 
 
-@pytest.mark.conformance("memory_history")
+@pytest.mark.conformance("history")
 async def test_history_isolates_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
-    _require(backend, "memory_history")
+    _require(backend, "history")
     memory_id = _first_id(await backend.add(tenant, "conformance history isolation", infer=False))
     with pytest.raises(MemoryAPIError) as exc:
         await backend.history(other_tenant, memory_id)
@@ -245,13 +189,13 @@ async def test_history_isolates_tenants(backend: MemoryBackend, tenant: str, oth
 
 
 # ---------------------------------------------------------------------------
-# memory_entities
+# entities
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.conformance("memory_entities")
+@pytest.mark.conformance("entities")
 async def test_entities_shape(backend: MemoryBackend, tenant: str):
-    _require(backend, "memory_entities")
+    _require(backend, "entities")
     await backend.add(tenant, "Ada Lovelace wrote the first algorithm", infer=False)
     result = await backend.entities(tenant)
     assert isinstance(result, EntitiesResult)
@@ -261,9 +205,9 @@ async def test_entities_shape(backend: MemoryBackend, tenant: str):
     assert all(isinstance(r, dict) for r in result.relationships)
 
 
-@pytest.mark.conformance("memory_entities")
+@pytest.mark.conformance("entities")
 async def test_entities_reflect_stored_memories(backend: MemoryBackend, tenant: str):
-    _require(backend, "memory_entities")
+    _require(backend, "entities")
     empty = await backend.entities(tenant)
     assert not empty.entities, "a tenant with no memories should have no entities"
     await backend.add(tenant, "Grace Hopper built the first compiler", infer=False)
@@ -271,9 +215,9 @@ async def test_entities_reflect_stored_memories(backend: MemoryBackend, tenant: 
     assert populated.entities, "entities() returned nothing for a tenant that has memories"
 
 
-@pytest.mark.conformance("memory_entities")
+@pytest.mark.conformance("entities")
 async def test_entities_isolate_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
-    _require(backend, "memory_entities")
+    _require(backend, "entities")
     await backend.add(tenant, "conformance entity isolation own tenant", infer=False)
     await backend.add(other_tenant, "conformance entity isolation other tenant", infer=False)
     mine = await backend.entities(tenant)

@@ -31,9 +31,9 @@ class PagedBackend(InMemoryBackend):
         self.page_size = page_size
         self.incomplete = incomplete
 
-    async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
+    async def list_memories(self, partition, *, scope=None, limit=100, cursor=None) -> ListResult:
         page = await super().list_memories(
-            user_id, scope=scope, limit=min(limit, self.page_size), cursor=cursor
+            partition, scope=scope, limit=min(limit, self.page_size), cursor=cursor
         )
         page.incomplete = self.incomplete_on(cursor)
         return page
@@ -56,7 +56,7 @@ class EmptyPageBackend(InMemoryBackend):
         super().__init__()
         self.calls = 0
 
-    async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
+    async def list_memories(self, partition, *, scope=None, limit=100, cursor=None) -> ListResult:
         self.calls += 1
         if self.calls > 3:
             raise AssertionError("a reader kept following a cursor past an empty page")
@@ -82,8 +82,9 @@ def test_scope_key_treats_empty_and_none_alike():
     assert scope_key(None) == scope_key({}) == ()
 
 
-def test_scope_key_stringifies_values():
+def test_scope_key_uses_the_stored_text():
     assert scope_key({"run_id": 7}) == scope_key({"run_id": "7"})
+    assert scope_key({"run_id": True}) == scope_key({"run_id": "true"})
 
 
 def test_dedup_key_separates_scopes():
@@ -229,6 +230,14 @@ async def test_import_skips_a_duplicate_beyond_the_first_page():
     assert outcome.imported == []
 
 
+async def test_import_skips_a_duplicate_with_a_boolean_scope(backend: InMemoryBackend):
+    entry = {"content": "flagged fact", "scope": {"run_id": True}}
+    await import_payload(backend, TENANT, [entry])
+    outcome = await import_payload(backend, TENANT, [entry])
+    assert len(outcome.skipped) == 1
+    assert outcome.imported == []
+
+
 async def test_import_reports_a_complete_dedup_read(backend: InMemoryBackend):
     outcome = await import_payload(backend, TENANT, [{"content": "x"}])
     assert outcome.dedup_incomplete is False
@@ -263,8 +272,8 @@ async def test_import_rejects_bad_on_conflict(backend: InMemoryBackend):
 
 
 async def test_import_overwrite_needs_update_capability(backend: InMemoryBackend, monkeypatch):
-    monkeypatch.setattr(backend, "capabilities", lambda: {"list_memories"})
-    with pytest.raises(ValueError, match="update_memory"):
+    monkeypatch.setattr(backend, "capabilities", lambda: {"list"})
+    with pytest.raises(ValueError, match="update capability"):
         await import_payload(backend, TENANT, [{"content": "x"}], on_conflict="overwrite")
 
 

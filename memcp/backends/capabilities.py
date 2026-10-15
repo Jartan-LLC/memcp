@@ -1,7 +1,7 @@
 """Optional backend capabilities.
 
-Capability strings are MCP tool names: what `MemoryBackend.capabilities()` returns and
-what `register_tools` gates registration on.
+A capability names an optional `MemoryBackend` operation: what `capabilities()` returns,
+and what policy and the tools layer gate on.
 """
 
 from __future__ import annotations
@@ -11,11 +11,10 @@ from types import MappingProxyType
 # capability name -> the MemoryBackend method it gates
 OPTIONAL_CAPABILITIES = MappingProxyType(
     {
-        "get_memory": "get",
-        "update_memory": "update",
-        "list_memories": "list_memories",
-        "memory_history": "history",
-        "memory_entities": "entities",
+        "update": "update",
+        "list": "list_memories",
+        "history": "history",
+        "entities": "entities",
     }
 )
 

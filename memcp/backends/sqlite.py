@@ -38,6 +38,8 @@ from memcp.types import (
     MemoryAPIError,
     paginate,
     reject_nested_filters,
+    scope_as_text,
+    scope_text,
     split_author,
     strip_reserved_metadata,
 )
@@ -79,6 +81,8 @@ _RESERVED_METADATA_CLEANSE_VERSION = 1
 
 class SqliteBackend(MemoryBackend):
     """Durable, keyless memory storage in a single SQLite file."""
+
+    retrieval = "keyword"
 
     def __init__(self, path: str | Path = "memcp.sqlite3") -> None:
         self._path = Path(path)
@@ -170,9 +174,9 @@ class SqliteBackend(MemoryBackend):
             updated_at=row["updated_at"],
         )
 
-    def _owned_row(self, user_id: str, memory_id: str) -> sqlite3.Row | None:
+    def _owned_row(self, partition: str, memory_id: str) -> sqlite3.Row | None:
         cur = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ? AND user_id = ?", (memory_id, user_id)
+            "SELECT * FROM memories WHERE id = ? AND user_id = ?", (memory_id, partition)
         )
         return cur.fetchone()
 
@@ -180,7 +184,7 @@ class SqliteBackend(MemoryBackend):
 
     async def add(
         self,
-        user_id: str,
+        partition: str,
         content: str,
         *,
         scope: dict[str, Any] | None = None,
@@ -206,9 +210,9 @@ class SqliteBackend(MemoryBackend):
                     " updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL)",
                     (
                         memory_id,
-                        user_id,
+                        partition,
                         content,
-                        json.dumps(scope or {}),
+                        json.dumps(scope_as_text(scope or {})),
                         json.dumps(stored_metadata),
                         now,
                     ),
@@ -224,7 +228,7 @@ class SqliteBackend(MemoryBackend):
 
     async def search(
         self,
-        user_id: str,
+        partition: str,
         query: str,
         *,
         scope: dict[str, Any] | None = None,
@@ -236,7 +240,7 @@ class SqliteBackend(MemoryBackend):
 
         def op() -> list[Memory]:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE user_id = ?", (user_id,)
+                "SELECT * FROM memories WHERE user_id = ?", (partition,)
             ).fetchall()
             scored: list[tuple[float, sqlite3.Row]] = []
             for row in rows:
@@ -251,9 +255,9 @@ class SqliteBackend(MemoryBackend):
 
         return await self._run(op)
 
-    async def delete(self, user_id: str, memory_id: str) -> bool:
+    async def delete(self, partition: str, memory_id: str) -> bool:
         def op() -> bool:
-            if self._owned_row(user_id, memory_id) is None:
+            if self._owned_row(partition, memory_id) is None:
                 raise MemoryAPIError(404, "Not found")
             with self._conn:
                 self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
@@ -262,12 +266,12 @@ class SqliteBackend(MemoryBackend):
 
         return await self._run(op)
 
-    async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int:
+    async def delete_all(self, partition: str, scope: dict[str, Any]) -> int:
         reject_nested_filters(scope)
 
         def op() -> int:
             rows = self._conn.execute(
-                "SELECT id, scope FROM memories WHERE user_id = ?", (user_id,)
+                "SELECT id, scope FROM memories WHERE user_id = ?", (partition,)
             ).fetchall()
             doomed = [row["id"] for row in rows if _scope_matches(json.loads(row["scope"]), scope)]
             if not doomed:
@@ -297,29 +301,24 @@ class SqliteBackend(MemoryBackend):
         )
 
     def capabilities(self) -> set[str]:
-        # No memory_entities: see entities() below.
-        return {
-            "get_memory",
-            "update_memory",
-            "list_memories",
-            "memory_history",
-        }
+        # No entities: see entities() below.
+        return {"update", "list", "history"}
 
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
 
-    # --- optional ---
-
-    async def get(self, user_id: str, memory_id: str) -> Memory | None:
+    async def get(self, partition: str, memory_id: str) -> Memory | None:
         def op() -> Memory | None:
-            row = self._owned_row(user_id, memory_id)
+            row = self._owned_row(partition, memory_id)
             return None if row is None else self._row_to_memory(row)
 
         return await self._run(op)
 
+    # --- optional ---
+
     async def update(
         self,
-        user_id: str,
+        partition: str,
         memory_id: str,
         content: str,
         *,
@@ -329,7 +328,7 @@ class SqliteBackend(MemoryBackend):
         now = datetime.now(UTC).isoformat()
 
         def op() -> Memory:
-            row = self._owned_row(user_id, memory_id)
+            row = self._owned_row(partition, memory_id)
             if row is None:
                 raise MemoryAPIError(404, "Not found")
             if metadata is not None or author is not None:
@@ -350,7 +349,7 @@ class SqliteBackend(MemoryBackend):
                     " content_after, author) VALUES (?, 'updated', ?, ?, ?, ?)",
                     (memory_id, now, row["content"], content, author),
                 )
-            updated = self._owned_row(user_id, memory_id)
+            updated = self._owned_row(partition, memory_id)
             if updated is None:  # pragma: no cover - written in the same transaction
                 raise MemoryAPIError(404, "Not found")
             return self._row_to_memory(updated)
@@ -359,7 +358,7 @@ class SqliteBackend(MemoryBackend):
 
     async def list_memories(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,
@@ -367,7 +366,7 @@ class SqliteBackend(MemoryBackend):
     ) -> ListResult:
         def op() -> list[Memory]:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE user_id = ? ORDER BY rowid", (user_id,)
+                "SELECT * FROM memories WHERE user_id = ? ORDER BY rowid", (partition,)
             ).fetchall()
             return [
                 self._row_to_memory(row)
@@ -378,9 +377,9 @@ class SqliteBackend(MemoryBackend):
         memories = await self._run(op)
         return paginate(memories, cursor, limit)
 
-    async def history(self, user_id: str, memory_id: str) -> list[HistoryEntry]:
+    async def history(self, partition: str, memory_id: str) -> list[HistoryEntry]:
         def op() -> list[HistoryEntry]:
-            if self._owned_row(user_id, memory_id) is None:
+            if self._owned_row(partition, memory_id) is None:
                 raise MemoryAPIError(404, "Not found")
             rows = self._conn.execute(
                 "SELECT * FROM history WHERE memory_id = ? ORDER BY seq", (memory_id,)
@@ -400,7 +399,7 @@ class SqliteBackend(MemoryBackend):
 
     async def entities(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,
@@ -421,4 +420,4 @@ class SqliteBackend(MemoryBackend):
 
 
 def _scope_matches(stored: dict[str, Any], wanted: dict[str, Any]) -> bool:
-    return all(stored.get(k) == v for k, v in wanted.items())
+    return all(k in stored and scope_text(stored[k]) == scope_text(v) for k, v in wanted.items())
