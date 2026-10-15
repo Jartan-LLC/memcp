@@ -167,6 +167,15 @@ async def import_payload(
     existing: dict[DedupKey, str] = {}
     outcome = ImportOutcome()
     backend_failures = 0
+
+    def record_backend_failure(index: int, e: MemoryAPIError) -> None:
+        """Tell the caller the fixed message; log only the first failure's response."""
+        nonlocal backend_failures
+        if not backend_failures:
+            log_backend_error(e, f"import entry {index}")
+        backend_failures += 1
+        outcome.errors.append({"index": index, "error": e.client_message})
+
     if on_conflict != "duplicate":
         existing, outcome.dedup_incomplete = await build_dedup_index(
             backend, user_id, limit=dedup_limit
@@ -218,10 +227,7 @@ async def import_payload(
                 await backend.update(user_id, dup_id, content, metadata=metadata, author=author)
                 outcome.imported.append({"id": dup_id, "index": i, "action": "updated"})
             except MemoryAPIError as e:
-                if not backend_failures:
-                    log_backend_error(e, f"import entry {i}")
-                backend_failures += 1
-                outcome.errors.append({"index": i, "error": e.client_message})
+                record_backend_failure(i, e)
             continue
 
         try:
@@ -229,10 +235,7 @@ async def import_payload(
                 user_id, content, scope=scope, metadata=metadata, infer=False, author=author
             )
         except MemoryAPIError as e:
-            if not backend_failures:
-                log_backend_error(e, f"import entry {i}")
-            backend_failures += 1
-            outcome.errors.append({"index": i, "error": e.client_message})
+            record_backend_failure(i, e)
             continue
 
         if not result:

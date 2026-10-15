@@ -315,6 +315,7 @@ async def test_import_keeps_the_store_response_out_of_an_entry_error(
     assert outcome.imported == []
     assert outcome.errors == [{"index": 0, "error": "The memory backend failed (status 500)."}]
     assert "store detail: disk full on prod-7" in caplog.text
+    assert "more import entries" not in caplog.text
 
 
 async def test_import_logs_the_first_backend_failure_in_full_and_counts_the_rest(
@@ -330,6 +331,22 @@ async def test_import_logs_the_first_backend_failure_in_full_and_counts_the_rest
     messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert sum("store detail" in m for m in messages) == 1
     assert any("4 more" in m for m in messages)
+
+
+async def test_import_counts_failures_across_add_and_overwrite(
+    backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    await backend.add(TENANT, "existing", infer=False)
+
+    async def failing(*args, **kwargs):
+        raise MemoryAPIError(500, "store detail")
+
+    monkeypatch.setattr(backend, "add", failing)
+    monkeypatch.setattr(backend, "update", failing)
+    entries = [{"content": "existing"}, {"content": "new"}]
+    outcome = await import_payload(backend, TENANT, entries, on_conflict="overwrite")
+    assert [e["index"] for e in outcome.errors] == [0, 1]
+    assert "1 more import entries failed" in caplog.text
 
 
 async def test_import_reports_per_entry_errors(backend: InMemoryBackend):
