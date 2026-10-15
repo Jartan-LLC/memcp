@@ -87,16 +87,7 @@ class SqliteBackend(MemoryBackend):
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(SCHEMA)
-        self._migrate_history_author_column()
         self._conn.commit()
-
-    def _migrate_history_author_column(self) -> None:
-        """`CREATE TABLE IF NOT EXISTS` does not add columns to a file that
-        already has the table — a sqlite file created before this column existed
-        needs it added explicitly, once."""
-        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(history)")}
-        if "author" not in columns:
-            self._conn.execute("ALTER TABLE history ADD COLUMN author TEXT")
 
     @property
     def path(self) -> Path:
