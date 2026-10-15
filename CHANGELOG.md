@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Every tool applies the same scope rules, on every backend.**
   - A scope naming `user_id` is refused with `invalid_scope`; it used to be ignored.
   - An empty, `*` or `null` value is refused with `validation_error` on every tool. On mem0, search and list used to read such a value as "any".
-  - So is a value with whitespace at either end, which mem0 trims, and a `run_id` with whitespace inside it, which mem0 refuses. `agent_id` is normalized instead.
+  - So is a value with whitespace at either end, which mem0 trims, and a `run_id` with whitespace inside it, which mem0 refuses. `agent_id` is normalized instead. A number that isn't finite is refused too.
   - An import entry whose scope breaks one of these rules is listed in `errors`.
   - A memory a backend returns outside the requested scope is left out of search and list results, with a warning from `memcp.policy`.
 - Two log sources have new logger names: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter` (mem0 backend), and `memcp.auth` is now `memcp.http.auth` (rejected requests). Tool-call records keep `memcp.tools`. Update any log filter or alert that matches the old names.

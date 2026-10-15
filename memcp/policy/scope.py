@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -60,6 +61,8 @@ def validate_scope(scope: dict[str, Any] | None, allowed_keys: set[str]) -> dict
                 "validation_error",
                 f"Scope value for {k!r} must be a string or number, got {type(v).__name__}",
             )
+        if isinstance(v, float) and not math.isfinite(v):
+            raise PolicyError("validation_error", f"Scope value for {k!r} must be a finite number")
         if is_wildcard(v):
             raise PolicyError(
                 "validation_error",

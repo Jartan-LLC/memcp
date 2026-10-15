@@ -66,8 +66,13 @@ applies the same rules:
 - Empty, `*` and `null` values are refused.
 - `agent_id` is normalized: lowercased, trimmed, every run of other characters turned into
   one hyphen, and hyphens at either end dropped.
+- An `agent_id` with no letters or digits is refused.
 - Any other value with whitespace at either end is refused, and so is a `run_id` with
   whitespace inside it.
+- A number that isn't finite (NaN or infinity) is refused.
+
+Search and list leave out a memory the backend returns outside the requested scope, and log
+a warning (`memcp.policy`).
 
 ### Universal — registered on every backend
 

@@ -102,6 +102,7 @@ SCOPED: dict[str, Any] = {
     "search": lambda p, scope: p.search("q", scope=scope),
     "list_memories": lambda p, scope: p.list_memories(scope=scope),
     "delete_all": lambda p, scope: p.delete_all(scope),
+    "entities": lambda p, scope: p.entities(scope=scope),
 }
 
 
@@ -136,8 +137,14 @@ async def test_scope_refuses_whitespace_inside_a_run_id(policy: Policy):
     await _refused(policy.search("q", scope={"run_id": "run one"}), "validation_error")
 
 
-async def test_scope_accepts_a_number(policy: Policy):
-    await policy.search("q", scope={"run_id": 7})
+@pytest.mark.parametrize("value", [7, 0, 0.0, False])
+async def test_scope_accepts_a_number(policy: Policy, value: Any):
+    await policy.search("q", scope={"run_id": value})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+async def test_scope_refuses_a_number_that_is_not_finite(policy: Policy, value: float):
+    await _refused(policy.search("q", scope={"run_id": value}), "validation_error")
 
 
 def _returning(backend: InMemoryBackend, method: str, memories: list[Memory]) -> None:
