@@ -524,7 +524,7 @@ async def test_migrate_refuses_a_source_memory_from_another_partition(
 
 
 class ReadBackBackend(InMemoryBackend):
-    """Answers `get` for the ids in `failing` with a 503, and `update` with a foreign memory."""
+    """Raises a 503 on the `failing`-th `get` call, and answers `update` with a foreign memory."""
 
     def __init__(self, *, failing: int | None = None, foreign_update: bool = False) -> None:
         super().__init__()
@@ -555,7 +555,9 @@ async def test_import_records_a_failed_read_back_and_carries_on():
     assert [e["index"] for e in outcome.imported] == [0, 2]
 
 
-async def test_import_refuses_a_created_memory_from_another_partition():
+async def test_import_refuses_a_created_memory_from_another_partition(
+    caplog: pytest.LogCaptureFixture,
+):
     class ForeignGet(InMemoryBackend):
         async def get(self, partition, memory_id):
             memory = await super().get(partition, memory_id)
@@ -566,6 +568,7 @@ async def test_import_refuses_a_created_memory_from_another_partition():
     with pytest.raises(PolicyError) as refused:
         await import_payload(ForeignGet(), TENANT, [{"content": "x"}], on_conflict="duplicate")
     assert refused.value.code == "internal_error"
+    assert "operation=import " in caplog.text
 
 
 async def test_import_refuses_an_overwrite_that_returns_another_partition():

@@ -440,6 +440,7 @@ async def test_an_add_whose_memory_lands_in_another_space_fails_closed(
     backend.add = add  # type: ignore[method-assign]
     backend.get = get  # type: ignore[method-assign]
     await _isolation_refused(policy.add("x", infer=False), caplog)
+    assert "operation=add " in caplog.text
 
 
 async def test_an_add_whose_memory_cannot_be_read_back_fails_closed(
