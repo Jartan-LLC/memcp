@@ -12,6 +12,7 @@ from memcp.types import (
     HistoryEntry,
     ListResult,
     Memory,
+    System,
 )
 
 Retrieval = Literal["keyword", "semantic"]
@@ -52,13 +53,13 @@ class MemoryBackend(ABC):
         scope: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
-        author: str | None = None,
+        system: System | None = None,
     ) -> AddResult | list[AddResult]:
-        """`author`, when given, is the resolved seat stamped into the reserved
-        metadata namespace (SEC-2026-0094 conjunct 2) — never sourced from the
-        caller's `metadata`. None means the caller bypassed attribution (a direct
-        backend call, or a request the auth layer never resolved); the memory
-        comes back unattributed rather than guessing."""
+        """Store `system` as given and return it, with the partition, on every read.
+
+        An item reported for a memory the store already held keeps that memory's
+        stored `created_by` and `space`. None stores no system fields.
+        """
         ...
 
     @abstractmethod
@@ -105,14 +106,12 @@ class MemoryBackend(ABC):
         content: str,
         *,
         metadata: dict[str, Any] | None = None,
-        author: str | None = None,
+        system: System | None = None,
     ) -> Memory:
         """Raises MemoryAPIError(404) if not found or in another partition.
 
-        `author`, when given, always re-stamps — it is never inherited from the
-        memory's prior author, even when `metadata` is omitted. Inheriting it
-        would launder attribution: an attacker who edits a trusted seat's memory
-        would keep that seat's label (SEC-2026-0094 conjunct 2, item 4)."""
+        `system`, when given, replaces the stored system fields; None keeps them.
+        """
         raise NotImplementedError
 
     async def list_memories(

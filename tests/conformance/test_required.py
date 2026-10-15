@@ -12,7 +12,7 @@ import pytest
 
 from memcp.backends.base import MemoryBackend
 from memcp.backends.capabilities import ALL_CAPABILITIES, OPTIONAL_CAPABILITIES
-from memcp.types import AddResult, MemoryAPIError
+from memcp.types import AddResult, MemoryAPIError, System
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
 
@@ -20,6 +20,10 @@ MISSING_ID = "00000000-0000-4000-8000-000000000000"
 def _ids(result: AddResult | list[AddResult]) -> list[str]:
     items = result if isinstance(result, list) else [result]
     return [r.id for r in items]
+
+
+def _stamp(partition: str, author: str, created_by: str | None = None) -> System:
+    return {"space": partition, "author": author, "created_by": created_by or author}
 
 
 def _first_id(result: AddResult | list[AddResult]) -> str:
@@ -319,3 +323,46 @@ async def test_scope_values_come_back_as_text(
         await backend.delete_all(tenant, {scope_key: requested})
         assert await backend.get(tenant, memory_id) is None, f"delete_all by {requested!r} kept it"
         memory_id = await add()
+
+
+# ---------------------------------------------------------------------------
+# partition and system fields
+# ---------------------------------------------------------------------------
+
+
+async def test_memories_carry_their_partition_and_system(backend: MemoryBackend, tenant: str):
+    """Policy's space check reads both, so every read path returns them as stored.
+
+    The stored space differs from the tenant, so one rebuilt from the partition fails."""
+    system = _stamp(f"stored-{tenant}", "conformance-writer")
+    memory_id = _first_id(
+        await backend.add(tenant, "conformance system stamp", system=system, infer=False)
+    )
+    got = await backend.get(tenant, memory_id)
+    assert got is not None
+    assert (got.partition, got.system) == (tenant, system)
+    hits = await backend.search(tenant, "conformance system stamp", limit=10)
+    assert [(m.partition, m.system) for m in hits if m.id == memory_id] == [(tenant, system)]
+
+
+async def test_an_add_without_system_stores_none(backend: MemoryBackend, tenant: str):
+    memory_id = _first_id(await backend.add(tenant, "conformance unstamped", infer=False))
+    got = await backend.get(tenant, memory_id)
+    assert got is not None
+    assert (got.partition, got.system) == (tenant, {})
+
+
+async def test_an_add_that_updates_a_memory_keeps_its_creator(backend: MemoryBackend, tenant: str):
+    """An extracting backend may report an add item as a change to a memory it already
+    holds; that memory keeps its stored `created_by` and `space`."""
+    first = await backend.add(
+        tenant, "My favourite editor is Helix", system=_stamp(tenant, "first"), infer=True
+    )
+    second = await backend.add(
+        tenant, "My favourite editor is now Zed", system=_stamp(tenant, "second"), infer=True
+    )
+    for memory_id in set(_ids(first)) & set(_ids(second)):
+        memory = await backend.get(tenant, memory_id)
+        assert memory is not None
+        assert memory.system.get("created_by") == "first"
+        assert memory.system.get("space") == tenant

@@ -14,10 +14,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from memcp.backends.base import MemoryBackend
+from memcp.policy.space import check_space
 from memcp.types import (
     MAX_EXPORT,
     Memory,
     MemoryAPIError,
+    System,
     log_backend_error,
     scope_text,
     serialize_memory,
@@ -31,6 +33,9 @@ ON_CONFLICT_CHOICES = ("skip", "overwrite", "duplicate")
 
 ScopeKey = tuple[tuple[str, str], ...]
 DedupKey = tuple[str, ScopeKey]
+# The system fields to write for import entry `index`, given the stored system of the
+# memory it overwrites, or None when it creates one.
+Stamp = Callable[[int, System | None], System]
 
 
 def scope_key(scope: Mapping[str, Any] | None) -> ScopeKey:
@@ -80,8 +85,11 @@ class MigrationReport:
     dedup_incomplete: bool = False
 
 
-async def _list_all(backend: MemoryBackend, user_id: str, limit: int) -> tuple[list[Memory], bool]:
-    """Read up to `limit` memories by following `next_cursor`, and whether any were missed.
+async def _list_all(
+    backend: MemoryBackend, user_id: str, limit: int, operation: str
+) -> tuple[list[Memory], bool]:
+    """Read up to `limit` space-checked memories by following `next_cursor`, and whether
+    any were missed.
 
     Missed means more than `limit` exist, a page was marked incomplete, or the backend
     returned an empty page with a cursor still set.
@@ -91,7 +99,7 @@ async def _list_all(backend: MemoryBackend, user_id: str, limit: int) -> tuple[l
     cursor: str | None = None
     while True:
         page = await backend.list_memories(user_id, limit=limit + 1 - len(memories), cursor=cursor)
-        memories.extend(page.memories)
+        memories.extend(check_space(m, user_id, operation, m.id) for m in page.memories)
         incomplete = incomplete or page.incomplete
         cursor = page.next_cursor
         if cursor is None or not page.memories or len(memories) > limit:
@@ -112,7 +120,7 @@ async def export_payload(
     `list` capability; raises MemoryAPIError on backend failure for the caller
     to map.
     """
-    memories, truncated = await _list_all(backend, user_id, limit)
+    memories, truncated = await _list_all(backend, user_id, limit, "export")
     return ExportPayload(
         memories=[serialize_memory(m) for m in memories],
         count=len(memories),
@@ -125,14 +133,15 @@ async def build_dedup_index(
     user_id: str,
     *,
     limit: int = MAX_EXPORT,
-) -> tuple[dict[DedupKey, str], bool]:
-    """Map (content, scope) -> memory id for a tenant's existing memories.
+    operation: str = "import",
+) -> tuple[dict[DedupKey, Memory], bool]:
+    """Map (content, scope) -> memory for a tenant's existing memories.
 
     Capped at `limit`: tenants above it get best-effort dedup rather than a
     refused import. Also returns whether the index missed memories.
     """
-    memories, incomplete = await _list_all(backend, user_id, limit)
-    return {dedup_key(m.content, m.scope): m.id for m in memories}, incomplete
+    memories, incomplete = await _list_all(backend, user_id, limit, operation)
+    return {dedup_key(m.content, m.scope): m for m in memories}, incomplete
 
 
 async def import_payload(
@@ -143,28 +152,27 @@ async def import_payload(
     on_conflict: str = "skip",
     scope_validator: Callable[[Any], Any] | None = None,
     dedup_limit: int = MAX_EXPORT,
-    author: str | None = None,
+    stamp: Stamp | None = None,
+    operation: str = "import",
 ) -> ImportOutcome:
     """Store `memories` verbatim (no extraction), deduped on content plus scope.
 
     `scope_validator` may rewrite a scope dict or raise ValueError to reject one
     entry; its message lands in `errors` for that index. Raises ValueError for an
-    unusable `on_conflict`, and MemoryAPIError if the dedup index cannot be read.
+    unusable `on_conflict`, MemoryAPIError if the dedup index cannot be read, and
+    PolicyError if a memory read or written fails the space check.
 
-    `author`, when given, is stamped onto every created or overwritten memory as
-    the importing principal (SEC-2026-0094 conjunct 2, item 4) — never inherited
-    from a duplicate's prior author, and never read from an entry's own `author`
-    key. `export_memories` now emits `author` on every entry, so a raw
-    export/import round trip carries it in the payload; import does not read it
-    back. That is deliberate: an entry's `content`, `scope` and `metadata` keys
-    are the only ones this function looks at.
+    `stamp` gives each created or overwritten memory its system fields; without it a
+    created memory carries none and an overwritten one keeps its own. `operation`
+    names the caller in a space-check log. Only an entry's `content`, `scope` and
+    `metadata` are read, so an exported `author` is never imported back.
     """
     if on_conflict not in ON_CONFLICT_CHOICES:
         raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
     if on_conflict == "overwrite" and "update" not in backend.capabilities():
         raise ValueError("on_conflict='overwrite' requires the backend's update capability")
 
-    existing: dict[DedupKey, str] = {}
+    existing: dict[DedupKey, Memory] = {}
     outcome = ImportOutcome()
     backend_failures = 0
 
@@ -178,7 +186,7 @@ async def import_payload(
 
     if on_conflict != "duplicate":
         existing, outcome.dedup_incomplete = await build_dedup_index(
-            backend, user_id, limit=dedup_limit
+            backend, user_id, limit=dedup_limit, operation=operation
         )
 
     for i, entry in enumerate(memories):
@@ -216,23 +224,33 @@ async def import_payload(
             )
 
         key = dedup_key(content, scope)
-        dup_id = existing.get(key)
+        dup = existing.get(key)
 
-        if dup_id and on_conflict == "skip":
-            outcome.skipped.append({"index": i, "existing_id": dup_id})
+        if dup and on_conflict == "skip":
+            outcome.skipped.append({"index": i, "existing_id": dup.id})
             continue
 
-        if dup_id and on_conflict == "overwrite":
+        if dup and on_conflict == "overwrite":
+            system = stamp(i, dup.system) if stamp else None
             try:
-                await backend.update(user_id, dup_id, content, metadata=metadata, author=author)
-                outcome.imported.append({"id": dup_id, "index": i, "action": "updated"})
+                updated = await backend.update(
+                    user_id, dup.id, content, metadata=metadata, system=system
+                )
             except MemoryAPIError as e:
                 record_backend_failure(i, e)
+                continue
+            existing[key] = check_space(updated, user_id, operation, dup.id)
+            outcome.imported.append({"id": dup.id, "index": i, "action": "updated"})
             continue
 
         try:
             result = await backend.add(
-                user_id, content, scope=scope, metadata=metadata, infer=False, author=author
+                user_id,
+                content,
+                scope=scope,
+                metadata=metadata,
+                infer=False,
+                system=stamp(i, None) if stamp else None,
             )
         except MemoryAPIError as e:
             record_backend_failure(i, e)
@@ -243,8 +261,13 @@ async def import_payload(
             continue
         items = result if isinstance(result, list) else [result]
         for r in items:
+            try:
+                stored = await backend.get(user_id, r.id)
+            except MemoryAPIError as e:
+                record_backend_failure(i, e)
+                continue
+            existing[key] = check_space(stored, user_id, operation, r.id)
             outcome.imported.append({"id": r.id, "index": i, "action": "created"})
-            existing[key] = r.id
 
     if backend_failures > 1:
         logger.warning(
@@ -265,32 +288,38 @@ async def migrate(
     source_name: str = "source",
     target_name: str = "target",
     scope_validator: Callable[[Any], Any] | None = None,
-    author: str | None = None,
 ) -> MigrationReport:
     """Copy one tenant's memories from `source` into `target` (GitHub #27).
 
     `target_user_id` defaults to `user_id` — pass it to land the memories under a
     different tenant on the target. Both backends need the `list`
     capability. What does not survive the trip is listed in `docs/reference.md`
-    ("Moving memories between backends"). `author`, when given, is stamped onto
-    the target's copies as the principal running the migration — see
-    `import_payload`.
+    ("Moving memories between backends"), except `author`: each copy keeps the source
+    memory's system fields, with `space` set to the target partition.
     """
-    payload = await export_payload(source, user_id, limit=limit)
+    memories, truncated = await _list_all(source, user_id, limit, "migrate")
+    target_partition = target_user_id or user_id
+
+    def copy_system(index: int, stored: System | None) -> System:
+        system = System(**memories[index].system)
+        system["space"] = target_partition
+        return system
+
     outcome = await import_payload(
         target,
-        target_user_id or user_id,
-        payload.memories,
+        target_partition,
+        [serialize_memory(m) for m in memories],
         on_conflict=on_conflict,
         scope_validator=scope_validator,
         dedup_limit=limit,
-        author=author,
+        stamp=copy_system,
+        operation="migrate",
     )
     return MigrationReport(
         source=source_name,
         target=target_name,
-        exported=payload.count,
-        truncated=payload.truncated,
+        exported=len(memories),
+        truncated=truncated,
         imported=len(outcome.imported),
         skipped=len(outcome.skipped),
         errors=outcome.errors,

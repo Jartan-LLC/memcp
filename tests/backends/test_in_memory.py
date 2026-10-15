@@ -245,3 +245,21 @@ async def test_search_with_scope_narrows_results(backend: InMemoryBackend):
 
 def test_declares_keyword_retrieval_and_no_list_ceiling(backend: InMemoryBackend):
     assert (backend.retrieval, backend.list_ceiling) == ("keyword", None)
+
+
+async def test_a_returned_memory_does_not_share_the_stored_dicts(backend: InMemoryBackend):
+    added = await backend.add(
+        USER_A, "x", scope={"agent_id": "a"}, metadata={"k": "v"}, system={"author": "a"}
+    )
+    returned = await backend.get(USER_A, added[0].id)
+    assert returned is not None
+    returned.scope["agent_id"] = "changed"
+    returned.metadata["k"] = "changed"
+    returned.system["author"] = "changed"
+    stored = await backend.get(USER_A, added[0].id)
+    assert stored is not None
+    assert (stored.scope, stored.metadata, stored.system) == (
+        {"agent_id": "a"},
+        {"k": "v"},
+        {"author": "a"},
+    )

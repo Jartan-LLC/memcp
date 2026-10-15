@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from memcp.backends.base import MemoryBackend
-from memcp.types import AddResult, EntitiesResult, ListResult, MemoryAPIError
+from memcp.types import AddResult, EntitiesResult, ListResult, MemoryAPIError, System
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
 
@@ -38,6 +38,32 @@ async def test_update_replaces_content(backend: MemoryBackend, tenant: str):
     updated = await backend.update(tenant, memory_id, "conformance after update")
     assert updated.content == "conformance after update"
     assert updated.id == memory_id
+
+
+@pytest.mark.conformance("update")
+async def test_update_stores_the_system_it_is_given(backend: MemoryBackend, tenant: str):
+    created: System = {"space": tenant, "author": "writer-a", "created_by": "writer-a"}
+    changed: System = {"space": f"stored-{tenant}", "author": "writer-b", "created_by": "writer-a"}
+    _require(backend, "update")
+    memory_id = _first_id(
+        await backend.add(tenant, "conformance system before", system=created, infer=False)
+    )
+    updated = await backend.update(tenant, memory_id, "conformance system after", system=changed)
+    assert (updated.partition, updated.system) == (tenant, changed)
+    got = await backend.get(tenant, memory_id)
+    assert got is not None
+    assert got.system == changed
+
+
+@pytest.mark.conformance("update")
+async def test_update_without_system_keeps_the_stored_one(backend: MemoryBackend, tenant: str):
+    created: System = {"space": tenant, "author": "writer-a", "created_by": "writer-a"}
+    _require(backend, "update")
+    memory_id = _first_id(
+        await backend.add(tenant, "conformance system kept", system=created, infer=False)
+    )
+    updated = await backend.update(tenant, memory_id, "conformance system still kept")
+    assert updated.system == created
 
 
 @pytest.mark.conformance("update")
@@ -111,6 +137,15 @@ async def test_list_returns_the_stored_scope(backend: MemoryBackend, tenant: str
     await backend.add(tenant, "list scope round trip", scope=scope, infer=False)
     result = await backend.list_memories(tenant, scope=scope)
     assert [{k: str(m.scope.get(k)) for k in scope} for m in result.memories] == [scope]
+
+
+@pytest.mark.conformance("list")
+async def test_list_returns_the_partition_and_system(backend: MemoryBackend, tenant: str):
+    _require(backend, "list")
+    system: System = {"space": tenant, "author": "lister", "created_by": "lister"}
+    await backend.add(tenant, "conformance listed stamp", system=system, infer=False)
+    result = await backend.list_memories(tenant)
+    assert [(m.partition, m.system) for m in result.memories] == [(tenant, system)]
 
 
 @pytest.mark.conformance("list")

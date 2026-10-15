@@ -16,8 +16,9 @@ from memcp.backends import MemoryBackend
 from memcp.backends.base import RETRIEVAL_KINDS, Retrieval
 from memcp.backends.capabilities import ALL_CAPABILITIES
 from memcp.identity import get_principal, get_tenant
-from memcp.policy.metadata import author_for, strip_reserved
+from memcp.policy.metadata import author_for, strip_reserved, system_for
 from memcp.policy.scope import validate_scope
+from memcp.policy.space import check_space
 from memcp.policy.transfer import (
     ON_CONFLICT_CHOICES,
     ExportPayload,
@@ -37,6 +38,7 @@ from memcp.types import (
     Memory,
     MemoryAPIError,
     PolicyError,
+    System,
     scope_text,
     validate_content,
     validate_limit,
@@ -131,20 +133,26 @@ class Policy:
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
     ) -> AddResult | list[AddResult]:
-        """Store content for the caller, stamped with its author."""
+        """Store content for the caller, stamped as its write; each item is space-checked."""
         with _validation():
             validate_content(content)
         principal = get_principal()
+        partition = principal.tenant
         scope = validate_scope(scope, self._scope_keys)
         metadata = strip_reserved(metadata)
-        return await self._backend.add(
-            principal.tenant,
+        author = author_for(principal)
+        result = await self._backend.add(
+            partition,
             content,
             scope=scope,
             metadata=metadata,
             infer=infer,
-            author=author_for(principal),
+            system=system_for(partition, author, author),
         )
+        for item in result if isinstance(result, list) else [result]:
+            stored = await self._backend.get(partition, item.id)
+            check_space(stored, partition, "add", item.id)
+        return result
 
     async def search(
         self,
@@ -165,10 +173,13 @@ class Policy:
         found = await self._backend.search(
             user_id, query, scope=scope, limit=limit, threshold=threshold
         )
-        return _in_scope(found, scope)
+        return _in_scope([check_space(m, user_id, "search", m.id) for m in found], scope)
 
     async def get(self, memory_id: str) -> Memory:
         """One of the caller's memories; `not_found` when missing or someone else's."""
+        return await self._read(memory_id, "get")
+
+    async def _read(self, memory_id: str, operation: str) -> Memory:
         user_id = get_tenant()
         with _validation():
             validate_memory_id(memory_id)
@@ -176,32 +187,30 @@ class Policy:
             result = await self._backend.get(user_id, memory_id)
         if result is None:
             raise PolicyError("not_found", NOT_FOUND_MSG)
-        return result
+        return check_space(result, user_id, operation, memory_id)
 
     async def update(
         self, memory_id: str, content: str, *, metadata: dict[str, Any] | None = None
     ) -> Memory:
-        """Replace a memory's content, re-stamped with the caller as author; `not_found` when
-        missing or someone else's."""
+        """Replace a memory's content, with the caller as author and its creator kept;
+        `not_found` when missing or someone else's."""
         principal = get_principal()
+        partition = principal.tenant
         with _validation():
-            validate_memory_id(memory_id)
             validate_content(content)
+        existing = await self._read(memory_id, "update")
         metadata = strip_reserved(metadata)
+        system = system_for(partition, author_for(principal), existing.system.get("created_by"))
         with _not_found():
-            return await self._backend.update(
-                principal.tenant,
-                memory_id,
-                content,
-                metadata=metadata,
-                author=author_for(principal),
+            updated = await self._backend.update(
+                partition, memory_id, content, metadata=metadata, system=system
             )
+        return check_space(updated, partition, "update", memory_id)
 
     async def delete(self, memory_id: str) -> bool:
         """Delete one of the caller's memories; `not_found` when missing or someone else's."""
         user_id = get_tenant()
-        with _validation():
-            validate_memory_id(memory_id)
+        await self._read(memory_id, "delete")
         with _not_found():
             return await self._backend.delete(user_id, memory_id)
 
@@ -232,14 +241,15 @@ class Policy:
             page = await self._backend.list_memories(
                 user_id, scope=scope, limit=limit, cursor=cursor
             )
-        page.memories = _in_scope(page.memories, scope)
+        page.memories = _in_scope(
+            [check_space(m, user_id, "list", m.id) for m in page.memories], scope
+        )
         return page
 
     async def history(self, memory_id: str) -> list[HistoryEntry]:
         """A memory's change log; `not_found` when missing or someone else's."""
         user_id = get_tenant()
-        with _validation():
-            validate_memory_id(memory_id)
+        await self._read(memory_id, "history")
         with _not_found():
             return await self._backend.history(user_id, memory_id)
 
@@ -277,6 +287,12 @@ class Policy:
             )
 
         principal = get_principal()
+        partition = principal.tenant
+        author = author_for(principal)
+
+        def stamp(index: int, stored: System | None) -> System:
+            created_by = author if stored is None else stored.get("created_by")
+            return system_for(partition, author, created_by)
 
         def validate_entry_scope(scope: Any) -> Any:
             try:
@@ -286,12 +302,12 @@ class Policy:
 
         return await import_payload(
             self._backend,
-            principal.tenant,
+            partition,
             memories,
             on_conflict=on_conflict,
             scope_validator=validate_entry_scope,
             dedup_limit=MAX_EXPORT,
-            author=author_for(principal),
+            stamp=stamp,
         )
 
     async def health(self) -> HealthStatus:

@@ -659,6 +659,11 @@ async def test_non_agent_id_scope_values_not_normalized(mcp_with_tools):
 # ---------------------------------------------------------------------------
 
 
+async def _stored_id(backend: InMemoryBackend) -> str:
+    """A real memory's id, so a by-id call gets past policy's own read to the patched method."""
+    return (await backend.add("test_user", "error target", infer=False))[0].id
+
+
 def _patch_raise(backend, method_name: str, status: int):
     """Patch a backend method to raise MemoryAPIError."""
 
@@ -757,16 +762,18 @@ async def test_backend_error_on_add(mcp_with_tools):
 
 async def test_backend_error_on_delete(mcp_with_tools):
     mcp, backend = mcp_with_tools
+    memory_id = await _stored_id(backend)
     _patch_raise(backend, "delete", 502)
-    result = await mcp.call("delete_memory", memory_id="some-valid-id")
+    result = await mcp.call("delete_memory", memory_id=memory_id)
     assert result["error"]["code"] == "backend_error"
     assert result["error"]["retry"] is True
 
 
 async def test_backend_error_on_delete_4xx(mcp_with_tools):
     mcp, backend = mcp_with_tools
+    memory_id = await _stored_id(backend)
     _patch_raise(backend, "delete", 403)
-    result = await mcp.call("delete_memory", memory_id="some-valid-id")
+    result = await mcp.call("delete_memory", memory_id=memory_id)
     assert result["error"]["code"] == "backend_error"
     assert result["error"]["retry"] is False
 
@@ -805,16 +812,18 @@ async def test_backend_error_on_list_memories(mcp_with_tools):
 
 async def test_backend_error_on_update(mcp_with_tools):
     mcp, backend = mcp_with_tools
+    memory_id = await _stored_id(backend)
     _patch_raise(backend, "update", 502)
-    result = await mcp.call("update_memory", memory_id="some-valid-id", content="x")
+    result = await mcp.call("update_memory", memory_id=memory_id, content="x")
     assert result["error"]["code"] == "backend_error"
     assert result["error"]["retry"] is True
 
 
 async def test_backend_error_on_history(mcp_with_tools):
     mcp, backend = mcp_with_tools
+    memory_id = await _stored_id(backend)
     _patch_raise(backend, "history", 500)
-    result = await mcp.call("memory_history", memory_id="some-valid-id")
+    result = await mcp.call("memory_history", memory_id=memory_id)
     assert result["error"]["code"] == "backend_error"
     assert result["error"]["retry"] is True
 
@@ -1412,7 +1421,10 @@ async def test_export_memories_over_limit(mcp_with_tools):
     from memcp.types import MAX_EXPORT, ListResult, Memory
 
     async def big_list(*args, **kwargs):
-        memories = [Memory(id=f"m-{i}", content=f"mem {i}") for i in range(MAX_EXPORT + 1)]
+        memories = [
+            Memory(id=f"m-{i}", content=f"mem {i}", partition="test_user")
+            for i in range(MAX_EXPORT + 1)
+        ]
         return ListResult(memories=memories)
 
     backend.list_memories = big_list

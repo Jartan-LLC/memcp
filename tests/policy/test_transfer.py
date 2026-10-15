@@ -13,7 +13,7 @@ from memcp.policy.transfer import (
     migrate,
     scope_key,
 )
-from memcp.types import ListResult, MemoryAPIError
+from memcp.types import ListResult, Memory, MemoryAPIError, PolicyError, System
 
 TENANT = "tenant_a"
 OTHER = "tenant_b"
@@ -61,6 +61,18 @@ class EmptyPageBackend(InMemoryBackend):
         if self.calls > 3:
             raise AssertionError("a reader kept following a cursor past an empty page")
         return ListResult(memories=[], next_cursor="more")
+
+
+class ForeignPartitionBackend(InMemoryBackend):
+    """Lists the requested tenant's memories as though they were stored under another."""
+
+    async def list_memories(self, partition, *, scope=None, limit=100, cursor=None) -> ListResult:
+        page = await super().list_memories(partition, scope=scope, limit=limit, cursor=cursor)
+        page.memories = [
+            Memory(id=m.id, content=m.content, partition="elsewhere", system=m.system)
+            for m in page.memories
+        ]
+        return page
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +126,6 @@ async def test_export_returns_wire_shapes(backend: InMemoryBackend):
         "created_at",
         "updated_at",
         "author",
-        "attributed",
     }
 
 
@@ -468,3 +479,112 @@ async def test_migrate_is_idempotent_on_a_second_run():
     second = await migrate(source, target, TENANT)
     assert (second.imported, second.skipped) == (0, 1)
     assert len((await target.list_memories(TENANT)).memories) == 1
+
+
+async def test_migrate_copies_system_and_sets_the_target_space():
+    source, target = InMemoryBackend(), InMemoryBackend()
+    stamp: System = {"space": TENANT, "author": "writer", "created_by": "creator"}
+    await source.add(TENANT, "moved fact", system=stamp, infer=False)
+    await migrate(source, target, TENANT, target_user_id=OTHER)
+    landed = await target.list_memories(OTHER)
+    assert [m.system for m in landed.memories] == [{**stamp, "space": OTHER}]
+
+
+# ---------------------------------------------------------------------------
+# Space check on every listed memory
+# ---------------------------------------------------------------------------
+
+
+async def test_export_refuses_a_memory_from_another_partition():
+    backend = ForeignPartitionBackend()
+    await backend.add(TENANT, "fact", infer=False)
+    with pytest.raises(PolicyError) as refused:
+        await export_payload(backend, TENANT)
+    assert refused.value.code == "internal_error"
+
+
+async def test_import_dedup_refuses_a_memory_from_another_partition():
+    backend = ForeignPartitionBackend()
+    await backend.add(TENANT, "fact", infer=False)
+    with pytest.raises(PolicyError) as refused:
+        await import_payload(backend, TENANT, [{"content": "fact"}])
+    assert refused.value.code == "internal_error"
+
+
+async def test_migrate_refuses_a_source_memory_from_another_partition(
+    caplog: pytest.LogCaptureFixture,
+):
+    source, target = ForeignPartitionBackend(), InMemoryBackend()
+    await source.add(TENANT, "fact", infer=False)
+    with pytest.raises(PolicyError) as refused:
+        await migrate(source, target, TENANT, target_user_id=OTHER)
+    assert refused.value.code == "internal_error"
+    assert "operation=migrate " in caplog.text
+    assert (await target.list_memories(OTHER)).memories == []
+
+
+class ReadBackBackend(InMemoryBackend):
+    """Raises a 503 on the `failing`-th `get` call, and answers `update` with a foreign memory."""
+
+    def __init__(self, *, failing: int | None = None, foreign_update: bool = False) -> None:
+        super().__init__()
+        self.failing = failing
+        self.foreign_update = foreign_update
+        self.gets = 0
+
+    async def get(self, partition, memory_id):
+        self.gets += 1
+        if self.gets == self.failing:
+            raise MemoryAPIError(503, "down")
+        return await super().get(partition, memory_id)
+
+    async def update(self, partition, memory_id, content, *, metadata=None, system=None):
+        updated = await super().update(
+            partition, memory_id, content, metadata=metadata, system=system
+        )
+        if self.foreign_update:
+            updated.partition = "elsewhere"
+        return updated
+
+
+async def test_import_records_a_failed_read_back_and_carries_on():
+    backend = ReadBackBackend(failing=2)
+    entries = [{"content": f"fact {i}"} for i in range(3)]
+    outcome = await import_payload(backend, TENANT, entries, on_conflict="duplicate")
+    assert [e["index"] for e in outcome.errors] == [1]
+    assert [e["index"] for e in outcome.imported] == [0, 2]
+
+
+async def test_import_refuses_a_created_memory_from_another_partition(
+    caplog: pytest.LogCaptureFixture,
+):
+    class ForeignGet(InMemoryBackend):
+        async def get(self, partition, memory_id):
+            memory = await super().get(partition, memory_id)
+            if memory is not None:
+                memory.partition = "elsewhere"
+            return memory
+
+    with pytest.raises(PolicyError) as refused:
+        await import_payload(ForeignGet(), TENANT, [{"content": "x"}], on_conflict="duplicate")
+    assert refused.value.code == "internal_error"
+    assert "operation=import " in caplog.text
+
+
+async def test_import_refuses_an_overwrite_that_returns_another_partition():
+    backend = ReadBackBackend(foreign_update=True)
+    await backend.add(TENANT, "shared", infer=False)
+    with pytest.raises(PolicyError) as refused:
+        await import_payload(backend, TENANT, [{"content": "shared"}], on_conflict="overwrite")
+    assert refused.value.code == "internal_error"
+
+
+async def test_a_migration_logs_its_target_side_checks_as_migrate(
+    caplog: pytest.LogCaptureFixture,
+):
+    source, target = InMemoryBackend(), ForeignPartitionBackend()
+    await source.add(TENANT, "fact", infer=False)
+    await target.add(OTHER, "already there", infer=False)
+    with pytest.raises(PolicyError):
+        await migrate(source, target, TENANT, target_user_id=OTHER)
+    assert "operation=migrate " in caplog.text
