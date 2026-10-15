@@ -318,6 +318,10 @@ class Mem0Backend(MemoryBackend):
             body["text"] = content
         if metadata:
             body["metadata"] = metadata
+        if not body:
+            # Nothing to change, such as removing only keys that aren't stored; mem0
+            # refuses an empty update.
+            return existing
         await self._client.request("PUT", f"/memories/{memory_id}", json=body)
         # mem0 PUT returns {"message": "..."}, not the memory. Fetch it.
         updated = await self.get(partition, memory_id)

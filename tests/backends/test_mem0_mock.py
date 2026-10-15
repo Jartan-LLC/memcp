@@ -773,3 +773,12 @@ async def test_update_refuses_a_reserved_key_before_any_request(backend):
 
 def test_split_system_keeps_a_malformed_space_so_the_space_check_fails():
     assert _split_system({"_memcp_system": {"space": 7}})[0] == {"space": 7}
+
+
+@respx.mock
+async def test_an_update_that_changes_nothing_sends_no_put(backend):
+    """mem0 refuses a PUT with neither text nor metadata; removing an unstored key is a no-op."""
+    put = _put_route(_stored({"kept": "a"}))
+    result = await backend.update(USER, "mem-1", patch=MetadataPatch(remove=frozenset({"absent"})))
+    assert put.call_count == 0
+    assert result.metadata == {"kept": "a"}
