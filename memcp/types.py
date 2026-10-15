@@ -94,12 +94,7 @@ def reject_nested_filters(d: dict[str, Any]) -> None:
 
 
 def strip_reserved_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Drop caller-supplied keys in memcp's reserved metadata namespace.
-
-    None means "caller did not supply metadata" and passes through unchanged —
-    turning it into `{}` would make an update_memory call with no metadata
-    argument wipe an existing memory's metadata instead of leaving it alone.
-    """
+    """Drop keys in memcp's `_memcp_` namespace, which a read never returns. None stays None."""
     if metadata is None:
         return None
     return {k: v for k, v in metadata.items() if not k.startswith(RESERVED_METADATA_PREFIX)}

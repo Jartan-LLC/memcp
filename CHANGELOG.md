@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`update_memory`'s `metadata` is a patch.** Keys you don't send are kept; on in_memory they were dropped before. Send a key as `null` to remove it. `content` is optional.
-- **Metadata follows one set of rules on `add_memory`, `update_memory` and `import_memories`, on every backend.** Values must be strings, numbers, booleans or lists of strings, a key at most 64 characters, and a memory's metadata at most 16 KiB as JSON. A reserved key (listed in `docs/reference.md`), a `_memcp_` key or a nested object is refused with `validation_error` naming it; before, it was stored as given.
+- **Metadata follows one set of rules on `add_memory`, `update_memory` and `import_memories`, on every backend.** Values must be strings, numbers, booleans or lists of strings, a key at most 64 characters, and a memory's metadata at most 16 KiB as JSON. A reserved key (listed in `docs/reference.md`), a `_memcp_` key or a nested object is refused with `validation_error` naming it; before, it was stored as given. Metadata already stored that breaks these rules is still returned; an update can remove or shrink it but not add to it. `import_memories` with `on_conflict=overwrite` leaves the memory with exactly the entry's metadata.
 - **Every tool applies the same scope rules, on every backend.**
   - A scope naming `user_id` is refused with `invalid_scope`. It used to be dropped from the scope with a warning from `memcp.tools` ("Stripped user_id from scope dict"); that warning is no longer logged, so an alert on it stops firing.
   - An empty, `*` or `null` value is refused with `validation_error` on every tool. On mem0, search and list used to read such a value as "any".

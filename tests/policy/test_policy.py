@@ -378,6 +378,81 @@ async def test_removing_keys_may_bring_metadata_back_under_the_cap(policy: Polic
     assert set(updated.metadata) == {"second"}
 
 
+def _exactly(size: int, char: str = "x") -> dict[str, str]:
+    """Metadata whose JSON is `size` bytes: `{"k":"..."}` is 8 bytes plus the value."""
+    return {"k": char * ((size - 8) // len(char.encode()))}
+
+
+async def test_metadata_of_exactly_the_cap_is_accepted(policy: Policy):
+    await policy.add("x", metadata=_exactly(16 * 1024), infer=False)
+    await _refused(
+        policy.add("x", metadata=_exactly(16 * 1024 + 1), infer=False), "validation_error"
+    )
+
+
+async def test_the_cap_counts_utf8_bytes_not_escapes(policy: Policy):
+    """`é` is two bytes in UTF-8 and six as an escape; the cap counts what is stored."""
+    await policy.add("x", metadata=_exactly(16 * 1024, "é"), infer=False)
+
+
+async def test_a_key_of_exactly_64_characters_is_accepted(policy: Policy):
+    await policy.add("x", metadata={"k" * 64: "v"}, infer=False)
+
+
+async def test_an_update_that_shrinks_over_cap_metadata_is_accepted(
+    policy: Policy, backend: InMemoryBackend
+):
+    """Metadata stored before the cap existed can be cleaned up through update_memory."""
+    stored = {"a": "x" * 9000, "b": "y" * 9000, "c": "z"}
+    memory_id = (await backend.add(TENANT, "x", metadata=stored))[0].id
+    updated = await policy.update(memory_id, metadata={"c": None})
+    assert set(updated.metadata) == {"a", "b"}, "still over the cap, but smaller"
+    await _refused(policy.update(memory_id, metadata={"d": "w"}), "validation_error")
+
+
+async def test_an_over_long_stored_key_can_be_removed(policy: Policy, backend: InMemoryBackend):
+    long_key = "k" * 65
+    memory_id = (await backend.add(TENANT, "x", metadata={long_key: "v", "kept": "a"}))[0].id
+    updated = await policy.update(memory_id, metadata={long_key: None})
+    assert updated.metadata == {"kept": "a"}
+
+
+async def test_import_refuses_a_null_value_naming_it(policy: Policy):
+    outcome = await policy.import_memories([{"content": "x", "metadata": {"k": None}}])
+    assert outcome.imported == []
+    assert "'k'" in outcome.errors[0]["error"]
+
+
+async def test_import_refuses_an_entry_over_the_cap(policy: Policy):
+    outcome = await policy.import_memories([{"content": "x", "metadata": _exactly(16 * 1024 + 1)}])
+    assert outcome.imported == []
+    assert "16 KiB" in outcome.errors[0]["error"]
+
+
+async def test_an_import_overwrite_replaces_the_metadata(policy: Policy, backend: InMemoryBackend):
+    """The entry wins: restoring a backup leaves exactly the backed-up metadata."""
+    memory_id = (
+        await backend.add(TENANT, "restored fact", metadata={"stale": "x", "kept": "old"})
+    )[0].id
+    await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"kept": "new"}}], on_conflict="overwrite"
+    )
+    stored = await backend.get(TENANT, memory_id)
+    assert stored is not None
+    assert stored.metadata == {"kept": "new"}
+
+
+async def test_an_import_overwrite_is_sized_by_the_entry_alone(
+    policy: Policy, backend: InMemoryBackend
+):
+    await backend.add(TENANT, "restored fact", metadata={"stale": "x" * 12000})
+    outcome = await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"fresh": "y" * 12000}}], on_conflict="overwrite"
+    )
+    assert outcome.errors == []
+    assert [e["action"] for e in outcome.imported] == ["updated"]
+
+
 def test_the_reference_lists_every_reserved_metadata_key():
     reference = (Path(__file__).parents[2] / "docs" / "reference.md").read_text()
     listed = reference.split("The reserved keys\n  are", 1)[1].split("\n- ", 1)[0]

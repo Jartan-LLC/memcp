@@ -220,8 +220,10 @@ class Policy:
         existing = await self._read(memory_id, "update")
         patch = as_patch(metadata) if metadata else None
         if patch is not None:
+            # Checked against the read above, not inside the write, so two concurrent
+            # patches can together pass the cap: it bounds what one write adds.
             with _validation():
-                check_metadata_size(patched(existing.metadata, patch))
+                check_metadata_size(patched(existing.metadata, patch), stored=existing.metadata)
         system = system_for(partition, author_for(principal), existing.system.get("created_by"))
         with _not_found():
             updated = await self._backend.update(

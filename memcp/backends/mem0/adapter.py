@@ -76,7 +76,7 @@ def _build_identifier_params(
 
 
 def _split_system(stored: dict[str, Any]) -> tuple[System, dict[str, Any]]:
-    """The system fields kept under SYSTEM_METADATA_KEY, and the rest without reserved keys.
+    """The system fields kept under SYSTEM_METADATA_KEY, and the rest without `_memcp_` keys.
 
     A null value is a removed key (mem0 can't delete one), so it is left out.
     """

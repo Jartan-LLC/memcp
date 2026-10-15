@@ -24,14 +24,15 @@ def validate_metadata(metadata: Mapping[str, Any], *, nulls: bool) -> None:
     """Raise ValueError naming the first key that breaks a rule. `nulls` admits a null
     value, which means "remove this key" in an update."""
     for key, value in metadata.items():
+        if is_reserved_metadata_key(key):
+            raise ValueError(f"metadata key {key!r} is reserved")
+        if value is None and nulls:
+            # A removal: a key stored before the length rule existed can still go.
+            continue
         if len(key) > MAX_METADATA_KEY_LENGTH:
             raise ValueError(
                 f"metadata key {key!r} is longer than {MAX_METADATA_KEY_LENGTH} characters"
             )
-        if is_reserved_metadata_key(key):
-            raise ValueError(f"metadata key {key!r} is reserved")
-        if value is None and nulls:
-            continue
         if value is None:
             raise ValueError(f"metadata key {key!r} is null; only update_memory takes null")
         if not _is_value(value):
@@ -40,10 +41,20 @@ def validate_metadata(metadata: Mapping[str, Any], *, nulls: bool) -> None:
             )
 
 
-def check_metadata_size(metadata: Mapping[str, Any]) -> None:
-    """Raise ValueError when `metadata`, stored, would pass the size cap."""
-    size = len(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode())
-    if size > MAX_METADATA_BYTES:
+def _size(metadata: Mapping[str, Any]) -> int:
+    return len(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode())
+
+
+def check_metadata_size(
+    metadata: Mapping[str, Any], *, stored: Mapping[str, Any] | None = None
+) -> None:
+    """Raise ValueError when `metadata`, stored, would pass the size cap.
+
+    With `stored`, a write that doesn't grow the metadata passes even over the cap, so
+    metadata stored before the cap existed can still be shrunk.
+    """
+    size = _size(metadata)
+    if size > MAX_METADATA_BYTES and (stored is None or size > _size(stored)):
         raise ValueError(f"metadata would be {size} bytes as JSON; the limit is 16 KiB")
 
 

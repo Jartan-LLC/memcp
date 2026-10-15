@@ -13,8 +13,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from memcp.backends.base import MemoryBackend, MetadataPatch
-from memcp.policy.metadata import check_metadata_size, patched, validate_metadata
+from memcp.backends.base import MemoryBackend, MetadataPatch, is_reserved_metadata_key
+from memcp.policy.metadata import check_metadata_size, validate_metadata
 from memcp.policy.space import check_space
 from memcp.types import (
     MAX_EXPORT,
@@ -226,10 +226,19 @@ async def import_payload(
             outcome.skipped.append({"index": i, "existing_id": dup.id})
             continue
 
-        # An overwrite sets the entry's keys over the stored ones; it never removes any.
-        patch = MetadataPatch(set=metadata) if metadata and dup else None
+        # An overwrite leaves the memory with the entry's metadata: it sets the entry's keys
+        # and removes the others, except a reserved key, which no client can remove.
+        patch = None
+        if dup and on_conflict == "overwrite":
+            wanted = metadata or {}
+            patch = MetadataPatch(
+                set=wanted,
+                remove=frozenset(
+                    k for k in dup.metadata if k not in wanted and not is_reserved_metadata_key(k)
+                ),
+            )
         try:
-            check_metadata_size(patched(dup.metadata, patch) if dup and patch else metadata or {})
+            check_metadata_size(metadata or {})
         except ValueError as e:
             outcome.errors.append({"index": i, "error": str(e)})
             continue
