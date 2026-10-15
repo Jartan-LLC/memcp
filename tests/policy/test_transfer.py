@@ -13,7 +13,7 @@ from memcp.policy.transfer import (
     migrate,
     scope_key,
 )
-from memcp.types import ListResult
+from memcp.types import ListResult, MemoryAPIError
 
 TENANT = "tenant_a"
 OTHER = "tenant_b"
@@ -295,6 +295,58 @@ async def test_import_duplicate_mode_skips_the_index_read(backend: InMemoryBacke
     monkeypatch.setattr(backend, "list_memories", fail)
     outcome = await import_payload(backend, TENANT, [{"content": "dup"}], on_conflict="duplicate")
     assert len(outcome.imported) == 1
+
+
+@pytest.mark.parametrize("on_conflict", ["duplicate", "overwrite"])
+async def test_import_keeps_the_store_response_out_of_an_entry_error(
+    backend: InMemoryBackend,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    on_conflict: str,
+):
+    await backend.add(TENANT, "x", infer=False)
+
+    async def failing(*args, **kwargs):
+        raise MemoryAPIError(500, "store detail: disk full on prod-7")
+
+    monkeypatch.setattr(backend, "add", failing)
+    monkeypatch.setattr(backend, "update", failing)
+    outcome = await import_payload(backend, TENANT, [{"content": "x"}], on_conflict=on_conflict)
+    assert outcome.imported == []
+    assert outcome.errors == [{"index": 0, "error": "The memory backend failed (status 500)."}]
+    assert "store detail: disk full on prod-7" in caplog.text
+    assert "more after the first" not in caplog.text
+
+
+async def test_import_logs_only_the_first_backend_failure_and_counts_the_rest(
+    backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    async def failing(*args, **kwargs):
+        raise MemoryAPIError(500, "store detail")
+
+    monkeypatch.setattr(backend, "add", failing)
+    entries = [{"content": f"m{i}"} for i in range(5)]
+    outcome = await import_payload(backend, TENANT, entries, on_conflict="duplicate")
+    assert len(outcome.errors) == 5
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert sum("store detail" in m for m in messages) == 1
+    assert any("4 more after the first" in m for m in messages)
+
+
+async def test_import_counts_failures_across_add_and_overwrite(
+    backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    await backend.add(TENANT, "existing", infer=False)
+
+    async def failing(*args, **kwargs):
+        raise MemoryAPIError(500, "store detail")
+
+    monkeypatch.setattr(backend, "add", failing)
+    monkeypatch.setattr(backend, "update", failing)
+    entries = [{"content": "existing"}, {"content": "new"}]
+    outcome = await import_payload(backend, TENANT, entries, on_conflict="overwrite")
+    assert [e["index"] for e in outcome.errors] == [0, 1]
+    assert "Backend errors on import: 1 more after the first" in caplog.text
 
 
 async def test_import_reports_per_entry_errors(backend: InMemoryBackend):

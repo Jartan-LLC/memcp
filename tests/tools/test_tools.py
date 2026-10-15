@@ -7,6 +7,7 @@ error handling, and capability-gated optional tools.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
@@ -15,7 +16,7 @@ from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
 from memcp.policy import Policy
 from memcp.tools import register_tools
-from memcp.types import EntitiesResult, MemoryAPIError
+from memcp.types import MAX_LOGGED_BODY, EntitiesResult, MemoryAPIError
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -634,18 +635,80 @@ async def test_non_agent_id_scope_values_not_normalized(mcp_with_tools):
 
 
 # ---------------------------------------------------------------------------
-# Backend error forwarding
+# Backend errors
 # ---------------------------------------------------------------------------
 
 
 def _patch_raise(backend, method_name: str, status: int):
     """Patch a backend method to raise MemoryAPIError."""
-    from memcp.types import MemoryAPIError
 
     async def raiser(*args, **kwargs):
         raise MemoryAPIError(status, f"simulated {status}")
 
     setattr(backend, method_name, raiser)
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "code", "message", "retry"),
+    [
+        (
+            502,
+            "store detail: db=prod-7",
+            "backend_error",
+            "The memory backend failed (status 502).",
+            True,
+        ),
+        (
+            400,
+            "store detail: bad filter run_id",
+            "backend_error",
+            "The memory backend failed (status 400).",
+            False,
+        ),
+        (
+            408,
+            "Timeout: ReadTimeout http://mem0.internal:8888",
+            "timeout",
+            "The memory backend didn't answer in time.",
+            True,
+        ),
+        (
+            503,
+            "Network error: ConnectError http://mem0.internal:8888",
+            "backend_error",
+            "The memory backend failed (status 503).",
+            True,
+        ),
+    ],
+)
+async def test_a_backend_error_keeps_the_store_response_out_of_the_message(
+    mcp_with_tools, caplog, status, body, code, message, retry
+):
+    mcp, backend = mcp_with_tools
+
+    async def failing(*args, **kwargs):
+        raise MemoryAPIError(status, body)
+
+    backend.search = failing
+    result = await mcp.call("search_memory", query="test")
+    assert result["error"] == {"code": code, "message": message, "retry": retry}
+    logged = [r for r in caplog.records if r.name == "memcp.types"]
+    assert [r.levelno for r in logged] == [logging.WARNING]
+    assert "search_memory" in logged[0].getMessage()
+    assert body in logged[0].getMessage()
+
+
+async def test_a_long_store_response_is_logged_truncated(mcp_with_tools, caplog):
+    mcp, backend = mcp_with_tools
+
+    async def failing(*args, **kwargs):
+        raise MemoryAPIError(500, "x" * (MAX_LOGGED_BODY + 50))
+
+    backend.search = failing
+    await mcp.call("search_memory", query="test")
+    logged = [r.getMessage() for r in caplog.records if r.name == "memcp.types"]
+    assert "x" * MAX_LOGGED_BODY in logged[0]
+    assert "x" * (MAX_LOGGED_BODY + 1) not in logged[0]
 
 
 async def test_backend_error_503_is_retryable(mcp_with_tools):

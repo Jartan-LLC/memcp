@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# How much of a store's error response the server log keeps.
+MAX_LOGGED_BODY = 2_000
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -111,7 +117,27 @@ class MemoryAPIError(RuntimeError):
     def __init__(self, status: int, body: str):
         self.status = status
         self.body = body
-        super().__init__(f"Backend API {status}: {body[:500]}")
+        # The body stays out of str(): it can quote the request or name the store's URL.
+        super().__init__(f"Backend API {status}")
+
+    @property
+    def timed_out(self) -> bool:
+        return self.status == 408
+
+    @property
+    def client_message(self) -> str:
+        """What a client is told: the status, never the store's response."""
+        if self.timed_out:
+            return "The memory backend didn't answer in time."
+        return f"The memory backend failed (status {self.status})."
+
+
+def log_backend_error(e: MemoryAPIError, where: str) -> None:
+    """Log the store's response to a failed call as a warning.
+
+    Clients get only `client_message`.
+    """
+    logger.warning("Backend error %d in %s: %s", e.status, where, e.body[:MAX_LOGGED_BODY])
 
 
 class PolicyError(Exception):
