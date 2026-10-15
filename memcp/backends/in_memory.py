@@ -159,7 +159,7 @@ class InMemoryBackend(MemoryBackend):
         return ["agent_id", "run_id"]
 
     def validate_partition(self, partition: str) -> None:
-        """Refuses nothing: a dict key matches only an equal string."""
+        """Refuses nothing: each stored partition is compared with ==, which folds nothing."""
 
     async def get(self, partition: str, memory_id: str) -> Memory | None:
         refuse_partition(self, partition)

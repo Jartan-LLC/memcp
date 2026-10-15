@@ -288,8 +288,9 @@ class Mem0Backend(MemoryBackend):
         return ["agent_id", "run_id"]
 
     def validate_partition(self, partition: str) -> None:
-        """Refuse `*`, which mem0's vector stores read as any user, an empty partition, and
-        whitespace at either end, which mem0 trims from identifiers."""
+        """Refuse `*`, which some of mem0's vector stores read as any user; an empty partition,
+        which may drop the user filter; and whitespace at either end, which mem0 trims from
+        scope values and may trim from a user id."""
         if partition in ("", "*") or partition != partition.strip():
             raise ValueError(f"mem0 can't match the partition {partition!r} exactly")
 
