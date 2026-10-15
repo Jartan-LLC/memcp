@@ -177,6 +177,9 @@ class Policy:
 
     async def get(self, memory_id: str) -> Memory:
         """One of the caller's memories; `not_found` when missing or someone else's."""
+        return await self._read(memory_id, "get")
+
+    async def _read(self, memory_id: str, operation: str) -> Memory:
         user_id = get_tenant()
         with _validation():
             validate_memory_id(memory_id)
@@ -184,7 +187,7 @@ class Policy:
             result = await self._backend.get(user_id, memory_id)
         if result is None:
             raise PolicyError("not_found", NOT_FOUND_MSG)
-        return check_space(result, user_id, "get", memory_id)
+        return check_space(result, user_id, operation, memory_id)
 
     async def update(
         self, memory_id: str, content: str, *, metadata: dict[str, Any] | None = None
@@ -195,7 +198,7 @@ class Policy:
         partition = principal.tenant
         with _validation():
             validate_content(content)
-        existing = await self.get(memory_id)
+        existing = await self._read(memory_id, "update")
         metadata = strip_reserved(metadata)
         system = system_for(partition, author_for(principal), existing.system.get("created_by"))
         with _not_found():
@@ -207,7 +210,7 @@ class Policy:
     async def delete(self, memory_id: str) -> bool:
         """Delete one of the caller's memories; `not_found` when missing or someone else's."""
         user_id = get_tenant()
-        await self.get(memory_id)
+        await self._read(memory_id, "delete")
         with _not_found():
             return await self._backend.delete(user_id, memory_id)
 
@@ -246,7 +249,7 @@ class Policy:
     async def history(self, memory_id: str) -> list[HistoryEntry]:
         """A memory's change log; `not_found` when missing or someone else's."""
         user_id = get_tenant()
-        await self.get(memory_id)
+        await self._read(memory_id, "history")
         with _not_found():
             return await self._backend.history(user_id, memory_id)
 

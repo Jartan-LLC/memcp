@@ -133,13 +133,14 @@ async def build_dedup_index(
     user_id: str,
     *,
     limit: int = MAX_EXPORT,
+    operation: str = "import",
 ) -> tuple[dict[DedupKey, Memory], bool]:
     """Map (content, scope) -> memory for a tenant's existing memories.
 
     Capped at `limit`: tenants above it get best-effort dedup rather than a
     refused import. Also returns whether the index missed memories.
     """
-    memories, incomplete = await _list_all(backend, user_id, limit, "import")
+    memories, incomplete = await _list_all(backend, user_id, limit, operation)
     return {dedup_key(m.content, m.scope): m for m in memories}, incomplete
 
 
@@ -152,6 +153,7 @@ async def import_payload(
     scope_validator: Callable[[Any], Any] | None = None,
     dedup_limit: int = MAX_EXPORT,
     stamp: Stamp | None = None,
+    operation: str = "import",
 ) -> ImportOutcome:
     """Store `memories` verbatim (no extraction), deduped on content plus scope.
 
@@ -161,8 +163,9 @@ async def import_payload(
     PolicyError if a memory read or written fails the space check.
 
     `stamp` gives each created or overwritten memory its system fields; without it
-    they carry none. Only an entry's `content`, `scope` and `metadata` are read, so an
-    exported `author` is never imported back.
+    they carry none. `operation` names the caller in a space-check log. Only an
+    entry's `content`, `scope` and `metadata` are read, so an exported `author` is
+    never imported back.
     """
     if on_conflict not in ON_CONFLICT_CHOICES:
         raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
@@ -183,7 +186,7 @@ async def import_payload(
 
     if on_conflict != "duplicate":
         existing, outcome.dedup_incomplete = await build_dedup_index(
-            backend, user_id, limit=dedup_limit
+            backend, user_id, limit=dedup_limit, operation=operation
         )
 
     for i, entry in enumerate(memories):
@@ -236,7 +239,7 @@ async def import_payload(
             except MemoryAPIError as e:
                 record_backend_failure(i, e)
                 continue
-            existing[key] = check_space(updated, user_id, "import", dup.id)
+            existing[key] = check_space(updated, user_id, operation, dup.id)
             outcome.imported.append({"id": dup.id, "index": i, "action": "updated"})
             continue
 
@@ -263,7 +266,7 @@ async def import_payload(
             except MemoryAPIError as e:
                 record_backend_failure(i, e)
                 continue
-            existing[key] = check_space(stored, user_id, "import", r.id)
+            existing[key] = check_space(stored, user_id, operation, r.id)
             outcome.imported.append({"id": r.id, "index": i, "action": "created"})
 
     if backend_failures > 1:
@@ -291,8 +294,8 @@ async def migrate(
     `target_user_id` defaults to `user_id` — pass it to land the memories under a
     different tenant on the target. Both backends need the `list`
     capability. What does not survive the trip is listed in `docs/reference.md`
-    ("Moving memories between backends"). Each copy keeps the source memory's
-    system fields, with `space` set to the target partition.
+    ("Moving memories between backends"), except `author`: each copy keeps the source
+    memory's system fields, with `space` set to the target partition.
     """
     memories, truncated = await _list_all(source, user_id, limit, "migrate")
     target_partition = target_user_id or user_id
@@ -310,6 +313,7 @@ async def migrate(
         scope_validator=scope_validator,
         dedup_limit=limit,
         stamp=copy_system,
+        operation="migrate",
     )
     return MigrationReport(
         source=source_name,

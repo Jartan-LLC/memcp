@@ -375,7 +375,8 @@ LEAKED = "content from another space"
 TENANT = "test_user"
 
 
-def _foreign(**changes: Any) -> Memory:
+def _returned(**changes: Any) -> Memory:
+    """A memory as a backend returns it: in the caller's space unless `changes` move it."""
     fields: dict[str, Any] = {
         "id": "foreign",
         "content": LEAKED,
@@ -423,7 +424,7 @@ async def test_a_read_returning_another_space_fails_closed(
     changes: dict[str, Any],
 ):
     method, call = READS[read]
-    _returning(backend, method, [_foreign(id="first"), _foreign(**changes)])
+    _returning(backend, method, [_returned(id="first"), _returned(**changes)])
     await _isolation_refused(call(policy), caplog)
 
 
@@ -437,8 +438,9 @@ async def test_a_by_id_call_reaching_another_space_fails_closed(
     changes: dict[str, Any],
 ):
     memory_id = await _add_one(policy)
-    _get_returns(backend, _foreign(id=memory_id, **changes))
+    _get_returns(backend, _returned(id=memory_id, **changes))
     await _isolation_refused(BY_ID[operation](policy, memory_id), caplog)
+    assert f"operation={operation} " in caplog.text
     assert memory_id in backend._store, "the refused call still changed the memory"  # pyright: ignore[reportPrivateUsage]
     assert backend._store[memory_id]["content"] == "a fact"  # pyright: ignore[reportPrivateUsage]
 
@@ -456,7 +458,7 @@ async def test_an_add_whose_memory_lands_in_another_space_fails_closed(
         return [AddResult(id="first"), AddResult(id="second")]
 
     async def get(partition: str, memory_id: str) -> Memory:
-        return _foreign(id=memory_id, **(changes if memory_id == "second" else {}))
+        return _returned(id=memory_id, **(changes if memory_id == "second" else {}))
 
     backend.add = add  # type: ignore[method-assign]
     backend.get = get  # type: ignore[method-assign]
@@ -483,7 +485,7 @@ async def test_an_update_that_returns_another_space_fails_closed(
     memory_id = await _add_one(policy)
 
     async def update(*args: Any, **kwargs: Any) -> Memory:
-        return _foreign(id=memory_id, **changes)
+        return _returned(id=memory_id, **changes)
 
     backend.update = update  # type: ignore[method-assign]
     await _isolation_refused(policy.update(memory_id, "x"), caplog)
@@ -492,7 +494,7 @@ async def test_an_update_that_returns_another_space_fails_closed(
 async def test_a_memory_without_system_fields_passes_on_its_partition(
     policy: Policy, backend: InMemoryBackend
 ):
-    _get_returns(backend, _foreign(system={}))
+    _get_returns(backend, _returned(system={}))
     assert (await policy.get("foreign")).id == "foreign"
 
 

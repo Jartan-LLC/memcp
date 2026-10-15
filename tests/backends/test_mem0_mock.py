@@ -691,9 +691,14 @@ def test_split_system_strips_every_reserved_key():
     assert _split_system(stored) == (SYSTEM, {"k": "v"})
 
 
-@pytest.mark.parametrize("value", [12345, "forged", {"author": 7}, {"unknown": "x"}], ids=str)
-def test_split_system_ignores_a_value_that_is_not_system_fields(value):
+@pytest.mark.parametrize("value", [{"author": 7}, {"unknown": "x"}], ids=str)
+def test_split_system_ignores_fields_that_are_not_system_fields(value):
     assert _split_system({"_memcp_system": value})[0] == {}
+
+
+@pytest.mark.parametrize("value", [12345, "forged", ["x"]], ids=str)
+def test_split_system_keeps_a_value_that_is_not_a_dict_as_the_space(value):
+    assert _split_system({"_memcp_system": value})[0] == {"space": value}
 
 
 def test_a_parsed_memory_carries_its_user_id_as_the_partition():

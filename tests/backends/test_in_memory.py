@@ -248,11 +248,18 @@ def test_declares_keyword_retrieval_and_no_list_ceiling(backend: InMemoryBackend
 
 
 async def test_a_returned_memory_does_not_share_the_stored_dicts(backend: InMemoryBackend):
-    memory_id = (await backend.add(USER_A, "x", metadata={"k": "v"}, system={"author": "a"}))[0].id
-    returned = await backend.get(USER_A, memory_id)
+    added = await backend.add(
+        USER_A, "x", scope={"agent_id": "a"}, metadata={"k": "v"}, system={"author": "a"}
+    )
+    returned = await backend.get(USER_A, added[0].id)
     assert returned is not None
+    returned.scope["agent_id"] = "changed"
     returned.metadata["k"] = "changed"
     returned.system["author"] = "changed"
-    stored = await backend.get(USER_A, memory_id)
+    stored = await backend.get(USER_A, added[0].id)
     assert stored is not None
-    assert (stored.metadata, stored.system) == ({"k": "v"}, {"author": "a"})
+    assert (stored.scope, stored.metadata, stored.system) == (
+        {"agent_id": "a"},
+        {"k": "v"},
+        {"author": "a"},
+    )

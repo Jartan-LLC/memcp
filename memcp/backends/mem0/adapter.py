@@ -78,9 +78,11 @@ def _build_identifier_params(
 def _split_system(stored: dict[str, Any]) -> tuple[System, dict[str, Any]]:
     """The system fields kept under SYSTEM_METADATA_KEY, and the rest without reserved keys."""
     raw = stored.get(SYSTEM_METADATA_KEY)
-    fields = raw if isinstance(raw, dict) else {}
-    # A malformed space is kept, not dropped, so the space check fails on it instead
-    # of passing on the partition alone.
+    # A malformed value is kept as the space, not dropped, so the space check fails on
+    # it instead of passing on the partition alone.
+    fields: dict[str, Any] = (
+        raw if isinstance(raw, dict) else {} if raw is None else {"space": raw}
+    )
     system = System(
         **{
             k: v

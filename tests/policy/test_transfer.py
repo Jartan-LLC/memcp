@@ -571,3 +571,14 @@ async def test_import_refuses_an_overwrite_that_returns_another_partition():
     with pytest.raises(PolicyError) as refused:
         await import_payload(backend, TENANT, [{"content": "shared"}], on_conflict="overwrite")
     assert refused.value.code == "internal_error"
+
+
+async def test_a_migration_logs_its_target_side_checks_as_migrate(
+    caplog: pytest.LogCaptureFixture,
+):
+    source, target = InMemoryBackend(), ForeignPartitionBackend()
+    await source.add(TENANT, "fact", infer=False)
+    await target.add(OTHER, "already there", infer=False)
+    with pytest.raises(PolicyError):
+        await migrate(source, target, TENANT, target_user_id=OTHER)
+    assert "operation=migrate " in caplog.text
