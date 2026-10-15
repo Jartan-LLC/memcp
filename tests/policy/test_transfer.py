@@ -31,9 +31,9 @@ class PagedBackend(InMemoryBackend):
         self.page_size = page_size
         self.incomplete = incomplete
 
-    async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
+    async def list_memories(self, partition, *, scope=None, limit=100, cursor=None) -> ListResult:
         page = await super().list_memories(
-            user_id, scope=scope, limit=min(limit, self.page_size), cursor=cursor
+            partition, scope=scope, limit=min(limit, self.page_size), cursor=cursor
         )
         page.incomplete = self.incomplete_on(cursor)
         return page
@@ -56,7 +56,7 @@ class EmptyPageBackend(InMemoryBackend):
         super().__init__()
         self.calls = 0
 
-    async def list_memories(self, user_id, *, scope=None, limit=100, cursor=None) -> ListResult:
+    async def list_memories(self, partition, *, scope=None, limit=100, cursor=None) -> ListResult:
         self.calls += 1
         if self.calls > 3:
             raise AssertionError("a reader kept following a cursor past an empty page")

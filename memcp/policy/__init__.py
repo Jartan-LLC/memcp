@@ -14,6 +14,7 @@ from typing import Any
 
 from memcp.backends import MemoryBackend
 from memcp.backends.base import RETRIEVAL_KINDS, Retrieval
+from memcp.backends.capabilities import ALL_CAPABILITIES
 from memcp.identity import get_principal, get_tenant
 from memcp.policy.metadata import author_for, strip_reserved
 from memcp.policy.scope import validate_scope
@@ -88,15 +89,21 @@ class Policy:
     """The one object that stands between the tools and a backend."""
 
     def __init__(self, backend: MemoryBackend):
-        """Raises TypeError for a backend that doesn't declare its retrieval kind."""
+        """Raises TypeError for a backend whose retrieval kind or capabilities are unknown."""
+        name = type(backend).__name__
         retrieval = getattr(backend, "retrieval", None)
         if retrieval not in RETRIEVAL_KINDS:
             raise TypeError(
-                f"{type(backend).__name__}.retrieval must be one of {RETRIEVAL_KINDS}, "
-                f"not {retrieval!r}"
+                f"{name}.retrieval must be one of {RETRIEVAL_KINDS}, not {retrieval!r}"
+            )
+        self._capabilities = backend.capabilities()
+        unknown = self._capabilities - set(ALL_CAPABILITIES)
+        if unknown:
+            raise TypeError(
+                f"{name} declares unknown capabilities {sorted(unknown)}; "
+                f"the known ones are {ALL_CAPABILITIES}"
             )
         self._backend = backend
-        self._capabilities = backend.capabilities()
         self._scope_key_list = backend.scope_keys()
         self._scope_keys = set(self._scope_key_list)
 

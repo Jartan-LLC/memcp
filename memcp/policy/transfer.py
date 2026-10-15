@@ -109,7 +109,7 @@ async def export_payload(
     """Read every memory for a tenant, capped at `limit`.
 
     `truncated` is True when the read missed memories (see `_list_all`). Requires the
-    `list_memories` capability; raises MemoryAPIError on backend failure for the caller
+    `list` capability; raises MemoryAPIError on backend failure for the caller
     to map.
     """
     memories, truncated = await _list_all(backend, user_id, limit)
@@ -270,7 +270,7 @@ async def migrate(
     """Copy one tenant's memories from `source` into `target` (GitHub #27).
 
     `target_user_id` defaults to `user_id` — pass it to land the memories under a
-    different tenant on the target. Both backends need the `list_memories`
+    different tenant on the target. Both backends need the `list`
     capability. What does not survive the trip is listed in `docs/reference.md`
     ("Moving memories between backends"). `author`, when given, is stamped onto
     the target's copies as the principal running the migration — see

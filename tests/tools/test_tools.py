@@ -59,16 +59,16 @@ class GraphBackend(InMemoryBackend):
 
     async def entities(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        count = sum(1 for e in self._store.values() if e["user_id"] == user_id)
+        count = sum(1 for e in self._store.values() if e["user_id"] == partition)
         if count == 0:
             return EntitiesResult(entities=[], relationships=[])
         return EntitiesResult(
-            entities=[{"id": user_id, "type": "user", "total_memories": count}],
+            entities=[{"id": partition, "type": "user", "total_memories": count}],
             relationships=[],
         )
 

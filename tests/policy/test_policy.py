@@ -41,6 +41,14 @@ def test_a_backend_with_an_unknown_retrieval_kind_is_refused(backend: InMemoryBa
         Policy(backend)
 
 
+def test_a_backend_with_an_unknown_capability_is_refused(
+    backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(backend, "capabilities", lambda: {"update", "list_memories"})
+    with pytest.raises(TypeError, match="'list_memories'"):
+        Policy(backend)
+
+
 async def _refused(call: Any, code: str) -> str:
     with pytest.raises(PolicyError) as raised:
         await call
