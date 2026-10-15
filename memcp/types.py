@@ -133,7 +133,10 @@ class MemoryAPIError(RuntimeError):
 
 
 def log_backend_error(e: MemoryAPIError, where: str) -> None:
-    """Log the store's response for a failure clients only see as `client_message`."""
+    """Log the store's response to a failed call as a warning.
+
+    Clients get only `client_message`.
+    """
     logger.warning("Backend error %d in %s: %s", e.status, where, e.body[:MAX_LOGGED_BODY])
 
 

@@ -120,12 +120,12 @@ succeed later.
 
 A `timeout` or `backend_error` message gives at most the status, never the store's
 response. The server logs that response as a warning, cut to 2,000 characters; it can quote
-what the request sent, memory content included. An `import_memories` entry the backend
-fails is reported the same way, with only the first failure's response logged.
+what the request sent, memory content included.
 
 A rejected entry doesn't fail `import_memories`: it imports the entries it can and lists
 each rejected one in its result's `errors`, with the entry's `index` and the reason in
-`error`.
+`error`. For an entry the backend fails, `error` holds the same fixed message; the server
+logs only the first failure's response, and one line counting the rest.
 
 A request without a valid bearer token gets HTTP 401 with the same object and the code
 `unauthorized`.

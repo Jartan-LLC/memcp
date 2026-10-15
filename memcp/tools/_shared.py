@@ -13,8 +13,8 @@ DESTRUCTIVE = {"destructiveHint": True}
 
 
 def _backend_error(e: MemoryAPIError, tool: str) -> dict[str, Any]:
-    """Map a backend failure to a canonical error: a timeout becomes `timeout`; anything
-    else is `backend_error`, retryable when the status is 5xx."""
+    """Log the store's response, then map the failure to a canonical error: a timeout
+    becomes `timeout`; anything else is `backend_error`, retryable when the status is 5xx."""
     log_backend_error(e, tool)
     if e.timed_out:
         return canonical_error("timeout", e.client_message, retry=True)

@@ -318,7 +318,7 @@ async def test_import_keeps_the_store_response_out_of_an_entry_error(
     assert "more after the first" not in caplog.text
 
 
-async def test_import_logs_the_first_backend_failure_in_full_and_counts_the_rest(
+async def test_import_logs_only_the_first_backend_failure_and_counts_the_rest(
     backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
     async def failing(*args, **kwargs):
