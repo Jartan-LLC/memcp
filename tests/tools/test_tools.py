@@ -7,6 +7,7 @@ error handling, and capability-gated optional tools.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -1432,3 +1433,44 @@ async def test_export_memories_over_limit(mcp_with_tools):
     assert result["truncated"] is True
     assert result["count"] == MAX_EXPORT
     assert len(result["memories"]) == MAX_EXPORT
+
+
+# ---------------------------------------------------------------------------
+# metadata schema: advertised to clients, enforced by policy
+# ---------------------------------------------------------------------------
+
+
+async def _real_server(config: Config) -> Any:
+    from mcp.server.mcpserver import MCPServer
+
+    server = MCPServer("metadata-schema")
+    register_tools(server, Policy(InMemoryBackend()), config)
+    return server
+
+
+def _value_types(schema: dict[str, Any]) -> list[Any]:
+    """The value types a tool's `metadata` schema allows, from its object branch."""
+    branch = next(b for b in schema["anyOf"] if b.get("type") == "object")
+    return branch["additionalProperties"]["anyOf"]
+
+
+async def test_metadata_schemas_advertise_the_allowed_value_types(config: Config):
+    server = await _real_server(config)
+    tools = {t.name: t for t in await server.list_tools()}
+    add = _value_types(tools["add_memory"].input_schema["properties"]["metadata"])
+    update = _value_types(tools["update_memory"].input_schema["properties"]["metadata"])
+    allowed = [{"type": "string"}, {"type": "integer"}, {"type": "number"}, {"type": "boolean"}]
+    strings = {"type": "array", "items": {"type": "string"}}
+    assert add == [*allowed, strings]
+    assert update == [*allowed, strings, {"type": "null"}]
+    assert "content" not in tools["update_memory"].input_schema.get("required", [])
+
+
+async def test_a_nested_value_reaches_policy_and_is_named(config: Config):
+    server = await _real_server(config)
+    result = await server.call_tool(
+        "add_memory", {"content": "x", "metadata": {"team": {"lead": "a"}}, "infer": False}
+    )
+    error = json.loads(result.content[0].text)["error"]
+    assert error["code"] == "validation_error"
+    assert "team" in error["message"]

@@ -3,17 +3,16 @@ provenance.
 
 `metadata` was unvalidated before the write-time guard existed, so any bearer-token
 holder could have stored a reserved key such as `_memcp_system` directly, on any
-backend. The policy-layer strip (`memcp/policy/metadata.py`, driven through the MCP
+backend. The policy-layer refusal (`memcp/policy/metadata.py`, driven through the MCP
 surface in `tests/test_attribution.py`) only guards a caller reaching
 `add_memory`/`update_memory`/`import_memories`; these tests
 are about the backend layer itself, and about data that predates any version of the
 write-time guard.
 
 Two closures, each sufficient for the backends it covers:
-- `in_memory`/`sqlite`: `add`/`update` strip the reserved namespace from
-  caller-supplied metadata unconditionally, regardless of caller, and system fields
-  live outside metadata — so a key planted in metadata can never read back as a
-  server-set field.
+- `in_memory`/`sqlite`: `add`/`update` refuse a reserved key in caller-supplied
+  metadata, regardless of caller, and system fields live outside metadata — so a key
+  planted in metadata can never read back as a server-set field.
 - `mem0`: has no migration hook (memcp cannot enumerate every tenant a mem0
   install holds), so this backend's closure is operational — a documented
   precondition and a startup warning, not a code guarantee. See `docs/reference.md`
@@ -25,70 +24,46 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 
+from memcp.backends.base import MetadataPatch
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.backends.mem0 import Mem0Backend
 from memcp.backends.sqlite import SqliteBackend
-from memcp.types import SYSTEM_METADATA_KEY, serialize_memory
+from memcp.types import SYSTEM_METADATA_KEY, MemoryAPIError, serialize_memory
 
 # ---------------------------------------------------------------------------
-# in_memory / sqlite — the write path strips a reserved key whoever calls it:
+# in_memory / sqlite — the write path refuses a reserved key whoever calls it:
 # metadata passed straight through, with no `system` argument.
 # ---------------------------------------------------------------------------
 
-
-async def test_in_memory_add_refuses_a_caller_supplied_reserved_key():
-    backend = InMemoryBackend()
-    await backend.add("t", "planted", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"})
-    memory_id = next(iter(backend._store))
-    memory = await backend.get("t", memory_id)
-
-    assert memory is not None
-    assert memory.author is None
-    assert serialize_memory(memory)["author"] is None
-    assert memory.metadata == {"note": "kept"}
+FORGED = {SYSTEM_METADATA_KEY: {"author": "forged"}, "note": "kept"}
 
 
-async def test_in_memory_update_refuses_a_caller_supplied_reserved_key():
-    backend = InMemoryBackend()
-    added = await backend.add("t", "original", system={"author": "trusted"})
-    memory_id = added[0].id
-
-    await backend.update(
-        "t", memory_id, "edited", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"}
-    )
-    memory = await backend.get("t", memory_id)
-
-    assert memory is not None
-    assert memory.author == "trusted"
-    assert memory.metadata == {"note": "kept"}
+def _backends(tmp_path: Path) -> list[InMemoryBackend | SqliteBackend]:
+    return [InMemoryBackend(), SqliteBackend(tmp_path / "gate.sqlite3")]
 
 
-async def test_sqlite_add_refuses_a_caller_supplied_reserved_key(tmp_path: Path):
-    backend = SqliteBackend(tmp_path / "gate.sqlite3")
-    await backend.add("t", "planted", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"})
-    memory = (await backend.list_memories("t")).memories[0]
+async def test_add_refuses_a_caller_supplied_reserved_key(tmp_path: Path):
+    for backend in _backends(tmp_path):
+        with pytest.raises(MemoryAPIError) as refused:
+            await backend.add("t", "planted", metadata=FORGED)
+        assert refused.value.status == 400
+        assert (await backend.list_memories("t")).memories == []
+        await backend.close()
 
-    assert memory.author is None
-    assert memory.metadata == {"note": "kept"}
-    await backend.close()
 
-
-async def test_sqlite_update_refuses_a_caller_supplied_reserved_key(tmp_path: Path):
-    backend = SqliteBackend(tmp_path / "gate.sqlite3")
-    added = await backend.add("t", "original", system={"author": "trusted"})
-    memory_id = added[0].id
-
-    await backend.update(
-        "t", memory_id, "edited", metadata={SYSTEM_METADATA_KEY: "forged", "note": "kept"}
-    )
-    memory = await backend.get("t", memory_id)
-
-    assert memory is not None
-    assert memory.author == "trusted"
-    assert memory.metadata == {"note": "kept"}
-    await backend.close()
+async def test_update_refuses_a_caller_supplied_reserved_key(tmp_path: Path):
+    for backend in _backends(tmp_path):
+        added = await backend.add("t", "original", system={"author": "trusted"})
+        with pytest.raises(MemoryAPIError) as refused:
+            await backend.update("t", added[0].id, "edited", patch=MetadataPatch(set=FORGED))
+        assert refused.value.status == 400
+        memory = await backend.get("t", added[0].id)
+        assert memory is not None
+        assert (memory.content, memory.author, memory.metadata) == ("original", "trusted", {})
+        await backend.close()
 
 
 # ---------------------------------------------------------------------------

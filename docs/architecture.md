@@ -274,8 +274,8 @@ The reserved metadata set and the wildcard and empty-value check are defined onc
   `update_memory`'s `content` is optional. An update must give `content`, a non-empty
   `metadata`, or both; otherwise it gets `validation_error`. `_memcp_` keys are removed
   from output.
-- **Limits:** page sizes, result counts, import sizes, and metadata key count, key length
-  and value size outside their ranges are refused.
+- **Limits:** page sizes, result counts and import sizes outside their ranges are refused,
+  and so is metadata past 16 KiB as JSON or with a key past 64 characters.
 - **Errors:** policy raises `PolicyError(code, message)` for a request it refuses, and turns a
   backend 404 or 410 into `not_found` on a by-id call (`get`, `update`, `delete`,
   `history`). A tool handler catches nothing: `translate_errors` returns `PolicyError` and

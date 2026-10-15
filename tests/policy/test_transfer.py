@@ -538,10 +538,8 @@ class ReadBackBackend(InMemoryBackend):
             raise MemoryAPIError(503, "down")
         return await super().get(partition, memory_id)
 
-    async def update(self, partition, memory_id, content, *, metadata=None, system=None):
-        updated = await super().update(
-            partition, memory_id, content, metadata=metadata, system=system
-        )
+    async def update(self, partition, memory_id, content=None, *, patch=None, system=None):
+        updated = await super().update(partition, memory_id, content, patch=patch, system=system)
         if self.foreign_update:
             updated.partition = "elsewhere"
         return updated

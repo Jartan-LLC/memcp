@@ -27,6 +27,8 @@ MAX_QUERY_LENGTH = 10_000
 MAX_LIMIT = 1_000
 MAX_EXPORT = 10_000
 MAX_IMPORT = 1_000
+MAX_METADATA_BYTES = 16 * 1024
+MAX_METADATA_KEY_LENGTH = 64
 
 # Metadata keys in this namespace are server-only: a caller cannot set them, and
 # they never appear in a Memory's public `metadata`. `SYSTEM_METADATA_KEY` holds a

@@ -13,6 +13,7 @@ import httpx
 import pytest
 import respx
 
+from memcp.backends.base import MetadataPatch
 from memcp.backends.mem0 import LIST_CEILING, Mem0Backend
 from memcp.backends.mem0.adapter import _entity_rows, _parse_memory, _split_system
 from memcp.types import Memory, MemoryAPIError
@@ -717,29 +718,57 @@ async def test_add_sends_system_under_the_reserved_key(backend):
     assert sent == {"k": "v", "_memcp_system": SYSTEM}
 
 
-@respx.mock
-async def test_update_with_metadata_only_resends_the_stored_system(backend):
-    stored = {**MEMORY_RESPONSE, "metadata": {"_memcp_system": SYSTEM, "old": "x"}}
+def _stored(metadata: dict) -> dict:
+    return {**MEMORY_RESPONSE, "metadata": metadata}
+
+
+def _put_route(stored: dict) -> respx.Route:
+    """Serve `stored` for the ownership GET, and record the PUT."""
     respx.get(f"{BASE}/memories/mem-1").mock(return_value=httpx.Response(200, json=stored))
-    put = respx.put(f"{BASE}/memories/mem-1").mock(
+    return respx.put(f"{BASE}/memories/mem-1").mock(
         return_value=httpx.Response(200, json={"message": "updated"})
     )
-    await backend.update(USER, "mem-1", "new content", metadata={"k": "v"})
-    sent = json.loads(put.calls.last.request.content)["metadata"]
-    assert sent == {"k": "v", "_memcp_system": SYSTEM}
 
 
 @respx.mock
-async def test_update_with_system_replaces_it_and_keeps_metadata(backend):
-    stored = {**MEMORY_RESPONSE, "metadata": {"_memcp_system": SYSTEM, "old": "x"}}
-    respx.get(f"{BASE}/memories/mem-1").mock(return_value=httpx.Response(200, json=stored))
-    put = respx.put(f"{BASE}/memories/mem-1").mock(
-        return_value=httpx.Response(200, json={"message": "updated"})
+async def test_a_metadata_only_update_sends_only_the_patch(backend):
+    put = _put_route(_stored({"_memcp_system": SYSTEM, "old": "x"}))
+    await backend.update(USER, "mem-1", patch=MetadataPatch(set={"k": "v"}))
+    assert json.loads(put.calls.last.request.content) == {"metadata": {"k": "v"}}
+
+
+@respx.mock
+async def test_a_removal_sends_null_only_for_a_stored_key(backend):
+    put = _put_route(_stored({"old": "x"}))
+    await backend.update(
+        USER, "mem-1", patch=MetadataPatch(remove=frozenset({"old", "never-stored"}))
     )
+    assert json.loads(put.calls.last.request.content) == {"metadata": {"old": None}}
+
+
+@respx.mock
+async def test_update_with_system_sends_it_whole(backend):
+    put = _put_route(_stored({"_memcp_system": SYSTEM, "old": "x"}))
     changed = {**SYSTEM, "author": "editor"}
     await backend.update(USER, "mem-1", "new content", system=changed)
-    sent = json.loads(put.calls.last.request.content)["metadata"]
-    assert sent == {"old": "x", "_memcp_system": changed}
+    body = json.loads(put.calls.last.request.content)
+    assert body == {"text": "new content", "metadata": {"_memcp_system": changed}}
+
+
+def test_a_null_metadata_value_reads_back_absent():
+    memory = _parse_memory(_stored({"kept": "a", "removed": None}))
+    assert memory.metadata == {"kept": "a"}
+
+
+@respx.mock
+async def test_update_refuses_a_reserved_key_before_any_request(backend):
+    get = respx.get(f"{BASE}/memories/mem-1").mock(
+        return_value=httpx.Response(200, json=MEMORY_RESPONSE)
+    )
+    with pytest.raises(MemoryAPIError) as refused:
+        await backend.update(USER, "mem-1", patch=MetadataPatch(set={"role": "x"}))
+    assert refused.value.status == 400
+    assert get.call_count == 0
 
 
 def test_split_system_keeps_a_malformed_space_so_the_space_check_fails():

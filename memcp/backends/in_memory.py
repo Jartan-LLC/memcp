@@ -24,10 +24,9 @@ from memcp.types import (
     reject_nested_filters,
     scope_as_text,
     scope_text,
-    strip_reserved_metadata,
 )
 
-from .base import MemoryBackend
+from .base import MemoryBackend, MetadataPatch, refuse_reserved_metadata
 from .keyword import score as _score
 
 
@@ -70,15 +69,16 @@ class InMemoryBackend(MemoryBackend):
     ) -> list[AddResult]:
         if scope:
             reject_nested_filters(scope)
+        # Refused here as well as by policy: whoever calls this method, a reserved key
+        # must never reach storage.
+        refuse_reserved_metadata(metadata or {})
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        # Reserved keys are stripped here as well as by policy: whoever calls this
-        # method, a `_memcp_` key must never reach storage.
         self._store[memory_id] = {
             "user_id": partition,
             "content": content,
             "scope": scope_as_text(scope or {}),
-            "metadata": strip_reserved_metadata(metadata) or {},
+            "metadata": dict(metadata or {}),
             "system": dict(system or {}),
             "created_at": now,
             "updated_at": None,
@@ -166,20 +166,25 @@ class InMemoryBackend(MemoryBackend):
         self,
         partition: str,
         memory_id: str,
-        content: str,
+        content: str | None = None,
         *,
-        metadata: dict[str, Any] | None = None,
+        patch: MetadataPatch | None = None,
         system: System | None = None,
     ) -> Memory:
+        if patch is not None:
+            refuse_reserved_metadata([*patch.set, *patch.remove])
         entry = self._store.get(memory_id)
         if entry is None or entry["user_id"] != partition:
             raise MemoryAPIError(404, "Not found")
         now = datetime.now(UTC).isoformat()
         old_content = entry["content"]
-        entry["content"] = content
+        if content is not None:
+            entry["content"] = content
         entry["updated_at"] = now
-        if metadata is not None:
-            entry["metadata"] = strip_reserved_metadata(metadata) or {}
+        if patch is not None:
+            entry["metadata"].update(patch.set)
+            for key in patch.remove:
+                entry["metadata"].pop(key, None)
         if system is not None:
             entry["system"] = dict(system)
         if memory_id in self._history:
@@ -188,7 +193,7 @@ class InMemoryBackend(MemoryBackend):
                     "action": "updated",
                     "timestamp": now,
                     "content_before": old_content,
-                    "content_after": content,
+                    "content_after": entry["content"],
                     "author": entry["system"].get("author"),
                 }
             )

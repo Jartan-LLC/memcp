@@ -68,19 +68,18 @@ async def test_search_result_is_unattributed_when_backend_holds_no_stamp(mcp_wit
 
 
 async def test_add_memory_caller_cannot_forge_author_via_metadata(mcp_with_tools):
-    """The reserved key is stripped on the way in and the resolved seat wins —
+    """The reserved key is refused on the way in, naming it, and nothing is stored —
     a caller cannot claim to be a different, more-trusted seat."""
     mcp, _ = mcp_with_tools
-    await mcp.call(
+    refused = await mcp.call(
         "add_memory",
         content="spoof attempt",
         metadata={SYSTEM_METADATA_KEY: {"author": "root"}, "note": "kept"},
     )
+    assert refused["error"]["code"] == "validation_error"
+    assert SYSTEM_METADATA_KEY in refused["error"]["message"]
     result = await mcp.call("search_memory", query="spoof")
-    memory = result["results"][0]
-    assert memory["author"] == "test_user"
-    assert memory["metadata"] == {"note": "kept"}
-    assert SYSTEM_METADATA_KEY not in memory["metadata"]
+    assert result["results"] == []
 
 
 async def test_update_memory_relabels_to_the_updating_principal(mcp_with_tools):

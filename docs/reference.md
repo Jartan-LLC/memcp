@@ -41,8 +41,8 @@ memory, not where the facts came from — see the server's own MCP instructions 
 client is told to treat it.
 
 sqlite and in_memory keep `author` outside metadata, where no caller can write it. mem0
-keeps it in metadata under the reserved key `_memcp_system`. memcp strips `_memcp_` keys
-from callers' metadata, but 0.1.2 and earlier stored them as given, and memcp can't
+keeps it in metadata under the reserved key `_memcp_system`. memcp refuses `_memcp_` keys
+in callers' metadata, but 0.1.2 and earlier stored them as given, and memcp can't
 enumerate a mem0 install's tenants to clean them. **Sweep a mem0 store for `_memcp_system`
 before this version serves it.** Otherwise a key planted earlier reads back as an `author`
 no server set, and a malformed one fails every read that returns it with `internal_error`.
@@ -69,6 +69,25 @@ does not.
 Search and list leave out a memory the backend returns outside the requested scope, and log
 a warning (`memcp.policy`).
 
+### Metadata
+
+`add_memory`, `update_memory` and `import_memories` take `metadata`: a flat map of keys to
+strings, numbers, booleans or lists of strings. The same rules apply on every backend, and a
+write that breaks one gets `validation_error` naming the key, with nothing stored:
+
+- A reserved key is refused, and so is any key starting with `_memcp_`. The reserved keys
+  are `actor_id`, `agent_id`, `attributed_to`, `created_at`, `data`, `expiration_date`,
+  `hash`, `id`, `memory_type`, `role`, `run_id`, `text_lemmatized`, `updated_at` and
+  `user_id`.
+- A nested object, a list holding anything but strings, and a number that isn't finite are
+  refused.
+- A key is at most 64 characters, and a memory's metadata is at most 16 KiB as JSON.
+
+On `update_memory`, `metadata` is a patch: a key with a value is set, a key sent as `null`
+is removed, and a key left out is kept. Removing a key that isn't there does nothing, and a
+list replaces the stored list whole. `null` is accepted only there, and no read returns a
+null-valued key.
+
 ### Universal — registered on every backend
 
 | Tool | Description |
@@ -84,7 +103,7 @@ a warning (`memcp.policy`).
 
 | Tool | Description |
 |---|---|
-| `update_memory` | Full-replace a memory's content (not a patch). Scope immutable — to change scope, add new + delete old |
+| `update_memory` | Change a memory's content, its metadata (a patch: see Metadata), or both. Scope immutable — to change scope, add new + delete old |
 | `list_memories` | Browse memories, optionally filtered by scope. Unranked, paginated; `incomplete: true` means memories may exist beyond the backend's list ceiling. For semantic queries: `search_memory` |
 | `export_memories` | Export memories as JSON (max 10k; `truncated: true` when it stops there or the backend's list may be incomplete). For backup/migration. Output compatible with `import_memories` (requires `list_memories`) |
 | `import_memories` | Batch-import from JSON. Dedup via exact content match, scope-aware; `dedup_incomplete: true` means dedup may have missed existing memories, so duplicates are possible. `on_conflict`: skip, overwrite, duplicate (requires `list_memories`; overwrite requires `update_memory`) |

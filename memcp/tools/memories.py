@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
+from pydantic import TypeAdapter, WithJsonSchema
+
+from memcp.backends.base import MetadataValue
 from memcp.policy import Policy
 from memcp.tools._shared import DESTRUCTIVE, READ_ONLY
 from memcp.types import serialize_memory
+
+# The schemas advertise the allowed values but the SDK doesn't enforce them, so a bad
+# value reaches policy, which refuses it with an error naming the key.
+Metadata = Annotated[
+    dict[str, Any] | None,
+    WithJsonSchema(TypeAdapter(dict[str, MetadataValue] | None).json_schema()),
+]
+MetadataChanges = Annotated[
+    dict[str, Any] | None,
+    WithJsonSchema(TypeAdapter(dict[str, MetadataValue | None] | None).json_schema()),
+]
 
 
 def register(mcp: Any, policy: Policy) -> None:
@@ -29,7 +43,7 @@ def register(mcp: Any, policy: Policy) -> None:
     async def add_memory(
         content: str,
         scope: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: Metadata = None,
         infer: bool = True,
     ) -> Any:
         result = await policy.add(content, scope=scope, metadata=metadata, infer=infer)
@@ -75,14 +89,17 @@ def register(mcp: Any, policy: Policy) -> None:
         @mcp.tool(
             annotations={"idempotentHint": True, "destructiveHint": True},
             description=(
-                "Full-replace a memory's content by memory_id (not a patch). "
-                "Scope is immutable — to change scope, add new + delete old."
+                "Update a memory by memory_id. `content` (optional) replaces its text. "
+                "`metadata` (optional) is a patch: keys you list are set, a key set to "
+                "null is removed, keys you leave out are kept. Values: string, number, "
+                "boolean, or a list of strings. Returns the updated memory. Scope is "
+                "immutable; to change it, add a new memory and delete the old one."
             ),
         )
         async def update_memory(
             memory_id: str,
-            content: str,
-            metadata: dict[str, Any] | None = None,
+            content: str | None = None,
+            metadata: MetadataChanges = None,
         ) -> Any:
             return serialize_memory(await policy.update(memory_id, content, metadata=metadata))
 

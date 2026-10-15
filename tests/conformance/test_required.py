@@ -366,3 +366,16 @@ async def test_an_add_that_updates_a_memory_keeps_its_creator(backend: MemoryBac
         assert memory is not None
         assert memory.system.get("created_by") == "first"
         assert memory.system.get("space") == tenant
+
+
+# ---------------------------------------------------------------------------
+# reserved metadata keys
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["role", "expiration_date", "_memcp_anything"])
+async def test_add_refuses_a_reserved_metadata_key(backend: MemoryBackend, tenant: str, key: str):
+    with pytest.raises(MemoryAPIError) as refused:
+        await backend.add(tenant, "conformance reserved key", metadata={key: "x"}, infer=False)
+    assert refused.value.status == 400
+    assert key in refused.value.body

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from memcp.backends.base import RESERVED_METADATA_KEYS, MetadataPatch
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.identity import DEFAULT_PRINCIPAL, Principal, reset_tenant, set_principal, set_tenant
 from memcp.policy import Policy
@@ -285,30 +288,112 @@ async def test_a_backend_error_other_than_404_is_not_a_refusal(
         await policy.get("some-id")
 
 
-def _record_metadata(backend: InMemoryBackend, method: str) -> list[Any]:
-    """Record the metadata policy passes to `method`; the backend's own strip can't hide it."""
+def _record(backend: InMemoryBackend, method: str, argument: str) -> list[Any]:
+    """Record one keyword argument policy passes to a backend method."""
     seen: list[Any] = []
     original = getattr(backend, method)
 
     async def recording(*args: Any, **kwargs: Any) -> Any:
-        seen.append(kwargs.get("metadata"))
+        seen.append(kwargs.get(argument))
         return await original(*args, **kwargs)
 
     setattr(backend, method, recording)
     return seen
 
 
-async def test_add_strips_reserved_metadata(policy: Policy, backend: InMemoryBackend):
-    passed = _record_metadata(backend, "add")
-    await policy.add("x", metadata={SYSTEM_METADATA_KEY: "forged", "k": "v"}, infer=False)
-    assert passed == [{"k": "v"}]
+BAD_METADATA = [
+    pytest.param({"role": "x"}, "role", id="reserved"),
+    pytest.param({SYSTEM_METADATA_KEY: "forged"}, SYSTEM_METADATA_KEY, id="memcp-prefix"),
+    pytest.param({"team": {"lead": "a"}}, "team", id="nested"),
+    pytest.param({"tags": ["a", 1]}, "tags", id="mixed-list"),
+    pytest.param({"score": float("nan")}, "score", id="not-finite"),
+    pytest.param({"k" * 65: "x"}, "k" * 65, id="long-key"),
+    pytest.param({"blob": "x" * (16 * 1024)}, "16 KiB", id="over-size"),
+]
 
 
-async def test_update_strips_reserved_metadata(policy: Policy, backend: InMemoryBackend):
+@pytest.mark.parametrize(("metadata", "named"), BAD_METADATA)
+async def test_add_refuses_bad_metadata_naming_it(
+    policy: Policy, backend: InMemoryBackend, metadata: dict[str, Any], named: str
+):
+    message = await _refused(policy.add("x", metadata=metadata, infer=False), "validation_error")
+    assert named in message
+    assert backend._store == {}  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(("metadata", "named"), BAD_METADATA)
+async def test_update_refuses_bad_metadata_naming_it(
+    policy: Policy, backend: InMemoryBackend, metadata: dict[str, Any], named: str
+):
     memory_id = await _add_one(policy)
-    passed = _record_metadata(backend, "update")
-    await policy.update(memory_id, "x", metadata={SYSTEM_METADATA_KEY: "forged", "k": "v"})
-    assert passed == [{"k": "v"}]
+    patches = _record(backend, "update", "patch")
+    message = await _refused(policy.update(memory_id, metadata=metadata), "validation_error")
+    assert named in message
+    assert patches == []
+
+
+async def test_add_refuses_a_null_value(policy: Policy):
+    message = await _refused(
+        policy.add("x", metadata={"k": None}, infer=False), "validation_error"
+    )
+    assert "'k'" in message
+
+
+async def test_update_turns_metadata_into_a_patch(policy: Policy, backend: InMemoryBackend):
+    memory_id = await _add_one(policy)
+    patches = _record(backend, "update", "patch")
+    await policy.update(memory_id, metadata={"set-me": "v", "drop-me": None})
+    assert patches == [MetadataPatch(set={"set-me": "v"}, remove=frozenset({"drop-me"}))]
+
+
+async def test_update_without_content_keeps_it(policy: Policy, backend: InMemoryBackend):
+    memory_id = await _add_one(policy, "the original text")
+    updated = await policy.update(memory_id, metadata={"k": "v"})
+    assert (updated.content, updated.metadata) == ("the original text", {"k": "v"})
+
+
+@pytest.mark.parametrize("metadata", [None, {}], ids=["none", "empty"])
+async def test_an_update_that_changes_nothing_is_refused(
+    policy: Policy, metadata: dict[str, Any] | None
+):
+    memory_id = await _add_one(policy)
+    await _refused(policy.update(memory_id, metadata=metadata), "validation_error")
+
+
+async def test_the_size_cap_applies_to_the_merged_metadata(policy: Policy):
+    """Each patch is small; together they pass the cap, so the check is on the result."""
+    memory_id = await _add_one(policy)
+    half = "x" * (9 * 1024)
+    await policy.update(memory_id, metadata={"first": half})
+    message = await _refused(
+        policy.update(memory_id, metadata={"second": half}), "validation_error"
+    )
+    assert "16 KiB" in message
+
+
+async def test_removing_keys_may_bring_metadata_back_under_the_cap(policy: Policy):
+    memory_id = await _add_one(policy)
+    await policy.update(memory_id, metadata={"first": "x" * (9 * 1024)})
+    updated = await policy.update(memory_id, metadata={"first": None, "second": "y" * 9 * 1024})
+    assert set(updated.metadata) == {"second"}
+
+
+def test_the_reference_lists_every_reserved_metadata_key():
+    reference = (Path(__file__).parents[2] / "docs" / "reference.md").read_text()
+    listed = reference.split("The reserved keys\n  are", 1)[1].split("\n- ", 1)[0]
+    assert set(re.findall(r"`([a-z_]+)`", listed)) == RESERVED_METADATA_KEYS
+
+
+async def test_import_reports_bad_metadata_per_entry(policy: Policy):
+    outcome = await policy.import_memories(
+        [
+            {"content": "good", "metadata": {"k": "v"}},
+            {"content": "bad", "metadata": {"role": "x"}},
+        ]
+    )
+    assert [e["index"] for e in outcome.imported] == [0]
+    assert [e["index"] for e in outcome.errors] == [1]
+    assert "role" in outcome.errors[0]["error"]
 
 
 async def test_import_refuses_an_empty_batch(policy: Policy):

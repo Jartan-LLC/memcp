@@ -1,26 +1,65 @@
-"""Caller metadata and authorship: the reserved-key strip and the system stamp."""
+"""Caller metadata and authorship: the metadata rules and the system stamp."""
 
 from __future__ import annotations
 
-import logging
+import json
+import math
+from collections.abc import Mapping
 from typing import Any
 
+from memcp.backends.base import MetadataPatch, is_reserved_metadata_key
 from memcp.identity import Principal, is_unattributed
-from memcp.types import System, strip_reserved_metadata
-
-logger = logging.getLogger(__name__)
+from memcp.types import MAX_METADATA_BYTES, MAX_METADATA_KEY_LENGTH, System
 
 
-def strip_reserved(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Strip caller-supplied keys in memcp's reserved metadata namespace — mem0 keeps
-    system fields there and the caller cannot set them."""
-    cleaned = strip_reserved_metadata(metadata)
-    if cleaned is not None and metadata is not None and len(cleaned) != len(metadata):
-        logger.warning(
-            "Stripped reserved metadata keys from metadata dict; remaining keys: %s",
-            list(cleaned.keys()),
-        )
-    return cleaned
+def _is_value(value: Any) -> bool:
+    if isinstance(value, (str, bool, int)):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)  # pyright: ignore[reportUnknownVariableType]
+
+
+def validate_metadata(metadata: Mapping[str, Any], *, nulls: bool) -> None:
+    """Raise ValueError naming the first key that breaks a rule. `nulls` admits a null
+    value, which means "remove this key" in an update."""
+    for key, value in metadata.items():
+        if len(key) > MAX_METADATA_KEY_LENGTH:
+            raise ValueError(
+                f"metadata key {key!r} is longer than {MAX_METADATA_KEY_LENGTH} characters"
+            )
+        if is_reserved_metadata_key(key):
+            raise ValueError(f"metadata key {key!r} is reserved")
+        if value is None and nulls:
+            continue
+        if value is None:
+            raise ValueError(f"metadata key {key!r} is null; only update_memory takes null")
+        if not _is_value(value):
+            raise ValueError(
+                f"metadata key {key!r} must be a string, number, boolean or list of strings"
+            )
+
+
+def check_metadata_size(metadata: Mapping[str, Any]) -> None:
+    """Raise ValueError when `metadata`, stored, would pass the size cap."""
+    size = len(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode())
+    if size > MAX_METADATA_BYTES:
+        raise ValueError(f"metadata would be {size} bytes as JSON; the limit is 16 KiB")
+
+
+def as_patch(metadata: Mapping[str, Any]) -> MetadataPatch:
+    """update_memory's argument as a patch: a null value removes its key."""
+    return MetadataPatch(
+        set={k: v for k, v in metadata.items() if v is not None},
+        remove=frozenset(k for k, v in metadata.items() if v is None),
+    )
+
+
+def patched(stored: Mapping[str, Any], patch: MetadataPatch) -> dict[str, Any]:
+    """`stored` with `patch` applied: what a backend will hold after the update."""
+    result = {k: v for k, v in stored.items() if k not in patch.remove}
+    result.update(patch.set)
+    return result
 
 
 def author_for(principal: Principal) -> str | None:

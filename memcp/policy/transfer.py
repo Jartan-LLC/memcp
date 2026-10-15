@@ -13,7 +13,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from memcp.backends.base import MemoryBackend
+from memcp.backends.base import MemoryBackend, MetadataPatch
+from memcp.policy.metadata import check_metadata_size, patched, validate_metadata
 from memcp.policy.space import check_space
 from memcp.types import (
     MAX_EXPORT,
@@ -23,7 +24,6 @@ from memcp.types import (
     log_backend_error,
     scope_text,
     serialize_memory,
-    strip_reserved_metadata,
     validate_content,
 )
 
@@ -211,17 +211,13 @@ async def import_payload(
         if raw_metadata is not None and not isinstance(raw_metadata, dict):
             outcome.errors.append({"index": i, "error": "metadata must be an object"})
             continue
-        metadata = strip_reserved_metadata(raw_metadata)
-        if (
-            metadata is not None
-            and raw_metadata is not None
-            and len(metadata) != len(raw_metadata)
-        ):
-            logger.warning(
-                "Stripped reserved metadata keys from import entry %d; remaining keys: %s",
-                i,
-                list(metadata.keys()),
-            )
+        metadata: dict[str, Any] | None = raw_metadata
+        try:
+            if metadata is not None:
+                validate_metadata(metadata, nulls=False)
+        except ValueError as e:
+            outcome.errors.append({"index": i, "error": str(e)})
+            continue
 
         key = dedup_key(content, scope)
         dup = existing.get(key)
@@ -230,11 +226,19 @@ async def import_payload(
             outcome.skipped.append({"index": i, "existing_id": dup.id})
             continue
 
+        # An overwrite sets the entry's keys over the stored ones; it never removes any.
+        patch = MetadataPatch(set=metadata) if metadata and dup else None
+        try:
+            check_metadata_size(patched(dup.metadata, patch) if dup and patch else metadata or {})
+        except ValueError as e:
+            outcome.errors.append({"index": i, "error": str(e)})
+            continue
+
         if dup and on_conflict == "overwrite":
             system = stamp(i, dup.system) if stamp else None
             try:
                 updated = await backend.update(
-                    user_id, dup.id, content, metadata=metadata, system=system
+                    user_id, dup.id, content, patch=patch, system=system
                 )
             except MemoryAPIError as e:
                 record_backend_failure(i, e)

@@ -3,20 +3,66 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from typing import Any, Literal, get_args
 
 from memcp.types import (
+    RESERVED_METADATA_PREFIX,
     AddResult,
     EntitiesResult,
     HealthStatus,
     HistoryEntry,
     ListResult,
     Memory,
+    MemoryAPIError,
     System,
 )
 
 Retrieval = Literal["keyword", "semantic"]
 RETRIEVAL_KINDS: tuple[Retrieval, ...] = get_args(Retrieval)
+
+MetadataValue = str | int | float | bool | list[str]
+
+# Keys a store gives its own meaning to (mem0 acts on `expiration_date`, for one), so a
+# client can't set or remove them on any backend; so is any key under the prefix.
+RESERVED_METADATA_KEYS = frozenset(
+    {
+        "actor_id",
+        "agent_id",
+        "attributed_to",
+        "created_at",
+        "data",
+        "expiration_date",
+        "hash",
+        "id",
+        "memory_type",
+        "role",
+        "run_id",
+        "text_lemmatized",
+        "updated_at",
+        "user_id",
+    }
+)
+
+
+def is_reserved_metadata_key(key: str) -> bool:
+    return key.startswith(RESERVED_METADATA_PREFIX) or key in RESERVED_METADATA_KEYS
+
+
+def refuse_reserved_metadata(keys: Iterable[str]) -> None:
+    """Raise MemoryAPIError(400) naming the first reserved key among `keys`."""
+    for key in keys:
+        if is_reserved_metadata_key(key):
+            raise MemoryAPIError(400, f"metadata key {key!r} is reserved")
+
+
+@dataclass(frozen=True)
+class MetadataPatch:
+    """A merge patch over a memory's metadata: keys to set, and keys to remove."""
+
+    set: Mapping[str, MetadataValue] = field(default_factory=dict[str, MetadataValue])
+    remove: frozenset[str] = frozenset()
 
 
 class MemoryBackend(ABC):
@@ -58,7 +104,8 @@ class MemoryBackend(ABC):
         """Store `system` as given and return it, with the partition, on every read.
 
         An item reported for a memory the store already held keeps that memory's
-        stored `created_by` and `space`. None stores no system fields.
+        stored `created_by` and `space`. None stores no system fields. Raises
+        MemoryAPIError(400) for a reserved metadata key.
         """
         ...
 
@@ -103,14 +150,18 @@ class MemoryBackend(ABC):
         self,
         partition: str,
         memory_id: str,
-        content: str,
+        content: str | None = None,
         *,
-        metadata: dict[str, Any] | None = None,
+        patch: MetadataPatch | None = None,
         system: System | None = None,
     ) -> Memory:
         """Raises MemoryAPIError(404) if not found or in another partition.
 
-        `system`, when given, replaces the stored system fields; None keeps them.
+        `content`, when given, replaces the text. `patch` sets and removes metadata
+        keys and leaves every other stored key as it is; a removed key never reads
+        back, not even as null. Raises MemoryAPIError(400) for a reserved key, set or
+        removed. `system`, when given, replaces the stored system fields; None keeps
+        them.
         """
         raise NotImplementedError
 
