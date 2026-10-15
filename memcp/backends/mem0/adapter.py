@@ -93,7 +93,7 @@ def _split_system(stored: dict[str, Any]) -> tuple[System, dict[str, Any]]:
             if k in System.__annotations__ and (isinstance(v, str) or k == "space")
         }
     )
-    visible = strip_reserved_metadata(stored) or {}
+    visible = strip_reserved_metadata(stored)
     return system, {k: v for k, v in visible.items() if v is not None}
 
 

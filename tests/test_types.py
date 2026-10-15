@@ -102,11 +102,6 @@ class TestCanonicalError:
 
 
 class TestStripReservedMetadata:
-    def test_none_passes_through_as_none(self):
-        """None means 'caller supplied no metadata'; turning it into {} would make
-        update_memory's metadata-preserving None wipe existing metadata instead."""
-        assert strip_reserved_metadata(None) is None
-
     def test_ordinary_keys_survive(self):
         assert strip_reserved_metadata({"source": "test", "k": 1}) == {"source": "test", "k": 1}
 

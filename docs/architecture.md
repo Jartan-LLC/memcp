@@ -239,8 +239,9 @@ On mem0, a removed key is written as `null` (only when the key is stored), since
 can't delete a metadata key. The mem0 backend drops null-valued keys from everything it
 returns.
 
-The reserved metadata set and the wildcard and empty-value check are defined once, in
-`backends/base.py`; policy and every backend import them.
+The reserved metadata set is defined once, in `backends/base.py`, and the `_memcp_`
+prefix and the wildcard and empty-value check in `types.py`; policy and every backend
+import them.
 
 `tests/conformance` checks each guarantee against every backend, including:
 
@@ -269,7 +270,8 @@ The reserved metadata set and the wildcard and empty-value check are defined onc
   update, `metadata` is a patch: a key with a value is set, a key set to `null` is removed,
   and keys left out are kept; a client never sees `null`. Policy refuses, with a
   `validation_error` naming the key, a `null` value outside an update's patch, a nested
-  object, a mixed list, a key under the prefix `_memcp_`, and a key in the reserved set
+  object, a mixed list, a number that isn't finite, a key under the prefix `_memcp_`, and
+  a key in the reserved set
   (`backends/base.py`), the same on every backend.
   `update_memory`'s `content` is optional. An update must give `content`, a non-empty
   `metadata`, or both; otherwise it gets `validation_error`. `_memcp_` keys are removed

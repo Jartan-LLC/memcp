@@ -38,7 +38,8 @@ def register(mcp: Any, policy: Policy) -> None:
                 "Deduped by content within the same scope — identical content in a "
                 "different scope is a distinct memory. "
                 "on_conflict: skip (default), overwrite, duplicate. overwrite replaces "
-                "the memory's content, and its metadata when the entry has 'metadata'. "
+                "the memory's metadata when the entry has 'metadata', and keeps it "
+                "otherwise. "
                 "dedup_incomplete: true means dedup may have missed existing "
                 "memories, so duplicates are possible."
             ),
