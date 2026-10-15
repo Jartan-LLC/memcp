@@ -16,7 +16,14 @@ from memcp.backends import MemoryBackend
 from memcp.backends.base import RETRIEVAL_KINDS, Retrieval
 from memcp.backends.capabilities import ALL_CAPABILITIES
 from memcp.identity import get_principal, get_tenant
-from memcp.policy.metadata import author_for, strip_reserved, system_for
+from memcp.policy.metadata import (
+    as_patch,
+    author_for,
+    check_metadata_size,
+    patched,
+    system_for,
+    validate_metadata,
+)
 from memcp.policy.scope import validate_scope
 from memcp.policy.space import check_space
 from memcp.policy.transfer import (
@@ -136,10 +143,12 @@ class Policy:
         """Store content for the caller, stamped as its write; each item is space-checked."""
         with _validation():
             validate_content(content)
+            if metadata is not None:
+                validate_metadata(metadata, nulls=False)
+                check_metadata_size(metadata)
         principal = get_principal()
         partition = principal.tenant
         scope = validate_scope(scope, self._scope_keys)
-        metadata = strip_reserved(metadata)
         author = author_for(principal)
         result = await self._backend.add(
             partition,
@@ -190,20 +199,35 @@ class Policy:
         return check_space(result, user_id, operation, memory_id)
 
     async def update(
-        self, memory_id: str, content: str, *, metadata: dict[str, Any] | None = None
+        self,
+        memory_id: str,
+        content: str | None = None,
+        *,
+        metadata: dict[str, Any] | None = None,
     ) -> Memory:
-        """Replace a memory's content, with the caller as author and its creator kept;
-        `not_found` when missing or someone else's."""
+        """Change a memory's content, its metadata (a merge patch: null removes a key), or
+        both, with the caller as author and its creator kept; `not_found` when missing or
+        someone else's."""
         principal = get_principal()
         partition = principal.tenant
         with _validation():
-            validate_content(content)
+            if content is None and not metadata:
+                raise ValueError("update_memory needs content, or metadata to change")
+            if content is not None:
+                validate_content(content)
+            if metadata:
+                validate_metadata(metadata, nulls=True)
         existing = await self._read(memory_id, "update")
-        metadata = strip_reserved(metadata)
+        patch = as_patch(metadata) if metadata else None
+        if patch is not None:
+            # Checked against the read above, not inside the write, so two concurrent
+            # patches can together pass the cap: it bounds what one write adds.
+            with _validation():
+                check_metadata_size(patched(existing.metadata, patch), stored=existing.metadata)
         system = system_for(partition, author_for(principal), existing.system.get("created_by"))
         with _not_found():
             updated = await self._backend.update(
-                partition, memory_id, content, metadata=metadata, system=system
+                partition, memory_id, content, patch=patch, system=system
             )
         return check_space(updated, partition, "update", memory_id)
 

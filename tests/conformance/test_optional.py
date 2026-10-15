@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from memcp.backends.base import MemoryBackend
+from memcp.backends.base import MemoryBackend, MetadataPatch
 from memcp.types import AddResult, EntitiesResult, ListResult, MemoryAPIError, System
 
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
@@ -64,6 +64,97 @@ async def test_update_without_system_keeps_the_stored_one(backend: MemoryBackend
     )
     updated = await backend.update(tenant, memory_id, "conformance system still kept")
     assert updated.system == created
+
+
+async def _with_metadata(backend: MemoryBackend, tenant: str, metadata: dict[str, str]) -> str:
+    content = "conformance metadata patch subject"
+    return _first_id(await backend.add(tenant, content, metadata=metadata, infer=False))
+
+
+@pytest.mark.conformance("update")
+async def test_update_patch_keeps_the_keys_it_does_not_name(backend: MemoryBackend, tenant: str):
+    _require(backend, "update")
+    memory_id = await _with_metadata(backend, tenant, {"kept": "a", "changed": "b"})
+    await backend.update(tenant, memory_id, patch=MetadataPatch(set={"changed": "c"}))
+    got = await backend.get(tenant, memory_id)
+    assert got is not None
+    assert got.metadata == {"kept": "a", "changed": "c"}
+
+
+@pytest.mark.conformance("update")
+async def test_update_patch_removes_a_key_from_every_read(backend: MemoryBackend, tenant: str):
+    _require(backend, "update")
+    memory_id = await _with_metadata(backend, tenant, {"kept": "a", "gone": "b"})
+    await backend.update(tenant, memory_id, patch=MetadataPatch(remove=frozenset({"gone"})))
+    got = await backend.get(tenant, memory_id)
+    assert got is not None
+    hits = await backend.search(tenant, "conformance metadata patch subject", limit=10)
+    reads = [got, *(m for m in hits if m.id == memory_id)]
+    if "list" in backend.capabilities():
+        listed = await backend.list_memories(tenant)
+        reads += [m for m in listed.memories if m.id == memory_id]
+    assert len(reads) >= 2, "search didn't find the patched memory"
+    assert [m.metadata for m in reads] == [{"kept": "a"}] * len(reads)
+
+
+@pytest.mark.conformance("update")
+async def test_update_removing_a_missing_key_does_nothing(backend: MemoryBackend, tenant: str):
+    _require(backend, "update")
+    memory_id = await _with_metadata(backend, tenant, {"kept": "a"})
+    updated = await backend.update(
+        tenant, memory_id, patch=MetadataPatch(remove=frozenset({"never-there"}))
+    )
+    assert updated.metadata == {"kept": "a"}
+
+
+@pytest.mark.conformance("update")
+async def test_a_content_only_update_keeps_the_metadata(backend: MemoryBackend, tenant: str):
+    _require(backend, "update")
+    memory_id = await _with_metadata(backend, tenant, {"kept": "a"})
+    updated = await backend.update(tenant, memory_id, "conformance new text only")
+    assert (updated.content, updated.metadata) == ("conformance new text only", {"kept": "a"})
+
+
+@pytest.mark.conformance("update")
+async def test_a_metadata_only_update_keeps_the_content_and_its_search_hit(
+    backend: MemoryBackend, tenant: str
+):
+    _require(backend, "update")
+    memory_id = await _with_metadata(backend, tenant, {"kept": "a"})
+    updated = await backend.update(tenant, memory_id, patch=MetadataPatch(set={"added": "b"}))
+    assert updated.content == "conformance metadata patch subject"
+    hits = await backend.search(tenant, "conformance metadata patch subject", limit=10)
+    assert memory_id in [m.id for m in hits], "a metadata-only update lost the search hit"
+
+
+@pytest.mark.conformance("update")
+async def test_a_removed_key_can_be_set_again(backend: MemoryBackend, tenant: str):
+    _require(backend, "update")
+    memory_id = await _with_metadata(backend, tenant, {"k": "first"})
+    await backend.update(tenant, memory_id, patch=MetadataPatch(remove=frozenset({"k"})))
+    updated = await backend.update(tenant, memory_id, patch=MetadataPatch(set={"k": "second"}))
+    got = await backend.get(tenant, memory_id)
+    assert got is not None
+    assert updated.metadata == got.metadata == {"k": "second"}
+
+
+@pytest.mark.conformance("update")
+@pytest.mark.parametrize(
+    "patch",
+    [MetadataPatch(set={"role": "x"}), MetadataPatch(remove=frozenset({"_memcp_system"}))],
+    ids=["set-reserved", "remove-memcp"],
+)
+async def test_update_refuses_a_reserved_metadata_key(
+    backend: MemoryBackend, tenant: str, patch: MetadataPatch
+):
+    _require(backend, "update")
+    memory_id = await _with_metadata(backend, tenant, {"kept": "a"})
+    with pytest.raises(MemoryAPIError) as refused:
+        await backend.update(tenant, memory_id, patch=patch)
+    assert refused.value.status == 400
+    got = await backend.get(tenant, memory_id)
+    assert got is not None
+    assert got.metadata == {"kept": "a"}
 
 
 @pytest.mark.conformance("update")
@@ -204,6 +295,22 @@ async def test_history_records_an_update(backend: MemoryBackend, tenant: str):
     assert any(e.content_after == "conformance history revised" for e in after), (
         f"no history entry carries the new content: {[e.content_after for e in after]}"
     )
+
+
+@pytest.mark.conformance("history")
+async def test_history_records_a_metadata_only_update_without_changing_the_text(
+    backend: MemoryBackend, tenant: str
+):
+    _require(backend, "history")
+    if "update" not in backend.capabilities():
+        pytest.skip("needs update to produce a second history entry")
+    original = "conformance history metadata only"
+    memory_id = _first_id(await backend.add(tenant, original, infer=False))
+    before = len(await backend.history(tenant, memory_id))
+    await backend.update(tenant, memory_id, patch=MetadataPatch(set={"k": "v"}))
+    after = await backend.history(tenant, memory_id)
+    assert len(after) > before, "a metadata-only update added no history entry"
+    assert after[-1].content_after == original, [after[-1].content_before, after[-1].content_after]
 
 
 @pytest.mark.conformance("history")

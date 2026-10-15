@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from memcp.backends.base import MemoryBackend
+from memcp.backends.base import MemoryBackend, MetadataPatch
 from memcp.policy.transfer import dedup_key, migrate
 from memcp.types import Memory
 from tests.conformance.corpus import CorpusEntry, round_trip_corpus
@@ -47,7 +47,9 @@ async def _write_corpus(backend: MemoryBackend, tenant: str, corpus: list[Corpus
         if i == 0 and can_edit:
             items = result if isinstance(result, list) else [result]
             assert items, "add() stored nothing for the corpus entry that gets edited"
-            await backend.update(tenant, items[0].id, entry.content, metadata=dict(entry.metadata))
+            await backend.update(
+                tenant, items[0].id, entry.content, patch=MetadataPatch(set=dict(entry.metadata))
+            )
 
 
 async def _assert_retrievable(

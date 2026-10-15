@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from memcp.backends.base import RESERVED_METADATA_KEYS, MetadataPatch
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.identity import DEFAULT_PRINCIPAL, Principal, reset_tenant, set_principal, set_tenant
 from memcp.policy import Policy
@@ -285,30 +288,281 @@ async def test_a_backend_error_other_than_404_is_not_a_refusal(
         await policy.get("some-id")
 
 
-def _record_metadata(backend: InMemoryBackend, method: str) -> list[Any]:
-    """Record the metadata policy passes to `method`; the backend's own strip can't hide it."""
+def _record(backend: InMemoryBackend, method: str, argument: str) -> list[Any]:
+    """Record one keyword argument policy passes to a backend method."""
     seen: list[Any] = []
     original = getattr(backend, method)
 
     async def recording(*args: Any, **kwargs: Any) -> Any:
-        seen.append(kwargs.get("metadata"))
+        seen.append(kwargs.get(argument))
         return await original(*args, **kwargs)
 
     setattr(backend, method, recording)
     return seen
 
 
-async def test_add_strips_reserved_metadata(policy: Policy, backend: InMemoryBackend):
-    passed = _record_metadata(backend, "add")
-    await policy.add("x", metadata={SYSTEM_METADATA_KEY: "forged", "k": "v"}, infer=False)
-    assert passed == [{"k": "v"}]
+BAD_METADATA = [
+    pytest.param({"role": "x"}, "role", id="reserved"),
+    pytest.param({SYSTEM_METADATA_KEY: "forged"}, SYSTEM_METADATA_KEY, id="memcp-prefix"),
+    pytest.param({"team": {"lead": "a"}}, "team", id="nested"),
+    pytest.param({"tags": ["a", 1]}, "tags", id="mixed-list"),
+    pytest.param({"score": float("nan")}, "score", id="not-finite"),
+    pytest.param({"k" * 65: "x"}, "k" * 65, id="long-key"),
+    pytest.param({"blob": "x" * (16 * 1024)}, "16 KiB", id="over-size"),
+]
 
 
-async def test_update_strips_reserved_metadata(policy: Policy, backend: InMemoryBackend):
+@pytest.mark.parametrize(("metadata", "named"), BAD_METADATA)
+async def test_add_refuses_bad_metadata_naming_it(
+    policy: Policy, backend: InMemoryBackend, metadata: dict[str, Any], named: str
+):
+    message = await _refused(policy.add("x", metadata=metadata, infer=False), "validation_error")
+    assert named in message
+    assert backend._store == {}  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(("metadata", "named"), BAD_METADATA)
+async def test_update_refuses_bad_metadata_naming_it(
+    policy: Policy, backend: InMemoryBackend, metadata: dict[str, Any], named: str
+):
     memory_id = await _add_one(policy)
-    passed = _record_metadata(backend, "update")
-    await policy.update(memory_id, "x", metadata={SYSTEM_METADATA_KEY: "forged", "k": "v"})
-    assert passed == [{"k": "v"}]
+    patches = _record(backend, "update", "patch")
+    message = await _refused(policy.update(memory_id, metadata=metadata), "validation_error")
+    assert named in message
+    assert patches == []
+
+
+async def test_add_refuses_a_null_value(policy: Policy):
+    message = await _refused(
+        policy.add("x", metadata={"k": None}, infer=False), "validation_error"
+    )
+    assert "'k'" in message
+
+
+async def test_update_turns_metadata_into_a_patch(policy: Policy, backend: InMemoryBackend):
+    memory_id = await _add_one(policy)
+    patches = _record(backend, "update", "patch")
+    await policy.update(memory_id, metadata={"set-me": "v", "drop-me": None})
+    assert patches == [MetadataPatch(set={"set-me": "v"}, remove=frozenset({"drop-me"}))]
+
+
+async def test_update_without_content_keeps_it(policy: Policy, backend: InMemoryBackend):
+    memory_id = await _add_one(policy, "the original text")
+    updated = await policy.update(memory_id, metadata={"k": "v"})
+    assert (updated.content, updated.metadata) == ("the original text", {"k": "v"})
+
+
+@pytest.mark.parametrize("metadata", [None, {}], ids=["none", "empty"])
+async def test_an_update_that_changes_nothing_is_refused(
+    policy: Policy, metadata: dict[str, Any] | None
+):
+    memory_id = await _add_one(policy)
+    await _refused(policy.update(memory_id, metadata=metadata), "validation_error")
+
+
+async def test_the_size_cap_applies_to_the_merged_metadata(policy: Policy):
+    """Each patch is small; together they pass the cap, so the check is on the result."""
+    memory_id = await _add_one(policy)
+    half = "x" * (9 * 1024)
+    await policy.update(memory_id, metadata={"first": half})
+    message = await _refused(
+        policy.update(memory_id, metadata={"second": half}), "validation_error"
+    )
+    assert "16 KiB" in message
+
+
+async def test_removing_keys_may_bring_metadata_back_under_the_cap(policy: Policy):
+    memory_id = await _add_one(policy)
+    await policy.update(memory_id, metadata={"first": "x" * (9 * 1024)})
+    updated = await policy.update(memory_id, metadata={"first": None, "second": "y" * 9 * 1024})
+    assert set(updated.metadata) == {"second"}
+
+
+def _exactly(size: int, char: str = "x") -> dict[str, str]:
+    """Metadata whose JSON is `size` bytes: `{"k":"..."}` is 8 bytes plus the value."""
+    return {"k": char * ((size - 8) // len(char.encode()))}
+
+
+async def test_metadata_of_exactly_the_cap_is_accepted(policy: Policy):
+    await policy.add("x", metadata=_exactly(16 * 1024), infer=False)
+    await _refused(
+        policy.add("x", metadata=_exactly(16 * 1024 + 1), infer=False), "validation_error"
+    )
+
+
+async def test_the_cap_counts_utf8_bytes_not_escapes(policy: Policy):
+    """`é` is two bytes in UTF-8 and six as an escape; the cap counts what is stored."""
+    await policy.add("x", metadata=_exactly(16 * 1024, "é"), infer=False)
+
+
+async def test_a_key_of_exactly_64_characters_is_accepted(policy: Policy):
+    await policy.add("x", metadata={"k" * 64: "v"}, infer=False)
+
+
+async def test_an_update_that_shrinks_over_cap_metadata_is_accepted(
+    policy: Policy, backend: InMemoryBackend
+):
+    """Metadata stored before the cap existed can be cleaned up through update_memory."""
+    stored = {"a": "x" * 9000, "b": "y" * 9000, "c": "z"}
+    memory_id = (await backend.add(TENANT, "x", metadata=stored))[0].id
+    updated = await policy.update(memory_id, metadata={"c": None})
+    assert set(updated.metadata) == {"a", "b"}, "still over the cap, but smaller"
+    await _refused(policy.update(memory_id, metadata={"d": "w"}), "validation_error")
+
+
+async def test_an_over_long_stored_key_can_be_removed(policy: Policy, backend: InMemoryBackend):
+    long_key = "k" * 65
+    memory_id = (await backend.add(TENANT, "x", metadata={long_key: "v", "kept": "a"}))[0].id
+    updated = await policy.update(memory_id, metadata={long_key: None})
+    assert updated.metadata == {"kept": "a"}
+
+
+async def test_import_refuses_a_null_value_naming_it(policy: Policy):
+    outcome = await policy.import_memories([{"content": "x", "metadata": {"k": None}}])
+    assert outcome.imported == []
+    assert "'k'" in outcome.errors[0]["error"]
+
+
+async def test_import_refuses_an_entry_over_the_cap(policy: Policy):
+    outcome = await policy.import_memories([{"content": "x", "metadata": _exactly(16 * 1024 + 1)}])
+    assert outcome.imported == []
+    assert "16 KiB" in outcome.errors[0]["error"]
+
+
+async def test_an_import_overwrite_replaces_the_metadata(policy: Policy, backend: InMemoryBackend):
+    """The entry wins: restoring a backup leaves exactly the backed-up metadata."""
+    memory_id = (
+        await backend.add(TENANT, "restored fact", metadata={"stale": "x", "kept": "old"})
+    )[0].id
+    await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"kept": "new"}}], on_conflict="overwrite"
+    )
+    stored = await backend.get(TENANT, memory_id)
+    assert stored is not None
+    assert stored.metadata == {"kept": "new"}
+
+
+async def test_an_import_overwrite_is_sized_by_the_entry_alone(
+    policy: Policy, backend: InMemoryBackend
+):
+    await backend.add(TENANT, "restored fact", metadata={"stale": "x" * 12000})
+    outcome = await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"fresh": "y" * 12000}}], on_conflict="overwrite"
+    )
+    assert outcome.errors == []
+    assert [e["action"] for e in outcome.imported] == ["updated"]
+
+
+async def _stored_metadata(backend: InMemoryBackend, memory_id: str) -> dict[str, Any]:
+    stored = await backend.get(TENANT, memory_id)
+    assert stored is not None
+    return stored.metadata
+
+
+async def test_an_overwrite_without_metadata_keeps_the_stored_metadata(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "restored fact", metadata={"kept": "a"}))[0].id
+    await policy.import_memories([{"content": "restored fact"}], on_conflict="overwrite")
+    assert await _stored_metadata(backend, memory_id) == {"kept": "a"}
+
+
+async def test_an_overwrite_with_empty_metadata_clears_it(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "restored fact", metadata={"gone": "a"}))[0].id
+    await policy.import_memories(
+        [{"content": "restored fact", "metadata": {}}], on_conflict="overwrite"
+    )
+    assert await _stored_metadata(backend, memory_id) == {}
+
+
+async def test_an_overwrite_keeps_a_reserved_key_already_stored(
+    policy: Policy, backend: InMemoryBackend
+):
+    """A key stored before it was reserved can't be removed by a client, so replace keeps it."""
+    memory_id = (await backend.add(TENANT, "restored fact", metadata={"stale": "x"}))[0].id
+    backend._store[memory_id]["metadata"]["role"] = "legacy"  # pyright: ignore[reportPrivateUsage]
+    outcome = await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"kept": "new"}}], on_conflict="overwrite"
+    )
+    assert outcome.errors == []
+    assert await _stored_metadata(backend, memory_id) == {"kept": "new", "role": "legacy"}
+
+
+async def test_an_overwrite_with_invalid_metadata_leaves_the_memory(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "restored fact", metadata={"kept": "a"}))[0].id
+    outcome = await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"role": "x"}}], on_conflict="overwrite"
+    )
+    assert "role" in outcome.errors[0]["error"]
+    assert await _stored_metadata(backend, memory_id) == {"kept": "a"}
+
+
+async def test_an_over_cap_update_of_the_same_size_is_accepted(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "x", metadata={"a": "x" * 9000, "b": "y" * 9000}))[0].id
+    updated = await policy.update(memory_id, metadata={"b": "z" * 9000})
+    assert updated.metadata["b"] == "z" * 9000
+
+
+async def test_an_over_cap_import_overwrite_is_refused_even_if_smaller(
+    policy: Policy, backend: InMemoryBackend
+):
+    """Import stores what it is given, so an entry has to fit the cap itself."""
+    await backend.add(TENANT, "restored fact", metadata={"a": "x" * 20000})
+    outcome = await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"a": "y" * 17000}}], on_conflict="overwrite"
+    )
+    assert "16 KiB" in outcome.errors[0]["error"]
+
+
+@pytest.mark.parametrize("key", ["role", SYSTEM_METADATA_KEY])
+async def test_update_refuses_to_remove_a_reserved_key_naming_it(
+    policy: Policy, backend: InMemoryBackend, key: str
+):
+    memory_id = await _add_one(policy)
+    patches = _record(backend, "update", "patch")
+    message = await _refused(policy.update(memory_id, metadata={key: None}), "validation_error")
+    assert key in message
+    assert patches == []
+
+
+def test_a_patch_cannot_set_and_remove_the_same_key():
+    with pytest.raises(ValueError, match="both set and removed"):
+        MetadataPatch(set={"k": "v"}, remove=frozenset({"k"}))
+
+
+async def test_a_skipped_duplicate_over_the_cap_is_an_error(
+    policy: Policy, backend: InMemoryBackend
+):
+    """An over-cap entry is listed in `errors` like any other bad metadata, even as a duplicate."""
+    await backend.add(TENANT, "dup fact")
+    outcome = await policy.import_memories(
+        [{"content": "dup fact", "metadata": _exactly(16 * 1024 + 1)}], on_conflict="skip"
+    )
+    assert (outcome.skipped, len(outcome.errors)) == ([], 1)
+
+
+def test_the_reference_lists_every_reserved_metadata_key():
+    reference = (Path(__file__).parents[2] / "docs" / "reference.md").read_text()
+    listed = reference.split("The reserved keys\n  are", 1)[1].split("\n- ", 1)[0]
+    assert set(re.findall(r"`([a-z_]+)`", listed)) == RESERVED_METADATA_KEYS
+
+
+async def test_import_reports_bad_metadata_per_entry(policy: Policy):
+    outcome = await policy.import_memories(
+        [
+            {"content": "good", "metadata": {"k": "v"}},
+            {"content": "bad", "metadata": {"role": "x"}},
+        ]
+    )
+    assert [e["index"] for e in outcome.imported] == [0]
+    assert [e["index"] for e in outcome.errors] == [1]
+    assert "role" in outcome.errors[0]["error"]
 
 
 async def test_import_refuses_an_empty_batch(policy: Policy):

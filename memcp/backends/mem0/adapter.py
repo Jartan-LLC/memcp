@@ -11,7 +11,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from memcp.backends.base import MemoryBackend
+from memcp.backends.base import MemoryBackend, MetadataPatch, refuse_reserved_metadata
 from memcp.backends.mem0.client import Mem0Client
 from memcp.types import (
     SYSTEM_METADATA_KEY,
@@ -76,7 +76,10 @@ def _build_identifier_params(
 
 
 def _split_system(stored: dict[str, Any]) -> tuple[System, dict[str, Any]]:
-    """The system fields kept under SYSTEM_METADATA_KEY, and the rest without reserved keys."""
+    """The system fields kept under SYSTEM_METADATA_KEY, and the rest without `_memcp_` keys.
+
+    A null value is a removed key (mem0 can't delete one), so it is left out.
+    """
     raw = stored.get(SYSTEM_METADATA_KEY)
     # A malformed value is kept as the space, not dropped, so the space check fails on
     # it instead of passing on the partition alone.
@@ -90,7 +93,8 @@ def _split_system(stored: dict[str, Any]) -> tuple[System, dict[str, Any]]:
             if k in System.__annotations__ and (isinstance(v, str) or k == "space")
         }
     )
-    return system, strip_reserved_metadata(stored) or {}
+    visible = strip_reserved_metadata(stored)
+    return system, {k: v for k, v in visible.items() if v is not None}
 
 
 def _parse_memory(raw: dict[str, Any], *, score: float | None = None) -> Memory:
@@ -191,9 +195,9 @@ class Mem0Backend(MemoryBackend):
         if scope:
             for key, val in _scope_items(scope):
                 payload[key] = scope_text(_concrete(val))
-        # Stripped here, not just by policy — see in_memory.add()'s
-        # comment on the same line.
-        stored_metadata = strip_reserved_metadata(metadata) or {}
+        # Refused here as well as by policy — see in_memory.add().
+        refuse_reserved_metadata(metadata or {})
+        stored_metadata = dict(metadata or {})
         if system:
             stored_metadata[SYSTEM_METADATA_KEY] = dict(system)
         if stored_metadata:
@@ -290,25 +294,34 @@ class Mem0Backend(MemoryBackend):
         self,
         partition: str,
         memory_id: str,
-        content: str,
+        content: str | None = None,
         *,
-        metadata: dict[str, Any] | None = None,
+        patch: MetadataPatch | None = None,
         system: System | None = None,
     ) -> Memory:
-        # Fetch-then-verify: mem0 PUT is global, check ownership first. `existing`
-        # also supplies whichever of metadata and system the caller didn't pass, so
-        # the PUT never drops either.
+        if patch is not None:
+            refuse_reserved_metadata([*patch.set, *patch.remove])
+        # Fetch-then-verify: mem0 PUT is global, check ownership first.
         existing = await self.get(partition, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Memory not found")
-        body: dict[str, Any] = {"text": content}
-        if metadata is not None or system is not None:
-            base = strip_reserved_metadata(metadata if metadata is not None else existing.metadata)
-            stored = base or {}
-            kept = existing.system if system is None else system
-            if kept:
-                stored[SYSTEM_METADATA_KEY] = dict(kept)
-            body["metadata"] = stored
+        # mem0's PUT merges metadata into the stored record and can't delete a key, so
+        # a removed key is written as null, and only when it is stored.
+        metadata: dict[str, Any] = {}
+        if patch is not None:
+            metadata.update(patch.set)
+            metadata.update({k: None for k in patch.remove if k in existing.metadata})
+        if system is not None:
+            metadata[SYSTEM_METADATA_KEY] = dict(system)
+        body: dict[str, Any] = {}
+        if content is not None:
+            body["text"] = content
+        if metadata:
+            body["metadata"] = metadata
+        if not body:
+            # Nothing to change, such as removing only keys that aren't stored; mem0
+            # refuses an empty update.
+            return existing
         await self._client.request("PUT", f"/memories/{memory_id}", json=body)
         # mem0 PUT returns {"message": "..."}, not the memory. Fetch it.
         updated = await self.get(partition, memory_id)

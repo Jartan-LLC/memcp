@@ -39,10 +39,9 @@ from memcp.types import (
     reject_nested_filters,
     scope_as_text,
     scope_text,
-    strip_reserved_metadata,
 )
 
-from .base import MemoryBackend
+from .base import MemoryBackend, MetadataPatch, refuse_reserved_metadata
 from .keyword import score as _score
 
 SCHEMA = """
@@ -133,10 +132,11 @@ class SqliteBackend(MemoryBackend):
     ) -> list[AddResult]:
         if scope:
             reject_nested_filters(scope)
+        # Refused here as well as by policy — see in_memory.add().
+        refuse_reserved_metadata(metadata or {})
         memory_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
-        # Stripped here as well as by policy — see in_memory.add().
-        stored_metadata = strip_reserved_metadata(metadata) or {}
+        stored_metadata = dict(metadata or {})
         stored_system = dict(system or {})
 
         def op() -> None:
@@ -257,33 +257,37 @@ class SqliteBackend(MemoryBackend):
         self,
         partition: str,
         memory_id: str,
-        content: str,
+        content: str | None = None,
         *,
-        metadata: dict[str, Any] | None = None,
+        patch: MetadataPatch | None = None,
         system: System | None = None,
     ) -> Memory:
+        if patch is not None:
+            refuse_reserved_metadata([*patch.set, *patch.remove])
         now = datetime.now(UTC).isoformat()
 
         def op() -> Memory:
             row = self._owned_row(partition, memory_id)
             if row is None:
                 raise MemoryAPIError(404, "Not found")
-            new_metadata = (
-                row["metadata"]
-                if metadata is None
-                else json.dumps(strip_reserved_metadata(metadata) or {})
-            )
+            # Read, merge and write under the backend's lock, so no other call interleaves.
+            metadata = json.loads(row["metadata"])
+            if patch is not None:
+                metadata.update(patch.set)
+                for key in patch.remove:
+                    metadata.pop(key, None)
+            new_content = row["content"] if content is None else content
             new_system = json.loads(row["system"]) if system is None else dict(system)
             with self._conn:
                 self._conn.execute(
                     "UPDATE memories SET content = ?, updated_at = ?, metadata = ?, system = ?"
                     " WHERE id = ?",
-                    (content, now, new_metadata, json.dumps(new_system), memory_id),
+                    (new_content, now, json.dumps(metadata), json.dumps(new_system), memory_id),
                 )
                 self._conn.execute(
                     "INSERT INTO history (memory_id, action, timestamp, content_before,"
                     " content_after, author) VALUES (?, 'updated', ?, ?, ?, ?)",
-                    (memory_id, now, row["content"], content, new_system.get("author")),
+                    (memory_id, now, row["content"], new_content, new_system.get("author")),
                 )
             updated = self._owned_row(partition, memory_id)
             if updated is None:  # pragma: no cover - written in the same transaction

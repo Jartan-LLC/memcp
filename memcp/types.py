@@ -27,6 +27,8 @@ MAX_QUERY_LENGTH = 10_000
 MAX_LIMIT = 1_000
 MAX_EXPORT = 10_000
 MAX_IMPORT = 1_000
+MAX_METADATA_BYTES = 16 * 1024
+MAX_METADATA_KEY_LENGTH = 64
 
 # Metadata keys in this namespace are server-only: a caller cannot set them, and
 # they never appear in a Memory's public `metadata`. `SYSTEM_METADATA_KEY` holds a
@@ -91,15 +93,8 @@ def reject_nested_filters(d: dict[str, Any]) -> None:
         )
 
 
-def strip_reserved_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Drop caller-supplied keys in memcp's reserved metadata namespace.
-
-    None means "caller did not supply metadata" and passes through unchanged —
-    turning it into `{}` would make an update_memory call with no metadata
-    argument wipe an existing memory's metadata instead of leaving it alone.
-    """
-    if metadata is None:
-        return None
+def strip_reserved_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Drop keys in memcp's `_memcp_` namespace, which a read never returns."""
     return {k: v for k, v in metadata.items() if not k.startswith(RESERVED_METADATA_PREFIX)}
 
 

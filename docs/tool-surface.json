@@ -18,7 +18,28 @@
           "metadata": {
             "anyOf": [
               {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
                 "type": "object"
               },
               {
@@ -293,8 +314,16 @@
       "input_schema": {
         "properties": {
           "content": {
-            "title": "Content",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Content"
           },
           "memory_id": {
             "title": "Memory Id",
@@ -303,7 +332,31 @@
           "metadata": {
             "anyOf": [
               {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "type": "object"
               },
               {
@@ -315,8 +368,7 @@
           }
         },
         "required": [
-          "memory_id",
-          "content"
+          "memory_id"
         ],
         "title": "update_memoryArguments",
         "type": "object"

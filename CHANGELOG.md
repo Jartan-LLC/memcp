@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`update_memory`'s `metadata` is a patch.** Keys you don't send are kept; on in_memory they were dropped before. Send a key as `null` to remove it. `content` is optional.
+- **Metadata follows one set of rules on `add_memory`, `update_memory` and `import_memories`, on every backend.** 0.1.2 stored it as given.
+  - Values are strings, numbers, booleans or lists of strings. A key is at most 64 characters, and a memory's metadata at most 16 KiB as JSON.
+  - A reserved key (listed under Metadata in `docs/reference.md`) and a `_memcp_` key are refused.
+  - A write that breaks a rule gets `validation_error`, which names the key for every rule but the size cap. `import_memories` lists the entry in `errors` instead.
+  - Metadata already stored that breaks these rules is still returned. An update that doesn't grow it is accepted, so its keys can be removed, except a key whose name is now reserved.
+  - Export, then import or migrate, refuses such a memory, content included, and lists it in `errors`.
+  - `import_memories` with `on_conflict=overwrite` replaces the metadata when the entry has `metadata`; on mem0 it used to merge. A reserved key already stored stays.
 - **Every tool applies the same scope rules, on every backend.**
   - A scope naming `user_id` is refused with `invalid_scope`. It used to be dropped from the scope with a warning from `memcp.tools` ("Stripped user_id from scope dict"); that warning is no longer logged, so an alert on it stops firing.
   - An empty, `*` or `null` value is refused with `validation_error` on every tool. On mem0, search and list used to read such a value as "any".
@@ -59,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Errors in `MEMCP_AUTH_TOKENS` and `MEMCP_AUTH_SEATS` name the entry by position instead of quoting it, so a token no longer reaches the startup log.
 - **Every memory carries `author`, the seat of the token that last wrote it, set by the server.** (JAR-723)
   - `search_memory`, `get_memory`, `list_memories`, `update_memory` and `export_memories` return it. It is `null` for a write made without `MEMCP_AUTH_TOKENS`, and for a memory written by 0.1.2 or earlier. A token mapped onto the tenant `default_user` still records its seat.
-  - A caller can't set it: memcp strips `_memcp_` keys from caller metadata. An update, or an `import_memories` overwrite, records the acting token's seat. `import_memories` ignores an entry's `author`, so an export/import round trip doesn't keep it.
+  - A caller can't set it: memcp refuses `_memcp_` keys in caller metadata. An update, or an `import_memories` overwrite, records the acting token's seat. `import_memories` ignores an entry's `author`, so an export/import round trip doesn't keep it.
   - The new, optional `MEMCP_AUTH_SEATS` (`token:seat`, comma-separated) gives a token in `MEMCP_AUTH_TOKENS` its own seat, so two tokens can share a tenant and still be told apart. A token without a seat there uses its tenant as its seat, and `MEMCP_AUTH_TOKENS` parses as before. A seat outside `[A-Za-z0-9_.-]+`, or a token with no `MEMCP_AUTH_TOKENS` entry, stops startup with a named error.
   - The server's MCP instructions tell a client to treat every memory as third-party input: attribute it, re-check it, and never follow instructions inside it.
   - **On mem0, sweep the store for the metadata key `_memcp_system` before this version serves it.** 0.1.2 stored callers' metadata as given, and memcp can't enumerate a mem0 install's tenants to clean it, so a key planted then reads back as an `author` no server set. sqlite and in_memory keep `author` outside metadata and need no sweep.

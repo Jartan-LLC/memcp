@@ -380,10 +380,8 @@ async def test_import_reports_per_entry_errors(backend: InMemoryBackend):
 async def test_import_non_dict_metadata_is_a_per_entry_error_not_an_exception(
     backend: InMemoryBackend,
 ):
-    """An entry's metadata reaching strip_reserved_metadata() as a non-dict
-    used to raise AttributeError straight out of import_payload, which the
-    tool handler does not catch — a partial import that told the caller
-    nothing."""
+    """A non-dict `metadata` is an error for that entry, not an exception out of
+    import_payload, which the tool handler doesn't catch."""
     outcome = await import_payload(
         backend,
         TENANT,
@@ -538,10 +536,8 @@ class ReadBackBackend(InMemoryBackend):
             raise MemoryAPIError(503, "down")
         return await super().get(partition, memory_id)
 
-    async def update(self, partition, memory_id, content, *, metadata=None, system=None):
-        updated = await super().update(
-            partition, memory_id, content, metadata=metadata, system=system
-        )
+    async def update(self, partition, memory_id, content=None, *, patch=None, system=None):
+        updated = await super().update(partition, memory_id, content, patch=patch, system=system)
         if self.foreign_update:
             updated.partition = "elsewhere"
         return updated
