@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **A memory store's error response no longer reaches the client.** A `backend_error` or `timeout` message used to carry up to 500 characters of the store's response, or the transport's error text, which can include the store's URL; a failed `import_memories` entry did the same in `errors`. The message now gives at most the HTTP status, and the response is logged as a warning by `memcp.tools._shared` (`memcp.policy.transfer` for an import entry).
+- **A memory store's error response no longer reaches the client.** A `backend_error` or `timeout` message used to carry up to 500 characters of the store's response, including its reason for refusing a request, or the transport's error text, which can include the store's URL; a failed `import_memories` entry did the same in `errors`. The message now gives at most the status, and the server logs the response as a warning instead.
 - `memory_entities` on mem0 counts only the caller's own memories. It read mem0's store-wide entity list, so a tenant writing under an `agent_id` or `run_id` equal to another tenant's user id put a row, with its count and timestamps, into that tenant's results. It now also returns the caller's agent and run rows, honours `scope`, and counts at most 1000 memories, mem0's list ceiling.
 - `delete_all_memories` refuses an empty, `*` or `null` scope value. The mem0 adapter dropped such a value as matching anything, so the delete reached memories outside the requested scope.
 - Errors in `MEMCP_AUTH_TOKENS` and `MEMCP_AUTH_SEATS` name the entry by position instead of quoting it, so a token no longer reaches the startup log.

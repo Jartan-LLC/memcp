@@ -18,6 +18,7 @@ from memcp.types import (
     MAX_EXPORT,
     Memory,
     MemoryAPIError,
+    log_backend_error,
     serialize_memory,
     strip_reserved_metadata,
     validate_content,
@@ -134,12 +135,6 @@ async def build_dedup_index(
     return {dedup_key(m.content, m.scope): m.id for m in memories}, incomplete
 
 
-def _entry_error(index: int, e: MemoryAPIError) -> str:
-    """Log the store's response for one failed entry; return what the caller is told."""
-    logger.warning("Backend error %d importing entry %d: %s", e.status, index, e.body)
-    return e.client_message
-
-
 async def import_payload(
     backend: MemoryBackend,
     user_id: str,
@@ -171,6 +166,7 @@ async def import_payload(
 
     existing: dict[DedupKey, str] = {}
     outcome = ImportOutcome()
+    backend_failures = 0
     if on_conflict != "duplicate":
         existing, outcome.dedup_incomplete = await build_dedup_index(
             backend, user_id, limit=dedup_limit
@@ -222,7 +218,10 @@ async def import_payload(
                 await backend.update(user_id, dup_id, content, metadata=metadata, author=author)
                 outcome.imported.append({"id": dup_id, "index": i, "action": "updated"})
             except MemoryAPIError as e:
-                outcome.errors.append({"index": i, "error": _entry_error(i, e)})
+                if not backend_failures:
+                    log_backend_error(e, f"import entry {i}")
+                backend_failures += 1
+                outcome.errors.append({"index": i, "error": e.client_message})
             continue
 
         try:
@@ -230,7 +229,10 @@ async def import_payload(
                 user_id, content, scope=scope, metadata=metadata, infer=False, author=author
             )
         except MemoryAPIError as e:
-            outcome.errors.append({"index": i, "error": _entry_error(i, e)})
+            if not backend_failures:
+                log_backend_error(e, f"import entry {i}")
+            backend_failures += 1
+            outcome.errors.append({"index": i, "error": e.client_message})
             continue
 
         if not result:
@@ -241,6 +243,8 @@ async def import_payload(
             outcome.imported.append({"id": r.id, "index": i, "action": "created"})
             existing[key] = r.id
 
+    if backend_failures > 1:
+        logger.warning("%d more import entries failed with backend errors", backend_failures - 1)
     return outcome
 
 

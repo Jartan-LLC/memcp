@@ -118,9 +118,10 @@ succeed later.
 | `timeout` | The backend didn't answer in time | `true` |
 | `backend_error` | The backend returned an error | `true` for a 5xx, otherwise `false` |
 
-A `timeout` or `backend_error` message gives at most the HTTP status, never the store's
-response; the server logs that response as a warning. An `import_memories` entry the
-backend fails is reported the same way.
+A `timeout` or `backend_error` message gives at most the status, never the store's
+response. The server logs that response as a warning, cut to 2,000 characters; it can quote
+what the request sent, memory content included. An `import_memories` entry the backend
+fails is reported the same way, with only the first failure's response logged.
 
 A rejected entry doesn't fail `import_memories`: it imports the entries it can and lists
 each rejected one in its result's `errors`, with the entry's `index` and the reason in
