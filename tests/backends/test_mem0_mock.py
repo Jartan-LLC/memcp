@@ -66,6 +66,42 @@ async def test_add_empty_extraction(backend):
 
 
 # ---------------------------------------------------------------------------
+# validate_partition
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("partition", ["*", "", " alice", "alice ", "alice\t"])
+def test_validate_partition_refuses_what_mem0_cannot_match_exactly(backend, partition):
+    with pytest.raises(ValueError, match="partition"):
+        backend.validate_partition(partition)
+
+
+def test_validate_partition_accepts_an_ordinary_partition(backend):
+    assert backend.validate_partition(USER) is None
+
+
+@respx.mock
+async def test_a_refused_partition_never_reaches_mem0(backend):
+    route = respx.route().mock(return_value=httpx.Response(200, json={"results": []}))
+    calls = [
+        backend.add("*", "fact", infer=False),
+        backend.search("*", "fact"),
+        backend.get("*", "mem-1"),
+        backend.delete("*", "mem-1"),
+        backend.delete_all("*", {"agent_id": "a"}),
+        backend.update("*", "mem-1", "new"),
+        backend.list_memories("*"),
+        backend.history("*", "mem-1"),
+        backend.entities("*"),
+    ]
+    for call in calls:
+        with pytest.raises(MemoryAPIError) as refused:
+            await call
+        assert refused.value.status == 400
+    assert not route.called
+
+
+# ---------------------------------------------------------------------------
 # get — ownership verification
 # ---------------------------------------------------------------------------
 
@@ -250,13 +286,6 @@ async def test_entities_count_only_the_callers_memories(backend, shared_store):
     result = await backend.entities(USER)
     assert result.entities == [
         {
-            "id": "alice",
-            "type": "user",
-            "total_memories": 2,
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-05T00:00:00Z",
-        },
-        {
             "id": "claude-code",
             "type": "agent",
             "total_memories": 2,
@@ -280,18 +309,22 @@ async def test_entities_never_show_another_tenants_memories(backend, shared_stor
     assert result.entities == []
 
 
-async def test_entities_limit_keeps_the_user_row(backend, shared_store):
+async def test_entities_limit_cuts_the_sorted_rows(backend, shared_store):
     result = await backend.entities(USER, limit=1)
-    assert [(e["type"], e["id"]) for e in result.entities] == [("user", "alice")]
+    assert [(e["type"], e["id"]) for e in result.entities] == [("agent", "claude-code")]
 
 
-def test_entity_rows_put_the_user_first_then_sort_by_type_and_id():
+async def test_entities_never_name_the_partition(backend, shared_store):
+    result = await backend.entities(USER)
+    assert all(e["id"] != USER for e in result.entities)
+
+
+def test_entity_rows_sort_by_type_and_id():
     memories = [
         Memory(id="m1", content="a", scope={"run_id": "r2", "agent_id": "b"}),
         Memory(id="m2", content="b", scope={"run_id": "r1", "agent_id": "a"}),
     ]
-    assert [(e["type"], e["id"]) for e in _entity_rows(USER, memories)] == [
-        ("user", "alice"),
+    assert [(e["type"], e["id"]) for e in _entity_rows(memories)] == [
         ("agent", "a"),
         ("agent", "b"),
         ("run", "r1"),
@@ -331,12 +364,15 @@ async def test_delete_all_refuses_a_key_mem0_would_ignore(backend, scope):
     assert route.call_count == 0
 
 
+AGENT = {"agent_id": "a"}
+
+
 def test_entity_rows_compare_naive_timestamps_as_utc():
     memories = [
-        Memory(id="m1", content="a", created_at="2026-01-02T00:00:00", updated_at=None),
-        Memory(id="m2", content="b", created_at="2026-01-01T00:00:00Z", updated_at=None),
+        Memory(id="m1", content="a", scope=AGENT, created_at="2026-01-02T00:00:00"),
+        Memory(id="m2", content="b", scope=AGENT, created_at="2026-01-01T00:00:00Z"),
     ]
-    [row] = _entity_rows(USER, memories)
+    [row] = _entity_rows(memories)
     assert (row["created_at"], row["updated_at"]) == (
         "2026-01-01T00:00:00Z",
         "2026-01-02T00:00:00",
@@ -345,11 +381,11 @@ def test_entity_rows_compare_naive_timestamps_as_utc():
 
 def test_entity_rows_skip_missing_and_invalid_timestamps():
     memories = [
-        Memory(id="m1", content="a", created_at="", updated_at=None),
-        Memory(id="m2", content="b", created_at="not a date", updated_at=None),
-        Memory(id="m3", content="c", created_at="2026-01-02T00:00:00Z", updated_at=None),
+        Memory(id="m1", content="a", scope=AGENT, created_at=""),
+        Memory(id="m2", content="b", scope=AGENT, created_at="not a date"),
+        Memory(id="m3", content="c", scope=AGENT, created_at="2026-01-02T00:00:00Z"),
     ]
-    [row] = _entity_rows(USER, memories)
+    [row] = _entity_rows(memories)
     assert row["total_memories"] == 3
     assert (row["created_at"], row["updated_at"]) == (
         "2026-01-02T00:00:00Z",
@@ -435,7 +471,6 @@ async def test_delete_all_with_no_scope_deletes_the_tenant(backend):
 async def test_entities_respect_scope(backend, shared_store):
     result = await backend.entities(USER, scope={"run_id": "r1"})
     assert [(e["type"], e["id"], e["total_memories"]) for e in result.entities] == [
-        ("user", "alice", 1),
         ("agent", "claude-code", 1),
         ("run", "r1", 1),
     ]

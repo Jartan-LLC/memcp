@@ -352,9 +352,24 @@ async def test_entities_reflect_stored_memories(backend: MemoryBackend, tenant: 
     _require(backend, "entities")
     empty = await backend.entities(tenant)
     assert not empty.entities, "a tenant with no memories should have no entities"
-    await backend.add(tenant, "Grace Hopper built the first compiler", infer=False)
+    scope = {backend.scope_keys()[0]: "conf-entities"}
+    await backend.add(tenant, "Grace Hopper built the first compiler", scope=scope, infer=False)
     populated = await backend.entities(tenant)
     assert populated.entities, "entities() returned nothing for a tenant that has memories"
+
+
+@pytest.mark.conformance("entities")
+async def test_entities_never_name_the_partition(backend: MemoryBackend, tenant: str):
+    _require(backend, "entities")
+    scope = {backend.scope_keys()[0]: "conf-entities"}
+    await backend.add(
+        tenant, "conformance entity rows name scope values", scope=scope, infer=False
+    )
+    result = await backend.entities(tenant)
+    assert result.entities, "entities() returned nothing for a tenant that has memories"
+    assert all(e.get("id") != tenant for e in result.entities), (
+        "entities() returned the partition as an entity"
+    )
 
 
 @pytest.mark.conformance("entities")

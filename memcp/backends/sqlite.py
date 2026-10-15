@@ -41,7 +41,7 @@ from memcp.types import (
     scope_text,
 )
 
-from .base import MemoryBackend, MetadataPatch, refuse_reserved_metadata
+from .base import MemoryBackend, MetadataPatch, refuse_partition, refuse_reserved_metadata
 from .keyword import score as _score
 
 SCHEMA = """
@@ -130,6 +130,7 @@ class SqliteBackend(MemoryBackend):
         infer: bool = True,
         system: System | None = None,
     ) -> list[AddResult]:
+        refuse_partition(self, partition)
         if scope:
             reject_nested_filters(scope)
         # Refused here as well as by policy — see in_memory.add().
@@ -172,6 +173,7 @@ class SqliteBackend(MemoryBackend):
         limit: int = 10,
         threshold: float = 0.0,
     ) -> list[Memory]:
+        refuse_partition(self, partition)
         if scope:
             reject_nested_filters(scope)
 
@@ -193,6 +195,8 @@ class SqliteBackend(MemoryBackend):
         return await self._run(op)
 
     async def delete(self, partition: str, memory_id: str) -> bool:
+        refuse_partition(self, partition)
+
         def op() -> bool:
             if self._owned_row(partition, memory_id) is None:
                 raise MemoryAPIError(404, "Not found")
@@ -204,6 +208,7 @@ class SqliteBackend(MemoryBackend):
         return await self._run(op)
 
     async def delete_all(self, partition: str, scope: dict[str, Any]) -> int:
+        refuse_partition(self, partition)
         reject_nested_filters(scope)
 
         def op() -> int:
@@ -244,7 +249,12 @@ class SqliteBackend(MemoryBackend):
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
 
+    def validate_partition(self, partition: str) -> None:
+        """Refuses nothing: the column compares with SQLite's exact BINARY collation."""
+
     async def get(self, partition: str, memory_id: str) -> Memory | None:
+        refuse_partition(self, partition)
+
         def op() -> Memory | None:
             row = self._owned_row(partition, memory_id)
             return None if row is None else self._row_to_memory(row)
@@ -262,6 +272,7 @@ class SqliteBackend(MemoryBackend):
         patch: MetadataPatch | None = None,
         system: System | None = None,
     ) -> Memory:
+        refuse_partition(self, partition)
         if patch is not None:
             refuse_reserved_metadata([*patch.set, *patch.remove])
         now = datetime.now(UTC).isoformat()
@@ -304,6 +315,8 @@ class SqliteBackend(MemoryBackend):
         limit: int = 100,
         cursor: str | None = None,
     ) -> ListResult:
+        refuse_partition(self, partition)
+
         def op() -> list[Memory]:
             rows = self._conn.execute(
                 "SELECT * FROM memories WHERE user_id = ? ORDER BY rowid", (partition,)
@@ -318,6 +331,8 @@ class SqliteBackend(MemoryBackend):
         return paginate(memories, cursor, limit)
 
     async def history(self, partition: str, memory_id: str) -> list[HistoryEntry]:
+        refuse_partition(self, partition)
+
         def op() -> list[HistoryEntry]:
             if self._owned_row(partition, memory_id) is None:
                 raise MemoryAPIError(404, "Not found")

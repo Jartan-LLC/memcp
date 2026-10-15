@@ -161,7 +161,7 @@ A request without a valid bearer token gets HTTP 401 with the same object and th
 - List endpoint does not paginate server-side — up to 1000 memories are loaded per request, and memcp pages them
 - List returns at most 1000 memories (mem0's own ceiling) and can't page past it, so a tenant at or above 1000 memories is reported as incomplete (see each tool's flag above)
 - List endpoint does not filter by metadata
-- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories instead, at most 1000 (the list ceiling, reported as `incomplete`)
+- Entities endpoint mixes every tenant's values, so `memory_entities` counts the tenant's own memories by agent and run instead, at most 1000 (the list ceiling, reported as `incomplete`)
 - Single-ID endpoints are globally scoped — ownership verified via fetch-then-verify
 - `memory_history` entries carry `author: null` for every event — mem0's history log is entirely upstream-managed and has no field to record it in. A memory's current `author` (from `search_memory`, `get_memory`, `list_memories`) is unaffected; only the event-by-event trail cannot be attributed
 
