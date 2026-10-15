@@ -71,6 +71,9 @@ applies the same rules:
   whitespace inside it.
 - A number that isn't finite (NaN or infinity) is refused.
 
+Scope values come back as text: a `run_id` stored as `7` reads back as `"7"`, and `true` as
+`"true"`.
+
 Search and list leave out a memory the backend returns outside the requested scope, and log
 a warning (`memcp.policy`).
 

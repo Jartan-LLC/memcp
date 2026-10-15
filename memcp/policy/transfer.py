@@ -161,8 +161,8 @@ async def import_payload(
     """
     if on_conflict not in ON_CONFLICT_CHOICES:
         raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
-    if on_conflict == "overwrite" and "update_memory" not in backend.capabilities():
-        raise ValueError("on_conflict='overwrite' requires the update_memory capability")
+    if on_conflict == "overwrite" and "update" not in backend.capabilities():
+        raise ValueError("on_conflict='overwrite' requires the backend's update capability")
 
     existing: dict[DedupKey, str] = {}
     outcome = ImportOutcome()

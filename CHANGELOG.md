@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Scope values come back as text on every backend: a `run_id` stored as `7` reads back as `"7"`. sqlite and in_memory returned it as given.
 - **Every tool applies the same scope rules, on every backend.**
   - A scope naming `user_id` is refused with `invalid_scope`. It used to be dropped from the scope with a warning from `memcp.tools` ("Stripped user_id from scope dict"); that warning is no longer logged, so an alert on it stops firing.
   - An empty, `*` or `null` value is refused with `validation_error` on every tool. On mem0, search and list used to read such a value as "any".

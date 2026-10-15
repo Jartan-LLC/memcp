@@ -220,7 +220,7 @@ async def test_health(backend: InMemoryBackend):
 
 async def test_capabilities_are_valid(backend: InMemoryBackend):
     caps = backend.capabilities()
-    valid = {"get_memory", "update_memory", "list_memories", "memory_history", "memory_entities"}
+    valid = {"update", "list", "history", "entities"}
     assert caps <= valid
 
 

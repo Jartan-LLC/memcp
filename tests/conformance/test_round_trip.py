@@ -34,7 +34,7 @@ async def _write_corpus(backend: MemoryBackend, tenant: str, corpus: list[Corpus
     The edit matters: `updated_at` and `history` are in LOSSES, and a corpus of
     never-touched memories would lose neither, so every pair would fail.
     """
-    can_edit = "update_memory" in backend.capabilities()
+    can_edit = "update" in backend.capabilities()
     for i, entry in enumerate(corpus):
         content = f"{entry.content} (draft)" if i == 0 and can_edit else entry.content
         result = await backend.add(
@@ -104,7 +104,7 @@ async def test_round_trip_preserves_content_scope_and_retrieval(
     source, target = pair
     source_name, target_name = pair_names
     for backend, name in ((source, source_name), (target, target_name)):
-        if "list_memories" not in backend.capabilities():
+        if "list" not in backend.capabilities():
             pytest.skip(f"{name} does not declare list_memories, so it cannot be migrated")
 
     corpus = round_trip_corpus()
@@ -142,9 +142,7 @@ async def test_round_trip_preserves_content_scope_and_retrieval(
     source_index = {dedup_key(m.content, m.scope): m for m in source_memories}
     target_index = {dedup_key(m.content, m.scope): m for m in target_memories}
 
-    compare_history = (
-        "memory_history" in source.capabilities() and "memory_history" in target.capabilities()
-    )
+    compare_history = "history" in source.capabilities() and "history" in target.capabilities()
     history_lengths: dict[str, tuple[int, int]] = {}
     if compare_history:
         for key, src in source_index.items():

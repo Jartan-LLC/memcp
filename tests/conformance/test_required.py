@@ -22,6 +22,12 @@ def _ids(result: AddResult | list[AddResult]) -> list[str]:
     return [r.id for r in items]
 
 
+def _first_id(result: AddResult | list[AddResult]) -> str:
+    ids = _ids(result)
+    assert ids, "add() stored nothing"
+    return ids[0]
+
+
 async def test_capabilities_are_known_names(backend: MemoryBackend):
     caps = backend.capabilities()
     assert isinstance(caps, set)
@@ -208,3 +214,87 @@ async def test_undeclared_capabilities_raise_not_implemented(backend: MemoryBack
             "NotImplementedError — narrowing by omission alone leaves working code no "
             "caller can reach and this suite cannot check."
         )
+
+
+# ---------------------------------------------------------------------------
+# get
+# ---------------------------------------------------------------------------
+
+
+async def test_get_returns_the_memory(backend: MemoryBackend, tenant: str):
+    content = "conformance get returns full content"
+    memory_id = _first_id(await backend.add(tenant, content, infer=False))
+    memory = await backend.get(tenant, memory_id)
+    assert memory is not None
+    assert memory.id == memory_id
+    assert memory.content == content
+
+
+async def test_get_missing_returns_none(backend: MemoryBackend, tenant: str):
+    assert await backend.get(tenant, MISSING_ID) is None
+
+
+async def test_get_isolates_tenants(backend: MemoryBackend, tenant: str, other_tenant: str):
+    memory_id = _first_id(await backend.add(tenant, "conformance get isolation", infer=False))
+    assert await backend.get(other_tenant, memory_id) is None, (
+        "get() returned another tenant's memory"
+    )
+
+
+async def test_get_preserves_scope_and_metadata(backend: MemoryBackend, tenant: str):
+    scope_key = backend.scope_keys()[0]
+    scope = {scope_key: "conformance_get_scope"}
+    metadata = {"source": "conformance", "revision": "3"}
+    memory_id = _first_id(
+        await backend.add(
+            tenant,
+            "conformance scope and metadata survive a write",
+            scope=scope,
+            metadata=metadata,
+            infer=False,
+        )
+    )
+    memory = await backend.get(tenant, memory_id)
+    assert memory is not None
+    assert memory.scope.get(scope_key) == scope[scope_key], (
+        f"scope key {scope_key!r} did not survive add() -> get(): {memory.scope}"
+    )
+    assert memory.metadata == metadata, (
+        f"metadata did not survive add() -> get(): {memory.metadata}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# declarations, scores and scope values
+# ---------------------------------------------------------------------------
+
+
+async def test_backend_declares_retrieval_and_list_ceiling(backend: MemoryBackend):
+    assert backend.retrieval in ("keyword", "semantic")
+    assert backend.list_ceiling is None or backend.list_ceiling > 0
+
+
+async def test_search_scores_are_in_range_and_sorted(backend: MemoryBackend, tenant: str):
+    for i in range(3):
+        await backend.add(tenant, f"conformance score check harbour {i}", infer=False)
+    hits = await backend.search(tenant, "conformance score check harbour", limit=10)
+    assert hits, "search found none of the memories just added"
+    scores = [m.score for m in hits if m.score is not None]
+    assert len(scores) == len(hits), "every search result needs a score"
+    assert all(0.0 <= s <= 1.0 for s in scores), scores
+    assert scores == sorted(scores, reverse=True), scores
+
+
+async def test_scope_values_come_back_as_text(backend: MemoryBackend, tenant: str):
+    scope_key = backend.scope_keys()[-1]
+    memory_id = _first_id(
+        await backend.add(tenant, "conformance numeric scope", scope={scope_key: 7}, infer=False)
+    )
+    memory = await backend.get(tenant, memory_id)
+    assert memory is not None
+    assert memory.scope.get(scope_key) == "7"
+    for requested in (7, "7"):
+        hits = await backend.search(
+            tenant, "numeric scope", scope={scope_key: requested}, limit=10
+        )
+        assert memory_id in [m.id for m in hits], f"a scope of {requested!r} missed the memory"

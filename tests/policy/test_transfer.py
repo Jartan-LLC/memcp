@@ -263,8 +263,8 @@ async def test_import_rejects_bad_on_conflict(backend: InMemoryBackend):
 
 
 async def test_import_overwrite_needs_update_capability(backend: InMemoryBackend, monkeypatch):
-    monkeypatch.setattr(backend, "capabilities", lambda: {"list_memories"})
-    with pytest.raises(ValueError, match="update_memory"):
+    monkeypatch.setattr(backend, "capabilities", lambda: {"list"})
+    with pytest.raises(ValueError, match="update capability"):
         await import_payload(backend, TENANT, [{"content": "x"}], on_conflict="overwrite")
 
 

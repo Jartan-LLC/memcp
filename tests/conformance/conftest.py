@@ -41,11 +41,18 @@ def _open(name: str, directory: Path) -> MemoryBackend:
 
 
 async def _wipe(backend: MemoryBackend, *tenants: str) -> None:
-    """Empty each tenant. The backend method takes an empty scope; the MCP tool does not."""
+    """Empty each tenant: list its memories, then delete each by id."""
     for tenant_id in tenants:
         # Teardown must never mask the failure that is already being reported.
         with contextlib.suppress(Exception):
-            await backend.delete_all(tenant_id, {})
+            cursor = None
+            while True:
+                page = await backend.list_memories(tenant_id, limit=100, cursor=cursor)
+                for memory in page.memories:
+                    await backend.delete(tenant_id, memory.id)
+                cursor = page.next_cursor
+                if cursor is None:
+                    break
 
 
 @pytest.fixture

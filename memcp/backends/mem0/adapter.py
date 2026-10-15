@@ -25,6 +25,7 @@ from memcp.types import (
     is_wildcard,
     paginate,
     reject_nested_filters,
+    scope_text,
     split_author,
     strip_reserved_metadata,
 )
@@ -51,26 +52,26 @@ def _scope_items(scope: dict[str, Any]) -> list[tuple[str, Any]]:
 
 
 def _build_search_filters(
-    user_id: str,
+    partition: str,
     scope: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Flat filter dict for POST /search."""
-    filters: dict[str, Any] = {"user_id": user_id}
+    filters: dict[str, Any] = {"user_id": partition}
     if scope:
         for key, val in _scope_items(scope):
-            filters[key] = _concrete(val)
+            filters[key] = scope_text(_concrete(val))
     return filters
 
 
 def _build_identifier_params(
-    user_id: str,
+    partition: str,
     scope: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Query params for GET /memories and DELETE /memories."""
-    params: dict[str, Any] = {"user_id": user_id}
+    params: dict[str, Any] = {"user_id": partition}
     if scope:
         for key, val in _scope_items(scope):
-            params[key] = _concrete(val)
+            params[key] = scope_text(_concrete(val))
     return params
 
 
@@ -103,11 +104,11 @@ def _earliest_and_latest(values: list[str | None]) -> tuple[str | None, str | No
     return min(dated)[1], max(dated)[1]
 
 
-def _entity_rows(user_id: str, memories: list[Memory]) -> list[dict[str, Any]]:
+def _entity_rows(partition: str, memories: list[Memory]) -> list[dict[str, Any]]:
     """Count one tenant's memories per user, agent and run, in mem0's entity row shape."""
     groups: dict[tuple[str, str], list[Memory]] = {}
     for memory in memories:
-        groups.setdefault(("user", user_id), []).append(memory)
+        groups.setdefault(("user", partition), []).append(memory)
         for entity_type, key in (("agent", "agent_id"), ("run", "run_id")):
             if memory.scope.get(key):
                 groups.setdefault((entity_type, str(memory.scope[key])), []).append(memory)
@@ -134,6 +135,8 @@ class Mem0Backend(MemoryBackend):
 
     # mem0 runs content through an LLM on add(infer=True) and may store nothing.
     extracts_facts = True
+    retrieval = "semantic"
+    list_ceiling = LIST_CEILING
 
     def __init__(self, base_url: str, api_key: str, *, timeout: float = 30.0):
         self._client = Mem0Client(base_url, api_key, timeout=timeout)
@@ -155,7 +158,7 @@ class Mem0Backend(MemoryBackend):
 
     async def add(
         self,
-        user_id: str,
+        partition: str,
         content: str,
         *,
         scope: dict[str, Any] | None = None,
@@ -165,12 +168,12 @@ class Mem0Backend(MemoryBackend):
     ) -> list[AddResult]:
         payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": content}],
-            "user_id": user_id,
+            "user_id": partition,
             "infer": infer,
         }
         if scope:
             for key, val in _scope_items(scope):
-                payload[key] = _concrete(val)
+                payload[key] = scope_text(_concrete(val))
         # Stripped here, not just by policy — see in_memory.add()'s
         # comment on the same line.
         stored_metadata = strip_reserved_metadata(metadata) or {}
@@ -197,7 +200,7 @@ class Mem0Backend(MemoryBackend):
 
     async def search(
         self,
-        user_id: str,
+        partition: str,
         query: str,
         *,
         scope: dict[str, Any] | None = None,
@@ -206,7 +209,7 @@ class Mem0Backend(MemoryBackend):
     ) -> list[Memory]:
         payload = {
             "query": query,
-            "filters": _build_search_filters(user_id, scope),
+            "filters": _build_search_filters(partition, scope),
             "top_k": limit,
             "threshold": threshold,
         }
@@ -214,15 +217,15 @@ class Mem0Backend(MemoryBackend):
         raw_results = (result or {}).get("results", []) if isinstance(result, dict) else []
         return [_parse_memory(r, score=r.get("score")) for r in raw_results]
 
-    async def delete(self, user_id: str, memory_id: str) -> bool:
+    async def delete(self, partition: str, memory_id: str) -> bool:
         # Fetch-then-verify: mem0 DELETE is global, so check ownership first
-        existing = await self.get(user_id, memory_id)
+        existing = await self.get(partition, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Not found")
         await self._client.request("DELETE", f"/memories/{memory_id}")
         return True
 
-    async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int | None:
+    async def delete_all(self, partition: str, scope: dict[str, Any]) -> int | None:
         # mem0 ignores a key it doesn't filter on, and httpx sends an empty list as
         # nothing; either widens the delete past the scope asked for. A wildcard value
         # is refused when the params are built. Only an empty scope reaches the whole tenant.
@@ -235,7 +238,7 @@ class Mem0Backend(MemoryBackend):
                 f"delete_all scope keys must be among {self.scope_keys()}, "
                 "each with one string or number value",
             )
-        params = _build_identifier_params(user_id, scope)
+        params = _build_identifier_params(partition, scope)
         await self._client.request("DELETE", "/memories", params=params)
         return None  # mem0 doesn't return a count
 
@@ -251,30 +254,24 @@ class Mem0Backend(MemoryBackend):
             return HealthStatus(status="unhealthy", backend="mem0", latency_ms=round(latency, 1))
 
     def capabilities(self) -> set[str]:
-        return {
-            "get_memory",
-            "update_memory",
-            "list_memories",
-            "memory_history",
-            "memory_entities",
-        }
+        return {"update", "list", "history", "entities"}
 
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
 
     # --- optional ---
 
-    async def get(self, user_id: str, memory_id: str) -> Memory | None:
+    async def get(self, partition: str, memory_id: str) -> Memory | None:
         result = await self._client.request("GET", f"/memories/{memory_id}")
         if result is None:
             return None
-        if result.get("user_id") != user_id:
+        if result.get("user_id") != partition:
             return None
         return _parse_memory(result)
 
     async def update(
         self,
-        user_id: str,
+        partition: str,
         memory_id: str,
         content: str,
         *,
@@ -286,7 +283,7 @@ class Mem0Backend(MemoryBackend):
         # no metadata of its own — mem0's PUT has no partial-merge semantics, so
         # sending a fresh metadata dict with only the new author would drop
         # whatever else was stored.
-        existing = await self.get(user_id, memory_id)
+        existing = await self.get(partition, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Memory not found")
         body: dict[str, Any] = {"text": content}
@@ -301,20 +298,20 @@ class Mem0Backend(MemoryBackend):
             body["metadata"] = base
         await self._client.request("PUT", f"/memories/{memory_id}", json=body)
         # mem0 PUT returns {"message": "..."}, not the memory. Fetch it.
-        updated = await self.get(user_id, memory_id)
+        updated = await self.get(partition, memory_id)
         if updated is None:
             raise MemoryAPIError(503, "Update succeeded but read-back failed")
         return updated
 
     async def list_memories(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,
         cursor: str | None = None,
     ) -> ListResult:
-        params = _build_identifier_params(user_id, scope)
+        params = _build_identifier_params(partition, scope)
         # Without an explicit top_k, mem0 returns its default of 20 — so list,
         # export and the import dedup index all silently saw only the first 20
         # memories. LIST_CEILING is the server's own maximum; it rejects more.
@@ -328,16 +325,16 @@ class Mem0Backend(MemoryBackend):
                 "mem0 returned its ceiling of %d memories for user %s; memories beyond "
                 "it can't be listed, so the result is marked incomplete",
                 LIST_CEILING,
-                user_id,
+                partition,
             )
         memories = [_parse_memory(r) for r in raw]
         page = paginate(memories, cursor, limit)
         page.incomplete = at_ceiling
         return page
 
-    async def history(self, user_id: str, memory_id: str) -> list[HistoryEntry]:
+    async def history(self, partition: str, memory_id: str) -> list[HistoryEntry]:
         # Fetch-then-verify: mem0 history endpoint is global
-        existing = await self.get(user_id, memory_id)
+        existing = await self.get(partition, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Not found")
         result = await self._client.request("GET", f"/memories/{memory_id}/history")
@@ -361,16 +358,16 @@ class Mem0Backend(MemoryBackend):
 
     async def entities(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
         # Not mem0's GET /entities: it counts every tenant's user, agent and run
         # values together, so another tenant's writes would show up here.
-        listed = await self.list_memories(user_id, scope=scope, limit=LIST_CEILING)
+        listed = await self.list_memories(partition, scope=scope, limit=LIST_CEILING)
         return EntitiesResult(
-            entities=_entity_rows(user_id, listed.memories)[:limit],
+            entities=_entity_rows(partition, listed.memories)[:limit],
             incomplete=listed.incomplete,
         )
 

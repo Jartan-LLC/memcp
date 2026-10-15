@@ -22,6 +22,8 @@ from memcp.types import (
     MemoryAPIError,
     paginate,
     reject_nested_filters,
+    scope_as_text,
+    scope_text,
     split_author,
     strip_reserved_metadata,
 )
@@ -47,6 +49,8 @@ def _entry_to_memory(mid: str, entry: dict[str, Any], *, score: float | None = N
 class InMemoryBackend(MemoryBackend):
     """Trivial in-memory implementation of the MemoryBackend protocol."""
 
+    retrieval = "keyword"
+
     def __init__(self) -> None:
         # {memory_id: {user_id, content, scope, metadata, created_at, updated_at}}
         self._store: dict[str, dict[str, Any]] = {}
@@ -57,7 +61,7 @@ class InMemoryBackend(MemoryBackend):
 
     async def add(
         self,
-        user_id: str,
+        partition: str,
         content: str,
         *,
         scope: dict[str, Any] | None = None,
@@ -77,9 +81,9 @@ class InMemoryBackend(MemoryBackend):
         if author is not None:
             stored_metadata[AUTHOR_METADATA_KEY] = author
         self._store[memory_id] = {
-            "user_id": user_id,
+            "user_id": partition,
             "content": content,
-            "scope": scope or {},
+            "scope": scope_as_text(scope or {}),
             "metadata": stored_metadata,
             "created_at": now,
             "updated_at": None,
@@ -97,7 +101,7 @@ class InMemoryBackend(MemoryBackend):
 
     async def search(
         self,
-        user_id: str,
+        partition: str,
         query: str,
         *,
         scope: dict[str, Any] | None = None,
@@ -108,11 +112,11 @@ class InMemoryBackend(MemoryBackend):
             reject_nested_filters(scope)
         results = []
         for mid, entry in self._store.items():
-            if entry["user_id"] != user_id:
+            if entry["user_id"] != partition:
                 continue
             if scope:
                 entry_scope = entry.get("scope", {})
-                if not all(entry_scope.get(k) == v for k, v in scope.items()):
+                if not all(entry_scope.get(k) == scope_text(v) for k, v in scope.items()):
                     continue
             relevance = _score(query, entry["content"])
             if relevance is None:
@@ -121,24 +125,24 @@ class InMemoryBackend(MemoryBackend):
         results.sort(key=lambda x: x[0], reverse=True)
         return [_entry_to_memory(mid, entry, score=score) for score, mid, entry in results[:limit]]
 
-    async def delete(self, user_id: str, memory_id: str) -> bool:
+    async def delete(self, partition: str, memory_id: str) -> bool:
         entry = self._store.get(memory_id)
         if entry is None:
             raise MemoryAPIError(404, "Not found")
-        if entry["user_id"] != user_id:
+        if entry["user_id"] != partition:
             raise MemoryAPIError(404, "Not found")
         del self._store[memory_id]
         self._history.pop(memory_id, None)
         return True
 
-    async def delete_all(self, user_id: str, scope: dict[str, Any]) -> int:
+    async def delete_all(self, partition: str, scope: dict[str, Any]) -> int:
         reject_nested_filters(scope)
         to_delete = []
         for mid, entry in self._store.items():
-            if entry["user_id"] != user_id:
+            if entry["user_id"] != partition:
                 continue
             entry_scope = entry.get("scope", {})
-            if all(entry_scope.get(k) == v for k, v in scope.items()):
+            if all(entry_scope.get(k) == scope_text(v) for k, v in scope.items()):
                 to_delete.append(mid)
         for mid in to_delete:
             del self._store[mid]
@@ -150,27 +154,22 @@ class InMemoryBackend(MemoryBackend):
 
     def capabilities(self) -> set[str]:
         # No memory_entities: see entities() below.
-        return {
-            "get_memory",
-            "update_memory",
-            "list_memories",
-            "memory_history",
-        }
+        return {"update", "list", "history"}
 
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
 
     # --- optional ---
 
-    async def get(self, user_id: str, memory_id: str) -> Memory | None:
+    async def get(self, partition: str, memory_id: str) -> Memory | None:
         entry = self._store.get(memory_id)
-        if entry is None or entry["user_id"] != user_id:
+        if entry is None or entry["user_id"] != partition:
             return None
         return _entry_to_memory(memory_id, entry)
 
     async def update(
         self,
-        user_id: str,
+        partition: str,
         memory_id: str,
         content: str,
         *,
@@ -178,7 +177,7 @@ class InMemoryBackend(MemoryBackend):
         author: str | None = None,
     ) -> Memory:
         entry = self._store.get(memory_id)
-        if entry is None or entry["user_id"] != user_id:
+        if entry is None or entry["user_id"] != partition:
             raise MemoryAPIError(404, "Not found")
         now = datetime.now(UTC).isoformat()
         old_content = entry["content"]
@@ -204,7 +203,7 @@ class InMemoryBackend(MemoryBackend):
 
     async def list_memories(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,
@@ -212,18 +211,18 @@ class InMemoryBackend(MemoryBackend):
     ) -> ListResult:
         memories = []
         for mid, entry in self._store.items():
-            if entry["user_id"] != user_id:
+            if entry["user_id"] != partition:
                 continue
             if scope:
                 entry_scope = entry.get("scope", {})
-                if not all(entry_scope.get(k) == v for k, v in scope.items()):
+                if not all(entry_scope.get(k) == scope_text(v) for k, v in scope.items()):
                     continue
             memories.append(_entry_to_memory(mid, entry))
         return paginate(memories, cursor, limit)
 
-    async def history(self, user_id: str, memory_id: str) -> list[HistoryEntry]:
+    async def history(self, partition: str, memory_id: str) -> list[HistoryEntry]:
         entry = self._store.get(memory_id)
-        if entry is None or entry["user_id"] != user_id:
+        if entry is None or entry["user_id"] != partition:
             raise MemoryAPIError(404, "Not found")
         raw = self._history.get(memory_id, [])
         return [
@@ -239,7 +238,7 @@ class InMemoryBackend(MemoryBackend):
 
     async def entities(
         self,
-        user_id: str,
+        partition: str,
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 100,

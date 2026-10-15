@@ -66,6 +66,17 @@ def validate_limit(limit: int) -> None:
         raise ValueError(f"limit exceeds maximum of {MAX_LIMIT}")
 
 
+def scope_text(value: Any) -> str:
+    """A scope value as every backend stores and returns it: text, booleans lowercase."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def scope_as_text(scope: dict[str, Any]) -> dict[str, str]:
+    return {k: scope_text(v) for k, v in scope.items()}
+
+
 def is_wildcard(value: Any) -> bool:
     """Whether a scope value is null, empty or "*", which mem0 reads as "any"."""
     return value is None or (isinstance(value, str) and value.strip() in ("", "*"))

@@ -54,7 +54,7 @@ class GraphBackend(InMemoryBackend):
     """
 
     def capabilities(self) -> set[str]:
-        return super().capabilities() | {"memory_entities"}
+        return super().capabilities() | {"entities"}
 
     async def entities(
         self,
@@ -126,7 +126,7 @@ async def test_entities_tool_is_absent_without_the_capability(mcp_with_tools):
     """
     mcp, backend = mcp_with_tools
     assert "memory_entities" not in mcp.tool_names
-    assert "memory_entities" not in backend.capabilities()
+    assert "entities" not in backend.capabilities()
 
 
 async def test_entities_tool_is_present_with_the_capability(mcp_with_graph):
@@ -294,8 +294,19 @@ async def test_memory_status(mcp_with_tools):
     result = await mcp.call("memory_status")
     assert result["backend"] == "in_memory"
     assert result["version"]
-    assert isinstance(result["capabilities"], list)
+    assert result["capabilities"] == [
+        "get_memory",
+        "list_memories",
+        "memory_history",
+        "update_memory",
+    ]
     assert isinstance(result["scope_keys"], list)
+
+
+async def test_memory_status_names_the_entities_tool(mcp_with_graph):
+    mcp, _ = mcp_with_graph
+    result = await mcp.call("memory_status")
+    assert "memory_entities" in result["capabilities"]
 
 
 # ---------------------------------------------------------------------------
@@ -1283,7 +1294,7 @@ async def test_import_memories_overwrite_requires_capability(config):
 
     class NoUpdateBackend(InMemoryBackend):
         def capabilities(self):
-            return super().capabilities() - {"update_memory"}
+            return super().capabilities() - {"update"}
 
     backend = NoUpdateBackend()
     mcp = FakeMCP()

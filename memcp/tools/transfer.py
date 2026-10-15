@@ -12,7 +12,7 @@ def register(mcp: Any, policy: Policy) -> None:
     """Register export and import when the backend can list memories."""
     caps = policy.capabilities()
 
-    if "list_memories" in caps:
+    if "list" in caps:
 
         @mcp.tool(
             annotations=READ_ONLY,

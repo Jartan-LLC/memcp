@@ -134,9 +134,7 @@ async def test_health(mem0: Mem0Backend):
 
 async def test_capabilities(mem0: Mem0Backend):
     caps = mem0.capabilities()
-    assert "get_memory" in caps
-    assert "update_memory" in caps
-    assert "list_memories" in caps
+    assert {"update", "list", "history", "entities"} <= caps
 
 
 async def test_scope_keys(mem0: Mem0Backend):

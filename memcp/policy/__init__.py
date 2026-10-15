@@ -35,6 +35,7 @@ from memcp.types import (
     Memory,
     MemoryAPIError,
     PolicyError,
+    scope_text,
     validate_content,
     validate_limit,
     validate_memory_id,
@@ -64,16 +65,9 @@ def _not_found() -> Iterator[None]:
         raise
 
 
-def _wire(value: Any) -> str:
-    """A scope value as mem0 holds it: mem0 stores and returns scope values as text."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value)
-
-
 def _matches(stored: Any, requested: Any) -> bool:
-    """Whether a returned value is the requested one, as Python or as text (mem0)."""
-    return stored == requested or _wire(stored) == _wire(requested)
+    """Whether a returned value is the requested one, as Python or as stored text."""
+    return stored == requested or scope_text(stored) == scope_text(requested)
 
 
 def _in_scope(memories: list[Memory], scope: dict[str, Any] | None) -> list[Memory]:
@@ -101,6 +95,10 @@ class Policy:
     @property
     def extracts_facts(self) -> bool:
         return self._backend.extracts_facts
+
+    @property
+    def retrieval(self) -> str:
+        return self._backend.retrieval
 
     def capabilities(self) -> set[str]:
         """The optional operations the backend declares."""
@@ -258,7 +256,7 @@ class Policy:
             raise PolicyError(
                 "validation_error", "on_conflict must be 'skip', 'overwrite', or 'duplicate'"
             )
-        if on_conflict == "overwrite" and "update_memory" not in self._capabilities:
+        if on_conflict == "overwrite" and "update" not in self._capabilities:
             raise PolicyError(
                 "not_supported", "on_conflict='overwrite' requires update_memory capability"
             )
