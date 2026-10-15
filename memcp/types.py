@@ -113,6 +113,13 @@ class MemoryAPIError(RuntimeError):
         self.body = body
         super().__init__(f"Backend API {status}: {body[:500]}")
 
+    @property
+    def client_message(self) -> str:
+        """What a client is told: the status, never the store's response."""
+        if self.status == 408:
+            return "The memory backend didn't answer in time."
+        return f"The memory backend returned an error (HTTP {self.status})."
+
 
 class PolicyError(Exception):
     """A request the policy layer refused, with the error code and message the client gets."""

@@ -110,13 +110,17 @@ succeed later.
 | Code | When | `retry` |
 |---|---|---|
 | `validation_error` | An argument is malformed or out of range | `false` |
-| `invalid_scope` | The scope names a key the backend doesn't support | `false` |
+| `invalid_scope` | The scope names `user_id`, or a key the backend doesn't support | `false` |
 | `nested_filter` | The scope uses `AND`, `OR` or `NOT` | `false` |
 | `scope_required` | `delete_all_memories` got an empty scope | `false` |
 | `not_found` | The memory doesn't exist or belongs to another tenant | `false` |
 | `not_supported` | `import_memories` with `on_conflict=overwrite` on a backend without `update_memory` | `false` |
 | `timeout` | The backend didn't answer in time | `true` |
 | `backend_error` | The backend returned an error | `true` for a 5xx, otherwise `false` |
+
+A `timeout` or `backend_error` message gives at most the HTTP status, never the store's
+response; the server logs that response as a warning. An `import_memories` entry the
+backend fails is reported the same way.
 
 A rejected entry doesn't fail `import_memories`: it imports the entries it can and lists
 each rejected one in its result's `errors`, with the entry's `index` and the reason in

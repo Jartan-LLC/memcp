@@ -13,7 +13,7 @@ from memcp.policy.transfer import (
     migrate,
     scope_key,
 )
-from memcp.types import ListResult
+from memcp.types import ListResult, MemoryAPIError
 
 TENANT = "tenant_a"
 OTHER = "tenant_b"
@@ -295,6 +295,20 @@ async def test_import_duplicate_mode_skips_the_index_read(backend: InMemoryBacke
     monkeypatch.setattr(backend, "list_memories", fail)
     outcome = await import_payload(backend, TENANT, [{"content": "dup"}], on_conflict="duplicate")
     assert len(outcome.imported) == 1
+
+
+async def test_import_keeps_the_store_response_out_of_an_entry_error(
+    backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    async def failing(*args, **kwargs):
+        raise MemoryAPIError(500, "store detail: disk full on prod-7")
+
+    monkeypatch.setattr(backend, "add", failing)
+    outcome = await import_payload(backend, TENANT, [{"content": "x"}], on_conflict="duplicate")
+    assert outcome.imported == []
+    assert "store detail" not in outcome.errors[0]["error"]
+    assert "500" in outcome.errors[0]["error"]
+    assert "store detail: disk full on prod-7" in caplog.text
 
 
 async def test_import_reports_per_entry_errors(backend: InMemoryBackend):

@@ -134,6 +134,12 @@ async def build_dedup_index(
     return {dedup_key(m.content, m.scope): m.id for m in memories}, incomplete
 
 
+def _entry_error(index: int, e: MemoryAPIError) -> str:
+    """Log the store's response for one failed entry; return what the caller is told."""
+    logger.warning("Backend error %d importing entry %d: %s", e.status, index, e.body)
+    return e.client_message
+
+
 async def import_payload(
     backend: MemoryBackend,
     user_id: str,
@@ -216,7 +222,7 @@ async def import_payload(
                 await backend.update(user_id, dup_id, content, metadata=metadata, author=author)
                 outcome.imported.append({"id": dup_id, "index": i, "action": "updated"})
             except MemoryAPIError as e:
-                outcome.errors.append({"index": i, "error": str(e)})
+                outcome.errors.append({"index": i, "error": _entry_error(i, e)})
             continue
 
         try:
@@ -224,7 +230,7 @@ async def import_payload(
                 user_id, content, scope=scope, metadata=metadata, infer=False, author=author
             )
         except MemoryAPIError as e:
-            outcome.errors.append({"index": i, "error": str(e)})
+            outcome.errors.append({"index": i, "error": _entry_error(i, e)})
             continue
 
         if not result:

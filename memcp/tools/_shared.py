@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import functools
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from memcp.types import MemoryAPIError, PolicyError, canonical_error
+
+logger = logging.getLogger(__name__)
 
 READ_ONLY = {"readOnlyHint": True, "idempotentHint": True}
 DESTRUCTIVE = {"destructiveHint": True}
@@ -14,10 +17,12 @@ DESTRUCTIVE = {"destructiveHint": True}
 
 def _backend_error(e: MemoryAPIError) -> dict[str, Any]:
     """Map a backend failure to a canonical error: 408 becomes `timeout`; anything
-    else is `backend_error`, retryable when the status is 5xx."""
+    else is `backend_error`, retryable when the status is 5xx. The store's response goes
+    to the log, not the client."""
+    logger.warning("Backend error %d: %s", e.status, e.body)
     if e.status == 408:
-        return canonical_error("timeout", str(e), retry=True)
-    return canonical_error("backend_error", str(e), retry=e.status >= 500)
+        return canonical_error("timeout", e.client_message, retry=True)
+    return canonical_error("backend_error", e.client_message, retry=e.status >= 500)
 
 
 def translate_errors(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:

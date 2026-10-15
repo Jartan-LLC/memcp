@@ -648,6 +648,33 @@ def _patch_raise(backend, method_name: str, status: int):
     setattr(backend, method_name, raiser)
 
 
+@pytest.mark.parametrize(
+    ("status", "body", "code"),
+    [
+        (502, "store detail: db=prod-7", "backend_error"),
+        (400, "store detail: bad filter run_id", "backend_error"),
+        (408, "Timeout: ReadTimeout http://mem0.internal:8888", "timeout"),
+        (503, "Network error: ConnectError http://mem0.internal:8888", "backend_error"),
+    ],
+)
+async def test_a_backend_error_keeps_the_store_response_out_of_the_message(
+    mcp_with_tools, caplog, status, body, code
+):
+    mcp, backend = mcp_with_tools
+
+    async def failing(*args, **kwargs):
+        raise MemoryAPIError(status, body)
+
+    backend.search = failing
+    result = await mcp.call("search_memory", query="test")
+    assert result["error"]["code"] == code
+    assert body not in result["error"]["message"]
+    assert "mem0.internal" not in result["error"]["message"]
+    if code == "backend_error":
+        assert str(status) in result["error"]["message"]
+    assert body in caplog.text
+
+
 async def test_backend_error_503_is_retryable(mcp_with_tools):
     mcp, backend = mcp_with_tools
     _patch_raise(backend, "search", 503)
