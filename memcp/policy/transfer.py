@@ -247,7 +247,10 @@ async def import_payload(
             existing[key] = r.id
 
     if backend_failures > 1:
-        logger.warning("%d more import entries failed with backend errors", backend_failures - 1)
+        logger.warning(
+            "Backend errors on import: %d more after the first, responses not logged",
+            backend_failures - 1,
+        )
     return outcome
 
 
