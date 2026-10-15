@@ -75,7 +75,7 @@ async def test_search_result_is_unattributed_when_backend_holds_no_stamp(mcp_wit
     """A row written before this field existed (or by any caller that bypassed the
     auth layer) comes back null, not guessed."""
     mcp, backend = mcp_with_tools
-    await backend.add("test_user", "a pre-existing row", infer=False)  # no author kwarg
+    await backend.add("test_user", "a pre-existing row", infer=False)  # no system kwarg
     result = await mcp.call("search_memory", query="pre-existing")
     memory = result["results"][0]
     assert memory["author"] is None

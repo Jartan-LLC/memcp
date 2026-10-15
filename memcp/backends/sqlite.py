@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import sqlite3
 import time
 import uuid
@@ -46,8 +45,6 @@ from memcp.types import (
 from .base import MemoryBackend
 from .keyword import score as _score
 
-logger = logging.getLogger(__name__)
-
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS memories (
     id          TEXT PRIMARY KEY,
@@ -73,11 +70,6 @@ CREATE TABLE IF NOT EXISTS history (
 CREATE INDEX IF NOT EXISTS idx_history_memory ON history (memory_id);
 """
 
-# `PRAGMA user_version` bump gating the one-time reserved-metadata cleanse below —
-# see `_cleanse_preexisting_reserved_metadata`. Bump this if a future reserved key
-# needs the same one-time treatment.
-_RESERVED_METADATA_CLEANSE_VERSION = 1
-
 
 class SqliteBackend(MemoryBackend):
     """Durable, keyless memory storage in a single SQLite file."""
@@ -96,7 +88,6 @@ class SqliteBackend(MemoryBackend):
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(SCHEMA)
         self._migrate_history_author_column()
-        self._cleanse_preexisting_reserved_metadata()
         self._conn.commit()
 
     def _migrate_history_author_column(self) -> None:
@@ -106,49 +97,6 @@ class SqliteBackend(MemoryBackend):
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(history)")}
         if "author" not in columns:
             self._conn.execute("ALTER TABLE history ADD COLUMN author TEXT")
-
-    def _cleanse_preexisting_reserved_metadata(self) -> None:
-        """Strip any reserved-namespace metadata key from every row already in
-        this file, once per file (marked via `PRAGMA user_version`, the same
-        kind of one-time-migration need `_migrate_history_author_column` has,
-        via a different mechanism since this is a data change, not a schema
-        one).
-
-        `add`/`update` strip the reserved namespace from caller-supplied
-        metadata unconditionally, so nothing written through this class from
-        here on can carry a forged key — but that guard did not always exist.
-        Before it did, `metadata` was unvalidated, so any bearer-token holder
-        could have stored a reserved key directly, and the read path
-        cannot otherwise tell that from a real server stamp. A row in an
-        existing file predates every version of the write-time guard by
-        definition, so stripping it once, unconditionally, is exact — nothing
-        legitimate is lost, because nothing in this namespace has ever been a
-        caller's to set."""
-        current = self._conn.execute("PRAGMA user_version").fetchone()[0]
-        if current >= _RESERVED_METADATA_CLEANSE_VERSION:
-            return
-        rows = self._conn.execute("SELECT id, metadata FROM memories").fetchall()
-        for row in rows:
-            try:
-                stored = json.loads(row["metadata"])
-            except json.JSONDecodeError:
-                # Everything this class ever writes goes out through json.dumps,
-                # so a row this can't parse can't be read normally either —
-                # skipping it loses nothing this cleanse could otherwise have
-                # cleaned, and a boot failure here would be strictly worse than
-                # leaving one unreadable row exactly as it already was.
-                logger.warning(
-                    "Skipped unparsable metadata during reserved-key cleanse for row %s",
-                    row["id"],
-                )
-                continue
-            cleaned = strip_reserved_metadata(stored)
-            if cleaned != stored:
-                self._conn.execute(
-                    "UPDATE memories SET metadata = ? WHERE id = ?",
-                    (json.dumps(cleaned), row["id"]),
-                )
-        self._conn.execute(f"PRAGMA user_version = {_RESERVED_METADATA_CLEANSE_VERSION}")
 
     @property
     def path(self) -> Path:

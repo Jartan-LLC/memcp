@@ -40,20 +40,12 @@ recorded authors. It records which key wrote the memory, not where the facts cam
 see the server's own MCP instructions for how a client is told to treat it.
 
 **A non-null `author` only means a server version that validates `metadata` set it — it
-is not a statement about a store's entire history.**
-Before this field existed, `metadata` was entirely unvalidated, so any caller
-holding a bearer token could have written the reserved key directly, and a row
-like that would read back exactly like a real stamp. `sqlite` and `in_memory`
-close this **for a file only ever served by a version carrying this guard**: a
-one-time, marked cleanse strips the reserved namespace from every row already
-in the file the first time such a version opens it, and the write path itself
-now refuses a caller-supplied reserved key regardless of caller. The marker
-does not re-trigger — a file that is later opened by an unguarded version
-(a rollback, then a roll-forward) can have a key planted in that window, and
-the guarded version that reopens it afterward will not know to look again.
-`mem0` has no local file this server can scan and no way to enumerate every
-tenant an install holds — **run a metadata sweep on a `mem0`-backed store
-before serving it with a server version carrying this guard**, or a
+is not a statement about a store's entire history.** `sqlite` and `in_memory` keep
+`author` outside metadata, where no caller can write it. `mem0` keeps it in metadata, under
+the reserved key `_memcp_system`, which this server strips from callers' metadata — but before that
+guard existed any caller holding a bearer token could have written that key directly, and
+memcp can't enumerate a mem0 install's tenants to clean it. **Sweep a `mem0`-backed store
+for `_memcp_system` before serving it with a server version carrying this guard**, or a
 pre-existing row can carry an `author` no server set.
 
 ### Scope

@@ -311,30 +311,6 @@ async def test_update_strips_reserved_metadata(policy: Policy, backend: InMemory
     assert passed == [{"k": "v"}]
 
 
-async def test_a_write_by_a_resolved_key_is_stamped_with_its_seat(
-    policy: Policy, backend: InMemoryBackend
-):
-    token = set_principal(Principal(tenant="test_user", seat="laptop"))
-    try:
-        memory_id = await _add_one(policy)
-    finally:
-        reset_tenant(token)
-    stored = await backend.get("test_user", memory_id)
-    assert stored is not None
-    assert stored.author == "laptop"
-
-
-async def test_a_dev_mode_write_has_no_author(policy: Policy, backend: InMemoryBackend):
-    token = set_principal(DEFAULT_PRINCIPAL)
-    try:
-        memory_id = await _add_one(policy)
-        stored = await backend.get(DEFAULT_PRINCIPAL.tenant, memory_id)
-    finally:
-        reset_tenant(token)
-    assert stored is not None
-    assert stored.author is None
-
-
 async def test_import_refuses_an_empty_batch(policy: Policy):
     await _refused(policy.import_memories([]), "validation_error")
 
@@ -426,6 +402,7 @@ async def test_a_read_returning_another_space_fails_closed(
     method, call = READS[read]
     _returning(backend, method, [_returned(id="first"), _returned(**changes)])
     await _isolation_refused(call(policy), caplog)
+    assert f"operation={read} " in caplog.text
 
 
 @pytest.mark.parametrize("changes", FOREIGN)
@@ -489,6 +466,7 @@ async def test_an_update_that_returns_another_space_fails_closed(
 
     backend.update = update  # type: ignore[method-assign]
     await _isolation_refused(policy.update(memory_id, "x"), caplog)
+    assert "operation=update " in caplog.text
 
 
 async def test_a_memory_without_system_fields_passes_on_its_partition(

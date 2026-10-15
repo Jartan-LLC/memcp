@@ -511,12 +511,15 @@ async def test_import_dedup_refuses_a_memory_from_another_partition():
     assert refused.value.code == "internal_error"
 
 
-async def test_migrate_refuses_a_source_memory_from_another_partition():
+async def test_migrate_refuses_a_source_memory_from_another_partition(
+    caplog: pytest.LogCaptureFixture,
+):
     source, target = ForeignPartitionBackend(), InMemoryBackend()
     await source.add(TENANT, "fact", infer=False)
     with pytest.raises(PolicyError) as refused:
         await migrate(source, target, TENANT, target_user_id=OTHER)
     assert refused.value.code == "internal_error"
+    assert "operation=migrate " in caplog.text
     assert (await target.list_memories(OTHER)).memories == []
 
 

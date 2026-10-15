@@ -159,18 +159,16 @@ class Mem0Backend(MemoryBackend):
 
     def __init__(self, base_url: str, api_key: str, *, timeout: float = 30.0):
         self._client = Mem0Client(base_url, api_key, timeout=timeout)
-        # Unlike sqlite, this backend has no local file to run a one-time cleanse
-        # migration against — memcp has no way to enumerate every tenant a mem0
-        # install holds, only whichever a request addresses. A row written by a
-        # server version that did not validate `metadata` may carry a
-        # caller-planted reserved key that reads back as server-set. See
-        # docs/reference.md.
+        # mem0 keeps system fields in metadata, and memcp can't enumerate a mem0
+        # install's tenants to clean them, so a `_memcp_system` key planted by a
+        # client of a server version that didn't validate `metadata` reads back as
+        # server-set. See docs/reference.md.
         logger.warning(
             "mem0 backend: memory attribution (`author`) is only as "
             "trustworthy as this store's write history. memcp has no migration "
-            "hook for mem0 — run a metadata sweep on it before trusting "
-            "attribution if any client could have written to it before this "
-            "server version was deployed."
+            "hook for mem0 — sweep it for the `_memcp_system` metadata key before "
+            "trusting attribution if any client could have written to it before "
+            "this server version was deployed."
         )
 
     # --- required ---
