@@ -150,20 +150,20 @@ async def test_scope_keys(mem0: Mem0Backend):
 
 async def test_entities_tenant_isolation(mem0: Mem0Backend):
     """entities() should only return the requesting user's data."""
-    await mem0.add(TEST_USER, "user A entity test", infer=False)
-    await mem0.add(SECOND_USER, "user B entity test", infer=False)
+    await mem0.add(TEST_USER, "user A entity test", scope={"agent_id": "agent-a"}, infer=False)
+    await mem0.add(SECOND_USER, "user B entity test", scope={"agent_id": "agent-b"}, infer=False)
 
     result_a = await mem0.entities(TEST_USER)
     result_b = await mem0.entities(SECOND_USER)
 
-    assert len(result_a.entities) >= 1, "User A should have at least one entity"
-    assert len(result_b.entities) >= 1, "User B should have at least one entity"
-
     a_ids = {e.get("id") for e in result_a.entities}
     b_ids = {e.get("id") for e in result_b.entities}
 
-    assert SECOND_USER not in a_ids, "User A sees User B's entities"
-    assert TEST_USER not in b_ids, "User B sees User A's entities"
+    assert "agent-a" in a_ids, "User A should see its own agent"
+    assert "agent-b" in b_ids, "User B should see its own agent"
+    assert "agent-b" not in a_ids, "User A sees User B's entities"
+    assert "agent-a" not in b_ids, "User B sees User A's entities"
+    assert not {TEST_USER, SECOND_USER} & (a_ids | b_ids), "entities() named a partition"
 
 
 # ---------------------------------------------------------------------------
