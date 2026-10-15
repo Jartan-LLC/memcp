@@ -18,7 +18,7 @@ mid-task rather than read through. For getting a deployment running, see
 | `MEMCP_SQLITE_PATH` | No | Database file for the sqlite backend (default: `memcp.sqlite3`) |
 | `MEM0_API_BASE` | mem0 | Base URL of your mem0 REST API |
 | `MEM0_API_KEY` | mem0 | API key for the mem0 server |
-| `MEMCP_AUTH_TOKENS` | No | Token-to-tenant mapping: `tok1:alice,tok2:bob`. Parsed exactly as before this project added attribution — a `user_id` containing a colon still round-trips unchanged. Unset means unauthenticated, which is refused on any non-loopback bind |
+| `MEMCP_AUTH_TOKENS` | No | Token-to-tenant mapping: `tok1:alice,tok2:bob`. Only the first colon in each pair splits, so a `user_id` may contain colons. Unset means unauthenticated, which is refused on any non-loopback bind |
 | `MEMCP_AUTH_SEATS` | No | Optional token-to-seat mapping, layered onto `MEMCP_AUTH_TOKENS`: `tok1:agent-one,tok2:agent-two`, seat matching `[A-Za-z0-9_.-]+`. What memcp stamps as `author` on every write that token makes. A token named here with no `MEMCP_AUTH_TOKENS` entry is rejected at startup. Two tokens can share a tenant with different seats — that is how one shared token becomes individually attributable — and a token absent from this mapping uses its tenant as its seat |
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
@@ -33,20 +33,19 @@ mid-task rather than read through. For getting a deployment running, see
 Names, argument schemas and behaviour annotations are frozen in
 [tool-surface.json](tool-surface.json); a test fails on any drift.
 
-Every memory a read tool returns carries `author`: the seat `MEMCP_AUTH_TOKENS` resolved
-for the write that last changed it, set by the server — a caller cannot set it. It is
-`null` for a write made without tokens configured, and for a memory written before memcp
-recorded authors. It records which key wrote the memory, not where the facts came from —
-see the server's own MCP instructions for how a client is told to treat it.
+Every memory a read tool returns carries `author`: the seat of the token whose write last
+changed it (`MEMCP_AUTH_SEATS`, or the token's tenant when it has no seat there), set by the
+server — a caller cannot set it. It is `null` for a write made without tokens configured,
+and for a memory written before memcp recorded authors. It records which seat wrote the
+memory, not where the facts came from — see the server's own MCP instructions for how a
+client is told to treat it.
 
-**A non-null `author` only means a server version that validates `metadata` set it — it
-is not a statement about a store's entire history.** `sqlite` and `in_memory` keep
-`author` outside metadata, where no caller can write it. `mem0` keeps it in metadata, under
-the reserved key `_memcp_system`, which this server strips from callers' metadata — but before that
-guard existed any caller holding a bearer token could have written that key directly, and
-memcp can't enumerate a mem0 install's tenants to clean it. **Sweep a `mem0`-backed store
-for `_memcp_system` before serving it with a server version carrying this guard**, or a
-pre-existing row can carry an `author` no server set.
+sqlite and in_memory keep `author` outside metadata, where no caller can write it. mem0
+keeps it in metadata under the reserved key `_memcp_system`. memcp strips `_memcp_` keys
+from callers' metadata, but 0.1.2 and earlier stored them as given, and memcp can't
+enumerate a mem0 install's tenants to clean them. **Sweep a mem0 store for `_memcp_system`
+before this version serves it.** Otherwise a key planted earlier reads back as an `author`
+no server set, and a malformed one fails every read that returns it with `internal_error`.
 
 ### Scope
 
@@ -111,7 +110,7 @@ succeed later.
 | `scope_required` | `delete_all_memories` got an empty scope | `false` |
 | `not_found` | The memory doesn't exist or belongs to another tenant | `false` |
 | `not_supported` | `import_memories` with `on_conflict=overwrite` on a backend without `update_memory` | `false` |
-| `internal_error` | A memory the backend returned, or one memcp is about to change or has just stored, is under another tenant or can't be read back. Nothing from it is returned, and the server logs `isolation_violation` | `false` |
+| `internal_error` | A memory the backend returned, or one memcp is about to change or has just stored, is under another tenant or can't be read back. Nothing from it is returned, and the server logs `isolation_violation`. On add, update and import, the write may already be stored | `false` |
 | `timeout` | The backend didn't answer in time | `true` |
 | `backend_error` | The backend returned an error | `true` for a 5xx, otherwise `false` |
 
