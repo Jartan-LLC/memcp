@@ -82,8 +82,9 @@ def test_scope_key_treats_empty_and_none_alike():
     assert scope_key(None) == scope_key({}) == ()
 
 
-def test_scope_key_stringifies_values():
+def test_scope_key_uses_the_stored_text():
     assert scope_key({"run_id": 7}) == scope_key({"run_id": "7"})
+    assert scope_key({"run_id": True}) == scope_key({"run_id": "true"})
 
 
 def test_dedup_key_separates_scopes():
@@ -225,6 +226,14 @@ async def test_import_skips_a_duplicate_beyond_the_first_page():
     for i in range(5):
         await backend.add(TENANT, f"fact {i}", infer=False)
     outcome = await import_payload(backend, TENANT, [{"content": "fact 4"}])
+    assert len(outcome.skipped) == 1
+    assert outcome.imported == []
+
+
+async def test_import_skips_a_duplicate_with_a_boolean_scope(backend: InMemoryBackend):
+    entry = {"content": "flagged fact", "scope": {"run_id": True}}
+    await import_payload(backend, TENANT, [entry])
+    outcome = await import_payload(backend, TENANT, [entry])
     assert len(outcome.skipped) == 1
     assert outcome.imported == []
 

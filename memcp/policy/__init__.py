@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from memcp.backends import MemoryBackend
+from memcp.backends.base import RETRIEVAL_KINDS, Retrieval
 from memcp.identity import get_principal, get_tenant
 from memcp.policy.metadata import author_for, strip_reserved
 from memcp.policy.scope import validate_scope
@@ -66,8 +67,8 @@ def _not_found() -> Iterator[None]:
 
 
 def _matches(stored: Any, requested: Any) -> bool:
-    """Whether a returned value is the requested one, as Python or as stored text."""
-    return stored == requested or scope_text(stored) == scope_text(requested)
+    """Whether a returned value is the requested one, compared as stored text."""
+    return scope_text(stored) == scope_text(requested)
 
 
 def _in_scope(memories: list[Memory], scope: dict[str, Any] | None) -> list[Memory]:
@@ -87,6 +88,13 @@ class Policy:
     """The one object that stands between the tools and a backend."""
 
     def __init__(self, backend: MemoryBackend):
+        """Raises TypeError for a backend that doesn't declare its retrieval kind."""
+        retrieval = getattr(backend, "retrieval", None)
+        if retrieval not in RETRIEVAL_KINDS:
+            raise TypeError(
+                f"{type(backend).__name__}.retrieval must be one of {RETRIEVAL_KINDS}, "
+                f"not {retrieval!r}"
+            )
         self._backend = backend
         self._capabilities = backend.capabilities()
         self._scope_key_list = backend.scope_keys()
@@ -97,7 +105,7 @@ class Policy:
         return self._backend.extracts_facts
 
     @property
-    def retrieval(self) -> str:
+    def retrieval(self) -> Retrieval:
         return self._backend.retrieval
 
     def capabilities(self) -> set[str]:
@@ -258,7 +266,7 @@ class Policy:
             )
         if on_conflict == "overwrite" and "update" not in self._capabilities:
             raise PolicyError(
-                "not_supported", "on_conflict='overwrite' requires update_memory capability"
+                "not_supported", "on_conflict='overwrite' requires the backend's update capability"
             )
 
         principal = get_principal()

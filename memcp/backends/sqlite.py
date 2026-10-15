@@ -301,13 +301,11 @@ class SqliteBackend(MemoryBackend):
         )
 
     def capabilities(self) -> set[str]:
-        # No memory_entities: see entities() below.
+        # No entities: see entities() below.
         return {"update", "list", "history"}
 
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
-
-    # --- optional ---
 
     async def get(self, partition: str, memory_id: str) -> Memory | None:
         def op() -> Memory | None:
@@ -315,6 +313,8 @@ class SqliteBackend(MemoryBackend):
             return None if row is None else self._row_to_memory(row)
 
         return await self._run(op)
+
+    # --- optional ---
 
     async def update(
         self,

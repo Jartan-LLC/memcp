@@ -29,6 +29,18 @@ def policy(backend: InMemoryBackend) -> Policy:
     return Policy(backend)
 
 
+def test_a_backend_without_a_retrieval_kind_is_refused(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delattr(InMemoryBackend, "retrieval")
+    with pytest.raises(TypeError, match="retrieval"):
+        Policy(InMemoryBackend())
+
+
+def test_a_backend_with_an_unknown_retrieval_kind_is_refused(backend: InMemoryBackend):
+    backend.retrieval = "vector"  # type: ignore[assignment]
+    with pytest.raises(TypeError, match="'vector'"):
+        Policy(backend)
+
+
 async def _refused(call: Any, code: str) -> str:
     with pytest.raises(PolicyError) as raised:
         await call
@@ -197,11 +209,12 @@ async def test_import_reports_an_entry_whose_scope_is_not_an_object(policy: Poli
     assert outcome.errors[0]["index"] == 0
 
 
-async def test_a_number_matches_an_equal_number_of_another_type(
-    policy: Policy, backend: InMemoryBackend
+@pytest.mark.parametrize(("stored", "requested"), [(7, 7.0), (1, True)])
+async def test_a_value_equal_only_as_python_is_outside_its_scope(
+    policy: Policy, backend: InMemoryBackend, stored: object, requested: object
 ):
-    _returning(backend, "search", [Memory(id="seven", content="x", scope={"run_id": 7})])
-    assert [m.id for m in await policy.search("q", scope={"run_id": 7.0})] == ["seven"]
+    _returning(backend, "search", [Memory(id="m", content="x", scope={"run_id": stored})])
+    assert await policy.search("q", scope={"run_id": requested}) == []
 
 
 async def test_delete_all_requires_a_scope(policy: Policy):

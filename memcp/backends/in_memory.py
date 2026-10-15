@@ -153,19 +153,19 @@ class InMemoryBackend(MemoryBackend):
         return HealthStatus(status="healthy", backend="in_memory", latency_ms=0.0)
 
     def capabilities(self) -> set[str]:
-        # No memory_entities: see entities() below.
+        # No entities: see entities() below.
         return {"update", "list", "history"}
 
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
-
-    # --- optional ---
 
     async def get(self, partition: str, memory_id: str) -> Memory | None:
         entry = self._store.get(memory_id)
         if entry is None or entry["user_id"] != partition:
             return None
         return _entry_to_memory(memory_id, entry)
+
+    # --- optional ---
 
     async def update(
         self,

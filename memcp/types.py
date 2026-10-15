@@ -74,6 +74,7 @@ def scope_text(value: Any) -> str:
 
 
 def scope_as_text(scope: dict[str, Any]) -> dict[str, str]:
+    """A scope with every value as `scope_text` makes it."""
     return {k: scope_text(v) for k, v in scope.items()}
 
 

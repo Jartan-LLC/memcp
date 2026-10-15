@@ -27,7 +27,7 @@ def _require(backend: MemoryBackend, capability: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# update_memory
+# update
 # ---------------------------------------------------------------------------
 
 
@@ -58,7 +58,7 @@ async def test_update_isolates_tenants(backend: MemoryBackend, tenant: str, othe
 
 
 # ---------------------------------------------------------------------------
-# list_memories
+# list
 # ---------------------------------------------------------------------------
 
 
@@ -141,7 +141,7 @@ async def test_list_isolates_tenants(backend: MemoryBackend, tenant: str, other_
 
 
 # ---------------------------------------------------------------------------
-# memory_history
+# history
 # ---------------------------------------------------------------------------
 
 
@@ -189,7 +189,7 @@ async def test_history_isolates_tenants(backend: MemoryBackend, tenant: str, oth
 
 
 # ---------------------------------------------------------------------------
-# memory_entities
+# entities
 # ---------------------------------------------------------------------------
 
 

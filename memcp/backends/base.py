@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from memcp.types import (
     AddResult,
@@ -13,6 +13,9 @@ from memcp.types import (
     ListResult,
     Memory,
 )
+
+Retrieval = Literal["keyword", "semantic"]
+RETRIEVAL_KINDS: tuple[Retrieval, ...] = get_args(Retrieval)
 
 
 class MemoryBackend(ABC):
@@ -31,7 +34,9 @@ class MemoryBackend(ABC):
     extracts_facts: bool = False
 
     # Whether search ranks by meaning ("semantic") or by matching words ("keyword").
-    retrieval: Literal["keyword", "semantic"]
+    # Required, and checked when Policy is built: pyright won't let a class attribute
+    # override an abstract property.
+    retrieval: Retrieval
 
     # The most memories one list call can reach, or None when nothing caps it.
     list_ceiling: int | None = None

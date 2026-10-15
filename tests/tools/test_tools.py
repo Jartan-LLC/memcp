@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from memcp.backends.capabilities import ALL_CAPABILITIES
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
 from memcp.policy import Policy
@@ -140,6 +141,14 @@ async def test_memory_status_reports_extraction_and_retrieval(mcp_with_tools):
     status = await mcp.call("memory_status")
     assert status["extracts_facts"] is False
     assert status["retrieval"] == "keyword"
+
+
+async def test_memory_status_names_a_registered_tool_for_every_capability(mcp_with_graph):
+    mcp, backend = mcp_with_graph
+    assert backend.capabilities() == set(ALL_CAPABILITIES)
+    status = await mcp.call("memory_status")
+    assert len(status["capabilities"]) == len(ALL_CAPABILITIES) + 1
+    assert set(status["capabilities"]) <= mcp.tool_names
 
 
 # ---------------------------------------------------------------------------
@@ -1289,7 +1298,7 @@ async def test_import_memories_overwrite_update_error(mcp_with_tools):
 
 
 async def test_import_memories_overwrite_requires_capability(config):
-    """overwrite rejected when backend lacks update_memory capability."""
+    """overwrite rejected when backend lacks the update capability."""
     from memcp.backends.in_memory import InMemoryBackend
 
     class NoUpdateBackend(InMemoryBackend):

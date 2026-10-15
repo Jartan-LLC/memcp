@@ -101,3 +101,9 @@ async def test_search_ranks_the_way_in_memory_ranks(tmp_path: Path):
     b = [m.content for m in await memory_backend.search("alice", "python ruff")]
     assert a == b
     await sqlite_backend.close()
+
+
+async def test_declares_keyword_retrieval_and_no_list_ceiling(tmp_path: Path):
+    backend = SqliteBackend(tmp_path / "memcp.sqlite3")
+    assert (backend.retrieval, backend.list_ceiling) == ("keyword", None)
+    await backend.close()

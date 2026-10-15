@@ -136,7 +136,7 @@ class Mem0Backend(MemoryBackend):
     # mem0 runs content through an LLM on add(infer=True) and may store nothing.
     extracts_facts = True
     retrieval = "semantic"
-    list_ceiling = LIST_CEILING
+    list_ceiling: int = LIST_CEILING
 
     def __init__(self, base_url: str, api_key: str, *, timeout: float = 30.0):
         self._client = Mem0Client(base_url, api_key, timeout=timeout)
@@ -259,8 +259,6 @@ class Mem0Backend(MemoryBackend):
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
 
-    # --- optional ---
-
     async def get(self, partition: str, memory_id: str) -> Memory | None:
         result = await self._client.request("GET", f"/memories/{memory_id}")
         if result is None:
@@ -268,6 +266,8 @@ class Mem0Backend(MemoryBackend):
         if result.get("user_id") != partition:
             return None
         return _parse_memory(result)
+
+    # --- optional ---
 
     async def update(
         self,
@@ -314,17 +314,17 @@ class Mem0Backend(MemoryBackend):
         params = _build_identifier_params(partition, scope)
         # Without an explicit top_k, mem0 returns its default of 20 — so list,
         # export and the import dedup index all silently saw only the first 20
-        # memories. LIST_CEILING is the server's own maximum; it rejects more.
-        params["top_k"] = LIST_CEILING
+        # memories. The list ceiling is the server's own maximum; it rejects more.
+        params["top_k"] = self.list_ceiling
         result = await self._client.request("GET", "/memories", params=params)
         raw = result if isinstance(result, list) else (result or {}).get("results", [])
         # A full response can't tell 1000 memories from more, so it counts as incomplete.
-        at_ceiling = len(raw) >= LIST_CEILING
+        at_ceiling = len(raw) >= self.list_ceiling
         if at_ceiling:
             logger.warning(
                 "mem0 returned its ceiling of %d memories for user %s; memories beyond "
                 "it can't be listed, so the result is marked incomplete",
-                LIST_CEILING,
+                self.list_ceiling,
                 partition,
             )
         memories = [_parse_memory(r) for r in raw]
@@ -365,7 +365,7 @@ class Mem0Backend(MemoryBackend):
     ) -> EntitiesResult:
         # Not mem0's GET /entities: it counts every tenant's user, agent and run
         # values together, so another tenant's writes would show up here.
-        listed = await self.list_memories(partition, scope=scope, limit=LIST_CEILING)
+        listed = await self.list_memories(partition, scope=scope, limit=self.list_ceiling)
         return EntitiesResult(
             entities=_entity_rows(partition, listed.memories)[:limit],
             incomplete=listed.incomplete,

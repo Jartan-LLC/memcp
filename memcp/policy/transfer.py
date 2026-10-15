@@ -19,6 +19,7 @@ from memcp.types import (
     Memory,
     MemoryAPIError,
     log_backend_error,
+    scope_text,
     serialize_memory,
     strip_reserved_metadata,
     validate_content,
@@ -33,15 +34,14 @@ DedupKey = tuple[str, ScopeKey]
 
 
 def scope_key(scope: Mapping[str, Any] | None) -> ScopeKey:
-    """Order-independent, stringified scope identity. None-valued keys are absent.
+    """Order-independent scope identity, values as stored text. None-valued keys are absent.
 
-    Backends report scope differently — the mem0 adapter only reconstructs keys it
-    finds set, the in-memory one echoes whatever was stored — so both sides of a
-    dedup comparison have to be normalised the same way.
+    Backends return scope values as text, and an import entry carries them as JSON
+    values, so both sides of a dedup comparison go through `scope_text`.
     """
     if not scope:
         return ()
-    return tuple(sorted((str(k), str(v)) for k, v in scope.items() if v is not None))
+    return tuple(sorted((str(k), scope_text(v)) for k, v in scope.items() if v is not None))
 
 
 def dedup_key(content: str, scope: Mapping[str, Any] | None) -> DedupKey:

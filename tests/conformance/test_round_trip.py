@@ -105,7 +105,7 @@ async def test_round_trip_preserves_content_scope_and_retrieval(
     source_name, target_name = pair_names
     for backend, name in ((source, source_name), (target, target_name)):
         if "list" not in backend.capabilities():
-            pytest.skip(f"{name} does not declare list_memories, so it cannot be migrated")
+            pytest.skip(f"{name} does not declare list, so it cannot be migrated")
 
     corpus = round_trip_corpus()
     await _write_corpus(source, tenant, corpus)

@@ -275,26 +275,47 @@ async def test_backend_declares_retrieval_and_list_ceiling(backend: MemoryBacken
 
 
 async def test_search_scores_are_in_range_and_sorted(backend: MemoryBackend, tenant: str):
-    for i in range(3):
-        await backend.add(tenant, f"conformance score check harbour {i}", infer=False)
-    hits = await backend.search(tenant, "conformance score check harbour", limit=10)
+    # Graded overlap with the query, so the scores differ and the order is tested.
+    for content in (
+        "conformance harbour lighthouse keeper",
+        "conformance harbour lighthouse at dusk",
+        "conformance harbour gulls",
+    ):
+        await backend.add(tenant, content, infer=False)
+    hits = await backend.search(tenant, "harbour lighthouse keeper", limit=10)
     assert hits, "search found none of the memories just added"
     scores = [m.score for m in hits if m.score is not None]
     assert len(scores) == len(hits), "every search result needs a score"
     assert all(0.0 <= s <= 1.0 for s in scores), scores
+    assert len(set(scores)) >= 2, f"graded matches scored alike: {scores}"
     assert scores == sorted(scores, reverse=True), scores
 
 
-async def test_scope_values_come_back_as_text(backend: MemoryBackend, tenant: str):
+@pytest.mark.parametrize(("value", "text"), [(7, "7"), (True, "true"), (1.5, "1.5")])
+async def test_scope_values_come_back_as_text(
+    backend: MemoryBackend, tenant: str, value: object, text: str
+):
     scope_key = backend.scope_keys()[-1]
-    memory_id = _first_id(
-        await backend.add(tenant, "conformance numeric scope", scope={scope_key: 7}, infer=False)
-    )
+
+    async def add() -> str:
+        result = await backend.add(
+            tenant, "conformance scope as text", scope={scope_key: value}, infer=False
+        )
+        return _first_id(result)
+
+    memory_id = await add()
     memory = await backend.get(tenant, memory_id)
     assert memory is not None
-    assert memory.scope.get(scope_key) == "7"
-    for requested in (7, "7"):
-        hits = await backend.search(
-            tenant, "numeric scope", scope={scope_key: requested}, limit=10
-        )
-        assert memory_id in [m.id for m in hits], f"a scope of {requested!r} missed the memory"
+    assert memory.scope.get(scope_key) == text
+    for requested in (value, text):
+        scope = {scope_key: requested}
+        hits = await backend.search(tenant, "scope as text", scope=scope, limit=10)
+        assert memory_id in [m.id for m in hits], f"search by {requested!r} missed the memory"
+        if "list" in backend.capabilities():
+            listed = await backend.list_memories(tenant, scope=scope)
+            assert memory_id in [m.id for m in listed.memories], f"list by {requested!r} missed it"
+
+    for requested in (value, text):
+        await backend.delete_all(tenant, {scope_key: requested})
+        assert await backend.get(tenant, memory_id) is None, f"delete_all by {requested!r} kept it"
+        memory_id = await add()

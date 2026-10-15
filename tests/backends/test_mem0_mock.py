@@ -652,3 +652,7 @@ async def test_history_wrong_user_raises(backend):
         await backend.history(OTHER, "mem-1")
     assert not_found.value.body == "Not found"
     assert history_route.call_count == 0, "History endpoint should not be called for wrong user"
+
+
+async def test_declares_semantic_retrieval_and_its_list_ceiling(backend):
+    assert (backend.retrieval, backend.list_ceiling) == ("semantic", LIST_CEILING)

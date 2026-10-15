@@ -241,3 +241,7 @@ async def test_search_with_scope_narrows_results(backend: InMemoryBackend):
     results = await backend.search(USER_A, "memory", scope={"agent_id": "a1"})
     assert len(results) == 1
     assert "agent1" in results[0].content
+
+
+def test_declares_keyword_retrieval_and_no_list_ceiling(backend: InMemoryBackend):
+    assert (backend.retrieval, backend.list_ceiling) == ("keyword", None)
