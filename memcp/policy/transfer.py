@@ -227,14 +227,16 @@ async def import_payload(
             continue
 
         # An overwrite leaves the memory with the entry's metadata: it sets the entry's keys
-        # and removes the others, except a reserved key, which no client can remove.
+        # and removes the others, except a reserved key, which no client can remove. An
+        # entry without `metadata` leaves the stored metadata as it is.
         patch = None
-        if dup and on_conflict == "overwrite":
-            wanted = metadata or {}
+        if dup and on_conflict == "overwrite" and metadata is not None:
             patch = MetadataPatch(
-                set=wanted,
+                set=metadata,
                 remove=frozenset(
-                    k for k in dup.metadata if k not in wanted and not is_reserved_metadata_key(k)
+                    k
+                    for k in dup.metadata
+                    if k not in metadata and not is_reserved_metadata_key(k)
                 ),
             )
         try:

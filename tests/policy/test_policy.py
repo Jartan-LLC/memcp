@@ -453,6 +453,89 @@ async def test_an_import_overwrite_is_sized_by_the_entry_alone(
     assert [e["action"] for e in outcome.imported] == ["updated"]
 
 
+async def _stored_metadata(backend: InMemoryBackend, memory_id: str) -> dict[str, Any]:
+    stored = await backend.get(TENANT, memory_id)
+    assert stored is not None
+    return stored.metadata
+
+
+async def test_an_overwrite_without_metadata_keeps_the_stored_metadata(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "restored fact", metadata={"kept": "a"}))[0].id
+    await policy.import_memories([{"content": "restored fact"}], on_conflict="overwrite")
+    assert await _stored_metadata(backend, memory_id) == {"kept": "a"}
+
+
+async def test_an_overwrite_with_empty_metadata_clears_it(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "restored fact", metadata={"gone": "a"}))[0].id
+    await policy.import_memories(
+        [{"content": "restored fact", "metadata": {}}], on_conflict="overwrite"
+    )
+    assert await _stored_metadata(backend, memory_id) == {}
+
+
+async def test_an_overwrite_keeps_a_reserved_key_already_stored(
+    policy: Policy, backend: InMemoryBackend
+):
+    """A key stored before it was reserved can't be removed by a client, so replace keeps it."""
+    memory_id = (await backend.add(TENANT, "restored fact", metadata={"stale": "x"}))[0].id
+    backend._store[memory_id]["metadata"]["role"] = "legacy"  # pyright: ignore[reportPrivateUsage]
+    outcome = await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"kept": "new"}}], on_conflict="overwrite"
+    )
+    assert outcome.errors == []
+    assert await _stored_metadata(backend, memory_id) == {"kept": "new", "role": "legacy"}
+
+
+async def test_an_overwrite_with_invalid_metadata_leaves_the_memory(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "restored fact", metadata={"kept": "a"}))[0].id
+    outcome = await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"role": "x"}}], on_conflict="overwrite"
+    )
+    assert "role" in outcome.errors[0]["error"]
+    assert await _stored_metadata(backend, memory_id) == {"kept": "a"}
+
+
+async def test_an_over_cap_update_of_the_same_size_is_accepted(
+    policy: Policy, backend: InMemoryBackend
+):
+    memory_id = (await backend.add(TENANT, "x", metadata={"a": "x" * 9000, "b": "y" * 9000}))[0].id
+    updated = await policy.update(memory_id, metadata={"b": "z" * 9000})
+    assert updated.metadata["b"] == "z" * 9000
+
+
+async def test_an_over_cap_import_overwrite_is_refused_even_if_smaller(
+    policy: Policy, backend: InMemoryBackend
+):
+    """Import stores what it is given, so an entry has to fit the cap itself."""
+    await backend.add(TENANT, "restored fact", metadata={"a": "x" * 20000})
+    outcome = await policy.import_memories(
+        [{"content": "restored fact", "metadata": {"a": "y" * 17000}}], on_conflict="overwrite"
+    )
+    assert "16 KiB" in outcome.errors[0]["error"]
+
+
+@pytest.mark.parametrize("key", ["role", SYSTEM_METADATA_KEY])
+async def test_update_refuses_to_remove_a_reserved_key_naming_it(
+    policy: Policy, backend: InMemoryBackend, key: str
+):
+    memory_id = await _add_one(policy)
+    patches = _record(backend, "update", "patch")
+    message = await _refused(policy.update(memory_id, metadata={key: None}), "validation_error")
+    assert key in message
+    assert patches == []
+
+
+def test_a_patch_cannot_set_and_remove_the_same_key():
+    with pytest.raises(ValueError, match="both set and removed"):
+        MetadataPatch(set={"k": "v"}, remove=frozenset({"k"}))
+
+
 def test_the_reference_lists_every_reserved_metadata_key():
     reference = (Path(__file__).parents[2] / "docs" / "reference.md").read_text()
     listed = reference.split("The reserved keys\n  are", 1)[1].split("\n- ", 1)[0]

@@ -64,6 +64,11 @@ class MetadataPatch:
     set: Mapping[str, MetadataValue] = field(default_factory=dict[str, MetadataValue])
     remove: frozenset[str] = frozenset()
 
+    def __post_init__(self) -> None:
+        both = self.remove & self.set.keys()
+        if both:
+            raise ValueError(f"metadata keys {sorted(both)} are both set and removed")
+
 
 class MemoryBackend(ABC):
     """Abstract base class for memory storage backends.

@@ -88,9 +88,10 @@ size cap, and nothing is stored; `import_memories` lists the entry in its `error
 
 On `update_memory`, `metadata` is a patch: a key with a value is set, a key sent as `null`
 is removed, and a key left out is kept. Removing a key that isn't there does nothing, and a
-list replaces the stored list whole. `null` is accepted only there, and memcp never stores
-it. `import_memories` with `on_conflict=overwrite` replaces the metadata instead: the memory
-ends with the entry's keys.
+list replaces the stored list whole. `null` is accepted only there, and a removed key never
+reads back. `import_memories` with `on_conflict=overwrite` replaces the metadata instead:
+the memory ends with the entry's keys, plus any reserved key already stored. An entry
+without `metadata` leaves the stored metadata as it is, and `metadata: {}` clears it.
 
 ### Universal — registered on every backend
 
@@ -179,7 +180,8 @@ A request without a valid bearer token gets HTTP 401 with the same object and th
 
 `export_memories` and `import_memories` move a tenant's memories from one backend to
 another; `import_memories` takes at most 1,000 memories per call, and an export from
-`mem0` stops at its list ceiling (above). Content, scope and metadata survive. These do
+`mem0` stops at its list ceiling (above). Content, scope and metadata survive, except a
+memory whose metadata breaks the metadata rules, which import lists in `errors`. These do
 not, for any pair of backends:
 
 | Lost | Why |
