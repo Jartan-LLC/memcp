@@ -7,77 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.2.0] - 2026-10-16
 
-- **An audit log.** Every memory operation writes one record to the logger `memcp.audit`, whether it succeeds or is refused: the operation, the key's name, space and relation, the outcome (`ok` or the error code), and the memory ids or the scope and a count. It holds no content, query or metadata, and logs at `INFO` whatever `MEMCP_LOG_LEVEL` says. JSON logs carry it as an `audit` object. `docs/reference.md` lists the fields.
-- The Docker image is also published for `linux/arm64`, and each published image carries a build-provenance attestation.
-- `publish-pypi` refuses a `v*` tag whose version does not match `version` in `pyproject.toml`.
-- **A `v*` tag now creates the GitHub release itself** (`release.yml`). memcp had no such workflow: a tag published to PyPI and ghcr, and the release page was a separate `gh release create` somebody ran by hand. v0.1.0 and v0.1.1 were created that way, v0.1.2 was not, and nothing noticed. The `view || create` guard makes a re-run on the same tag idempotent. (JAR-623)
-- **`sqlite` backend** — durable local storage with no API key and no account, so a first install reaches memory that survives a restart without a provider bill. Retrieval is keyword matching and `add_memory` stores content verbatim; both are documented rather than approximated. It passes the same conformance suite as mem0, and round-trips with every other backend with the same four identity losses.
-- `memory_status` reports `extracts_facts` and `retrieval`. `infer` is accepted by `add_memory` on every backend and can only be honoured by one with a model behind it, so a caller had no way to discover that it does nothing; `add_memory`'s own description now says which case the deployment is in.
-- `MEMCP_ALLOWED_HOSTS` sets an explicit Host header allow-list for DNS-rebinding protection. The MCP SDK turns that protection on by itself **only** when `MEMCP_HOST` is `127.0.0.1`, `localhost` or `::1`, and leaves it off for every other value including `0.0.0.0` — memcp's default bind.
-- Tenant isolation is now tested end to end through the MCP surface: two tokens, two identities, and assertions that one can neither read, change, delete nor enumerate the other's memories through every registered tool, on every backend.
-- Tenant isolation coverage extends to a live mem0 — the one backend where isolation is not structural in the store itself, so it depends on the adapter's fetch-then-verify. The CI `conformance` job now runs it against the mem0 it already stands up, plus `memory_status` (carries no tenant data, so nothing to leak) and `import_memories` (a caller-supplied `id` is not a field the importer reads, and `on_conflict=overwrite` can only ever dedup-match the caller's own tenant).
-- Cross-backend migration in `memcp.policy.transfer`, now the single implementation behind `export_memories` and `import_memories`. Adds `migrate(source, target, partition, operator=..., target_partition=...)` for moving one space between backends, recorded in the audit log under the operator's name, and refused unless logging is configured to receive that record; it refuses an empty or `*` partition, and one either backend can't match exactly, before reading anything. (#27)
-- Self-contained mem0 for CI (`tests/mem0/up.sh`): real mem0 and real pgvector with no external API secret, using a standard-library OpenAI-compatible stand-in for embeddings. The conformance suite and round trip now run against it on every pull request. `tests/mem0/README.md` states what that proves and what it does not. (#28)
-- `docs/tool-surface.json` freezes the 12 MCP tool names, argument schemas and behaviour annotations; a test fails on any drift. Regenerate deliberately with `python -m memcp.tools.surface --write`.
+Upgrading from 0.1.x changes how clients authenticate: follow "Upgrade from 0.1.x" in `docs/deployment.md`.
 
 ### Changed
 
-- **Keys replace tokens.** `MEMCP_KEYS_FILE` names a TOML file of keys, and "Upgrade from 0.1.x" in `docs/deployment.md` moves a deployment onto it.
+- **Keys replace tokens.** `MEMCP_KEYS_FILE` names a TOML file of keys.
   - Each key has a name, the SHA-256 hashes of its tokens, and one grant: a space and a relation, `reader` or `writer`. The file holds no token.
   - memcp refuses to start while `MEMCP_AUTH_TOKENS` is set. Each `token:user_id` there becomes a key with the `user_id` as its space, so it reaches the same memories. Its secret is the token's hash if the token is random, as `openssl rand -hex 32` makes; otherwise give that client a new token, since a guessable one can be recovered from its hash.
   - A `reader` key gets the new error code `forbidden` from `add_memory`, `update_memory`, `delete_memory`, `delete_all_memories` and `import_memories`.
   - memcp refuses to start on a malformed keys file, and on a granted space that is `*`, empty, or one the backend can't keep apart from others, such as one with whitespace at either end on mem0. Its errors never quote a secret.
   - Without a keys file, memcp serves one key, `local`, with `writer` on the space `default_user`, which holds what a 0.1.x server without tokens wrote. With a keys file, as under `docker-compose.yml`, grant `default_user` to a key to reach those memories.
-- Log records carry `key` and `space`, the name and space of the request's key (`null` in JSON and `-` in plain format when no key is set: outside a request, on `/health`, and on a request refused with 401), in place of `user_id`. Update any log query or alert on `user_id`.
-- **`update_memory`'s `metadata` is a patch.** Keys you don't send are kept; on in_memory they were dropped before. Send a key as `null` to remove it. `content` is optional.
+- **`MEMCP_BACKEND` is required.** It defaulted to `mem0`. Set `MEMCP_BACKEND=mem0` to keep a 0.1.x deployment running as before.
+- **`docker-compose.yml` runs the latest release** instead of 0.1.2. It mounts `keys.toml` from its own directory and refuses to start without it or `MEMCP_BACKEND`. It publishes memcp on `127.0.0.1:8080` only, where 0.1.2 published a random port on every interface, and admits only loopback Host headers unless `MEMCP_ALLOWED_HOSTS` is set.
+- **`update_memory`'s `metadata` is a patch.** Keys you don't send are kept; on in_memory they used to be dropped. Send a key as `null` to remove it. `content` is optional.
 - **Metadata follows one set of rules on `add_memory`, `update_memory` and `import_memories`, on every backend.** 0.1.2 stored it as given.
   - Values are strings, numbers, booleans or lists of strings. A key is at most 64 characters, and a memory's metadata at most 16 KiB as JSON.
   - A reserved key (listed under Metadata in `docs/reference.md`) and a `_memcp_` key are refused.
   - A write that breaks a rule gets `validation_error`, which names the key for every rule but the size cap. `import_memories` lists the entry in `errors` instead.
   - Metadata already stored that breaks these rules is still returned. An update that doesn't grow it is accepted, so its keys can be removed, except a key whose name is now reserved.
-  - Export, then import or migrate, refuses such a memory, content included, and lists it in `errors`.
+  - Export, then import, refuses such a memory, content included, and lists it in `errors`.
   - `import_memories` with `on_conflict=overwrite` replaces the metadata when the entry has `metadata`; on mem0 it used to merge. A reserved key already stored stays.
 - **Every tool applies the same scope rules, on every backend.**
-  - A scope naming `user_id` is refused with `invalid_scope`. It used to be dropped from the scope with a warning from `memcp.tools` ("Stripped user_id from scope dict"); that warning is no longer logged, so an alert on it stops firing.
-  - An empty, `*` or `null` value is refused with `validation_error` on every tool. On mem0, search and list used to read such a value as "any".
-  - So is a value with whitespace at either end, which mem0 trims, and a `run_id` with whitespace inside it, which mem0 refuses. `agent_id` is normalized instead.
+  - A scope naming `user_id` is refused with `invalid_scope`. It used to be dropped with the warning "Stripped user_id from scope dict", which is no longer logged.
+  - An empty, `*` or `null` value is refused with `validation_error`. On mem0, search and list used to read such a value as "any".
+  - So is a value with whitespace at either end, which mem0 trims, and a `run_id` with whitespace inside it, which mem0 refuses.
   - A NaN or infinite number is refused with `validation_error`.
-  - Scope values are stored and returned as text. On in_memory, a `run_id` sent as `7` now reads back as `"7"`. On mem0, a numeric or boolean `run_id`, which mem0 refused, is now stored as text.
+  - Scope values are stored and returned as text. On in_memory, a `run_id` sent as `7` now reads back as `"7"`. On mem0, a numeric or boolean `run_id`, which mem0 refused, is stored as text.
   - An import entry whose scope breaks one of these rules is listed in `errors`.
   - A memory a backend returns outside the requested scope is left out of search and list results, with a warning from `memcp.policy`.
-- Two log sources have new logger names: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter` (mem0 backend), and `memcp.auth` is now `memcp.http.auth` (rejected requests). Tool-call records keep `memcp.tools`. Update any log filter or alert that matches the old names.
-- **`MEMCP_BACKEND` is required.** It defaulted to `mem0`; a server started without it now refuses to start and names the variable. Set `MEMCP_BACKEND=mem0` to keep a 0.1.x deployment running as before.
-- **Image tags come from `docker/metadata-action`**, converging with scaffold: `{{version}}` and `{{major}}.{{minor}}` instead of one hardcoded pair. `{{major}}` is deliberately absent — pre-1.0 it is an alias for "any version at all", and across minor lines it carries the same ordering defect `latest` had. `flavor: latest=false` turns off metadata-action's own `latest=auto`, which excludes pre-releases but does **not** check whether the tag is the highest version; the explicit guard added earlier makes that decision instead.
-- **The README points at documents rather than restating them.** It answers what memcp is, how to get a running one, how a client connects, and where everything else lives. The environment-variable table, the 12-tool surface and the per-backend limitations moved to `docs/reference.md`; the check loop moved to `CONTRIBUTING.md` and the conformance run to `tests/mem0/README.md`; running the server without Docker moved into `docs/deployment.md`. Links out of the README are absolute, because PyPI renders it as the package page and does not resolve relative paths.
-- `docker-compose.yml` runs the latest published image. It mounts `keys.toml` from its own directory, refuses to start without it or `MEMCP_BACKEND`, publishes memcp on `127.0.0.1:8080`, and admits only loopback Host headers unless `MEMCP_ALLOWED_HOSTS` is set.
-- `agent_id` scope values are now normalized — lowercased, trimmed, non-`[a-z0-9]` runs collapsed to a single hyphen, hyphens at either end dropped — identically on every write and filter path (`add_memory`, `search_memory`, `list_memories`, `delete_all_memories`, `memory_entities`, `import_memories`). Server `INSTRUCTIONS` now ask connecting agents to send their own name in that lowercase-hyphenated form (e.g. `claude-code`) as `agent_id`, a change from the opaque-identifier convention agents were using before; existing memories written under that prior convention are unaffected but a normalized filter will no longer reach a non-normalized stored value. (#23)
-- **Keyword retrieval actually matches keywords.** `in_memory` and now `sqlite` scored by asking whether each whitespace-separated query fragment was a *substring* of the content. So `use?` missed `uses` on the punctuation, `linter` missed `linting`, and the one-letter token `i` from "What linter do I use?" matched every memory containing the letter i — giving unrelated memories the same score as the right one. Both backends now share `memcp.backends.keyword`: tokens are runs of letters and digits, query tokens under three characters are ignored, two tokens match when equal or sharing a four-character prefix, and an exact phrase hit scores 1.0.
-- **`in_memory` and `sqlite` no longer declare `memory_entities`.** They answered with one synthetic node carrying a memory count and no relationships, which made `memory_status` advertise the knowledge-graph capability on a keyless install while the documentation said the graph needs a key. The tool is now simply not registered there; `mem0` is unaffected and the frozen 12-tool surface is unchanged, because `docs/tool-surface.json` is generated from the full capability set rather than from whatever one backend happens to declare.
-- The Dockerfile's Python base image is pinned by digest.
-- The Docker image creates `/data` owned by the runtime user, so the sqlite backend can write to a mounted volume as a non-root process.
-- Import dedup is scope-aware: identical content in a different scope is a distinct memory, not a duplicate. Previously the same fact stored under two `agent_id` values collapsed to one on import. Tool names and argument shapes are unchanged; `import_memories`' behaviour and description are. (#30)
-- uv replaces pip as the installer in CI, the dev container and the Dockerfile, and `uv build` replaces `python -m build` on the publish path. No `uv.lock`, no `uv sync`: uv is the installer, not the project manager.
+- **`agent_id` is normalized** on every write and filter: lowercased, trimmed, each run of other characters turned into one hyphen, and hyphens at either end dropped. The server's MCP instructions ask clients to send their own name in that form, such as `claude-code`. A filter no longer reaches a memory stored under an `agent_id` that isn't in that form.
+- Import treats the same content in a different scope as a different memory, not a duplicate.
+- in_memory's keyword search matches words: runs of letters and digits, ignoring query words under three characters, with two words matching when they are equal or share their first four characters. An exact phrase scores 1.0. It used to match any substring, so a one-letter word matched almost everything.
+- in_memory no longer registers `memory_entities`. It answered with one synthetic node and no relationships.
+- Log records carry `key` and `space`, the name and space of the request's key, in place of `user_id`. Both are `null` in JSON and `-` in plain format when no key is set: outside a request, on `/health`, and on a request refused with 401. Update any log query or alert on `user_id`.
+- Two loggers are renamed: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter`, and `memcp.auth` is now `memcp.http.auth`. Update any log filter or alert that matches the old names.
+
+### Added
+
+- **The `sqlite` backend:** durable local storage with no API key and no account. Retrieval is the same keyword matching as in_memory, and `add_memory` stores content verbatim. The Docker image creates `/data` for it, writable by the image's user.
+- **An audit log.** Every memory operation writes one record to the logger `memcp.audit`, whether it succeeds or is refused: the operation, the key's name, space and relation, the outcome (`ok` or the error code), and the memory ids or the scope and a count. It holds no content, query or metadata, and logs at `INFO` whatever `MEMCP_LOG_LEVEL` says. JSON logs carry it as an `audit` object. `docs/reference.md` lists the fields.
+- `MEMCP_ALLOWED_HOSTS` sets a Host header allow-list for DNS-rebinding protection. The MCP SDK turns that protection on by itself only when `MEMCP_HOST` is `127.0.0.1`, `localhost` or `::1`, and leaves it off for every other value, `0.0.0.0` included.
+- `memory_status` reports `extracts_facts` and `retrieval`, so a client can tell whether `infer` does anything.
+- `memcp.policy.transfer.migrate(source, target, partition, operator=..., target_partition=...)` moves one space's memories between backends, for an operator's own scripts. It is recorded in the audit log under the operator's name, and refused, before anything is read, for a blank operator, logging that would drop that record, an empty or `*` partition, one either backend can't match exactly, or an `on_conflict` the target can't carry out.
+- The Docker image is published for `linux/arm64` too, carries a build-provenance attestation, and is also tagged with its minor version, such as `0.2`.
 
 ### Fixed
 
+- On mem0, `list_memories`, export and import's duplicate check saw only a space's first 20 memories, mem0's default page. They now read up to mem0's ceiling of 1000.
+- **On mem0, list, entities, export and import no longer treat 1000 memories as all of them.** mem0 returns at most 1000 with no way to page further. `list_memories` and `memory_entities` now return `incomplete: true`, `export_memories` `truncated: true`, and `import_memories` `dedup_incomplete: true`. A space of exactly 1000 memories reads the same way, since mem0 can't tell it from more.
 - A memory id ending in a line break is refused with `validation_error`. On mem0 it failed the call with an unhandled error.
-- **The `:latest` guard's highest-tag lookup no longer mis-orders pre-release tags.** GNU `sort -V` ranks `1.0.0` above `1.0.0-rc1` — the `-rc1` suffix sorts as "greater" — so an rc tag pushed after a stable release would have taken `:latest`, and the stable release cut after an rc line started would not have. Pre-releases are now dropped before the highest tag is chosen. Latent until memcp cuts its first rc tag; ported from `Jartan-LLC/scaffold` PR #98. (JAR-676)
-- **On mem0, list, entities, export, import and migration no longer treat 1000 memories as all of them.** mem0 returns at most 1000 memories with no way to page further, so an export or migration of a larger tenant returned 1000 with `truncated: false`, and import's duplicate check missed the rest. They now say so: `list_memories` and `memory_entities` return `incomplete: true`, `export_memories` and migration `truncated: true`, and `import_memories` and migration `dedup_incomplete: true`. A tenant of exactly 1000 memories reads the same way, since mem0 can't tell it from more. (#114)
-- mem0 `list_memories` now sends `top_k` explicitly. mem0's `GET /memories` defaults it to 20, so list, export and the import dedup index silently saw only the first 20 memories of a tenant. The adapter now requests mem0's own ceiling of 1000 and logs when a tenant reaches it.
 
 ### Security
 
-- **memcp refuses to return a memory from another tenant, even when the backend hands it one.** The request fails with the error code `internal_error`, and the server logs `isolation_violation` without the memory's content. memcp checks every memory it returns and every memory it has just stored, and fetches a memory to check it before it updates, deletes or shows the history of it. On mem0 that is one more request per memory added or imported, and per update, delete or history call.
-- **A memory store's error response no longer reaches the client.** A `backend_error` or `timeout` message used to carry up to 500 characters of the store's response, including its reason for refusing a request, or the transport's error text, which can include the store's URL; a failed `import_memories` entry did the same in `errors`. The message now gives at most the status, and the server logs the response as a warning instead.
-- `memory_entities` on mem0 counts only the caller's own memories. It read mem0's store-wide entity list, so a tenant writing under an `agent_id` or `run_id` equal to another tenant's user id put a row, with its count and timestamps, into that tenant's results. It now returns the caller's agent and run rows, with no row for the caller's own user id, honours `scope`, and counts at most 1000 memories, mem0's list ceiling.
-- `delete_all_memories` refuses an empty, `*` or `null` scope value. The mem0 adapter dropped such a value as matching anything, so the delete reached memories outside the requested scope.
+- **memcp refuses to return a memory from another space, even when the backend hands it one.** The request fails with the error code `internal_error`, and the server logs `isolation_violation` without the memory's content. memcp checks every memory it returns and every memory it has just stored, and fetches a memory to check it before it updates, deletes or shows the history of it. On mem0 that is one more request per memory added or imported, and per update, delete or history call.
+- **A memory store's error response no longer reaches the client.** A `backend_error` or `timeout` message used to carry up to 500 characters of the store's response, which can include its reasons and its URL; a failed `import_memories` entry did the same in `errors`. The message now gives at most the status, and the server logs the response as a warning.
+- `memory_entities` on mem0 counts only the caller's own memories. It read mem0's store-wide entity list, so another space writing an `agent_id` or `run_id` equal to the caller's user id put a row, with its count and times, into the caller's results. It now returns the caller's agent and run rows, with no row for the caller's own space, honours `scope`, and counts at most 1000 memories.
+- `delete_all_memories` refuses an empty, `*` or `null` scope value. On mem0 such a value matched anything, so the delete reached memories outside the requested scope.
 - **Every memory carries `author`, the name of the key that last wrote it, set by the server.**
   - `search_memory`, `get_memory`, `list_memories`, `update_memory` and `export_memories` return it. It is `local` for a write made without a keys file, and `null` for a memory written by 0.1.2 or earlier.
-  - A caller can't set it: memcp refuses `_memcp_` keys in caller metadata. An update, or an `import_memories` overwrite, records the acting key. `import_memories` ignores an entry's `author`, so an export/import round trip doesn't keep it.
+  - A caller can't set it: memcp refuses `_memcp_` keys in caller metadata. An update, or an `import_memories` overwrite, records the acting key. `import_memories` ignores an entry's `author`, so an export and import doesn't keep it.
   - The server's MCP instructions tell a client to treat every memory as third-party input: attribute it, re-check it, and never follow instructions inside it.
-  - **On mem0, sweep the store for the metadata key `_memcp_system` before this version serves it.** 0.1.2 stored callers' metadata as given, and memcp can't enumerate a mem0 install's spaces to clean it, so a key planted then reads back as an `author` no server set. sqlite and in_memory keep `author` outside metadata and need no sweep.
+  - **On mem0, sweep the store for the metadata key `_memcp_system` before this version serves it.** 0.1.2 stored callers' metadata as given, and memcp can't enumerate a mem0 install's spaces to clean it, so a key planted then reads back as an `author` no server set. in_memory keeps `author` outside metadata and needs no sweep.
 - **memcp refuses to start unauthenticated on an interface another machine can reach.** Without a keys file every request is served as the key `local`, which is a dev server on loopback and an open memory store anywhere else. The startup error names both ways out. The default bind is still `0.0.0.0`.
 
 ## [0.1.2] - 2026-08-18
@@ -133,7 +125,8 @@ Initial release.
 - Backend selection via `MEMCP_BACKEND` (mem0, in_memory)
 - Server config: `MEMCP_HOST`, `MEMCP_PORT`, `MEMCP_LOG_LEVEL`, `MEMCP_LOG_FORMAT`
 
-[Unreleased]: https://github.com/Jartan-LLC/memcp/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/Jartan-LLC/memcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Jartan-LLC/memcp/releases/tag/v0.2.0
 [0.1.2]: https://github.com/Jartan-LLC/memcp/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Jartan-LLC/memcp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Jartan-LLC/memcp/releases/tag/v0.1.0
