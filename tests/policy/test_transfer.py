@@ -567,7 +567,7 @@ async def test_migrate_refuses_a_source_memory_from_another_partition(
     with pytest.raises(PolicyError) as refused:
         await migrate(source, target, TENANT, operator="tester", target_partition=OTHER)
     assert refused.value.code == "internal_error"
-    assert "operation=migrate " in caplog.text
+    assert "isolation_violation: operation=migrate " in caplog.text
     assert (await target.list_memories(OTHER)).memories == []
 
 
@@ -633,4 +633,4 @@ async def test_a_migration_logs_its_target_side_checks_as_migrate(
     await target.add(OTHER, "already there", infer=False)
     with pytest.raises(PolicyError):
         await migrate(source, target, TENANT, operator="tester", target_partition=OTHER)
-    assert "operation=migrate " in caplog.text
+    assert "isolation_violation: operation=migrate " in caplog.text

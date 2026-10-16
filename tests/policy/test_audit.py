@@ -143,7 +143,7 @@ async def test_records_name_ids_scope_and_counts(caplog: pytest.LogCaptureFixtur
             await policy.list_memories(scope={"agent_id": "a"})
             await policy.export_memories()
             await policy.entities(scope={"agent_id": "a"})
-            await policy.import_memories([{"content": "three"}, {"content": "four"}])
+            await policy.import_memories([{"content": "three"}, {"content": ""}])
             await policy.delete_all({"agent_id": "a"})
     finally:
         reset_key(token)
@@ -155,7 +155,7 @@ async def test_records_name_ids_scope_and_counts(caplog: pytest.LogCaptureFixtur
     assert (audits["list_memories"]["count"], audits["list_memories"]["scope"]) == (1, a)
     assert audits["export_memories"]["count"] == 2
     assert (audits["entities"]["count"], audits["entities"]["scope"]) == (0, a)
-    assert audits["import_memories"]["count"] == 2
+    assert audits["import_memories"]["count"] == 1  # imported, not sent: one is refused
     assert (audits["delete_all"]["count"], audits["delete_all"]["scope"]) == (1, a)
 
 
@@ -210,8 +210,11 @@ async def test_every_formatter_shows_the_actor(caplog: pytest.LogCaptureFixture)
 async def test_a_migration_is_recorded_under_its_operator(caplog: pytest.LogCaptureFixture):
     source, target = InMemoryBackend(), InMemoryBackend()
     await source.add("team", CONTENT, infer=False)
+    await source.add("team", "already there", infer=False)
+    await target.add("moved", "already there", infer=False)
     with caplog.at_level(logging.INFO, logger="memcp.audit"):
         report = await migrate(source, target, "team", target_partition="moved", operator="ops")
+    assert (report.exported, report.skipped) == (2, 1)
     records = _records(caplog)
     assert len(records) == 1
     audit = records[0].audit  # type: ignore[attr-defined]

@@ -49,6 +49,12 @@ class TestValidateMemoryId:
         with pytest.raises(ValueError, match="Invalid memory_id"):
             validate_memory_id("id?user_id=attacker")
 
+    @pytest.mark.parametrize("memory_id", ["abc\n", "abc\r\n", "\nabc"])
+    def test_a_line_break_is_rejected(self, memory_id: str):
+        """`$` matches before a final newline; mem0's client then fails building the URL."""
+        with pytest.raises(ValueError, match="Invalid memory_id"):
+            validate_memory_id(memory_id)
+
 
 # ---------------------------------------------------------------------------
 # reject_nested_filters
