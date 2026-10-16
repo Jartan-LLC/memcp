@@ -287,9 +287,10 @@ prefix and the wildcard and empty-value check in `types.py`; nothing else keeps 
   `MemoryAPIError` as the error object in [reference.md](reference.md#errors). A backend
   error reaches the client as a fixed code and message; the store's response goes to the
   server log only.
-- **Audit:** every policy decision is logged to a structured audit logger: operation, key
-  name (never a token), space, memory ids or scope and count, relation, outcome. Never
-  content.
+- **Audit:** every policy decision is logged to the structured logger `memcp.audit`:
+  operation, key name (never a token), space, memory ids or scope and count, relation,
+  outcome, and for a migration its source space. Never content, a query or metadata. The
+  fields are in [reference.md](reference.md#audit-log).
 - **Capabilities:** a tool exists only when the backend declares the operation behind it;
   export and import need `list`, and import with `on_conflict=overwrite` also needs
   `update`.

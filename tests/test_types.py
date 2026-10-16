@@ -51,7 +51,7 @@ class TestValidateMemoryId:
 
     @pytest.mark.parametrize("memory_id", ["abc\n", "abc\r\n", "\nabc"])
     def test_a_line_break_is_rejected(self, memory_id: str):
-        """`$` matches before a final newline; mem0's client then fails building the URL."""
+        """A trailing line break must not pass: mem0's client fails building the URL."""
         with pytest.raises(ValueError, match="Invalid memory_id"):
             validate_memory_id(memory_id)
 

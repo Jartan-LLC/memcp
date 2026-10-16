@@ -145,6 +145,14 @@ async def build_dedup_index(
     return {dedup_key(m.content, m.scope): m for m in memories}, incomplete
 
 
+def refuse_on_conflict(backend: MemoryBackend, on_conflict: str) -> None:
+    """Raise ValueError for an `on_conflict` that `backend` can't carry out."""
+    if on_conflict not in ON_CONFLICT_CHOICES:
+        raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
+    if on_conflict == "overwrite" and "update" not in backend.capabilities():
+        raise ValueError("on_conflict='overwrite' requires the backend's update capability")
+
+
 async def import_payload(
     backend: MemoryBackend,
     user_id: str,
@@ -168,10 +176,7 @@ async def import_payload(
     names the caller in a space-check log. Only an entry's `content`, `scope` and
     `metadata` are read, so an exported `author` is never imported back.
     """
-    if on_conflict not in ON_CONFLICT_CHOICES:
-        raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
-    if on_conflict == "overwrite" and "update" not in backend.capabilities():
-        raise ValueError("on_conflict='overwrite' requires the backend's update capability")
+    refuse_on_conflict(backend, on_conflict)
 
     existing: dict[DedupKey, Memory] = {}
     outcome = ImportOutcome()
@@ -306,11 +311,11 @@ async def migrate(
     `target_partition` defaults to `partition`; pass it to land the memories under a
     different partition on the target. `operator` names who runs the migration; the audit
     record gives it as the key. Raises ValueError, before reading anything, for a blank
-    operator, logging that would drop the audit record, an empty or `*` partition, or one
-    its backend refuses. Both backends need the `list` capability. What does not survive
-    the trip is listed in `docs/reference.md`
-    ("Moving memories between backends"), except `author`: each copy keeps the source
-    memory's system fields, with `space` set to the target partition.
+    operator, logging that would drop the audit record, an empty or `*` partition, one
+    its backend refuses, or an `on_conflict` the target can't carry out. Both backends
+    need the `list` capability. What does not survive the trip is listed in
+    `docs/reference.md` ("Moving memories between backends"), except `author`: each copy
+    keeps the source memory's system fields, with `space` set to the target partition.
     """
     if not operator.strip():
         raise ValueError("migrate needs an operator: the name of who runs it")
@@ -326,6 +331,7 @@ async def migrate(
         try:
             refuse_unusable_partition(source, partition)
             refuse_unusable_partition(target, landing)
+            refuse_on_conflict(target, on_conflict)
         except ValueError:
             entry.outcome = "validation_error"
             raise

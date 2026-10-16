@@ -255,6 +255,19 @@ async def test_a_refused_migration_is_recorded(caplog: pytest.LogCaptureFixture)
     assert [r.audit["outcome"] for r in _records(caplog)] == ["validation_error"]  # type: ignore[attr-defined]
 
 
+@pytest.mark.parametrize("on_conflict", ["bogus", "overwrite"])
+async def test_a_migration_refused_for_on_conflict_is_refused_before_reading(
+    on_conflict: str, caplog: pytest.LogCaptureFixture
+):
+    class _NoUpdate(InMemoryBackend):
+        def capabilities(self) -> set[str]:
+            return {"list"}
+
+    with caplog.at_level(logging.INFO, logger="memcp.audit"), pytest.raises(ValueError):
+        await migrate(_Unreadable(), _NoUpdate(), "team", operator="ops", on_conflict=on_conflict)
+    assert [r.audit["outcome"] for r in _records(caplog)] == ["validation_error"]  # type: ignore[attr-defined]
+
+
 @pytest.mark.parametrize("operator", ["", "  "])
 async def test_a_migration_needs_an_operator(operator: str):
     with pytest.raises(ValueError, match="operator"):
