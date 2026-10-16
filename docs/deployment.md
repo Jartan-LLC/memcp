@@ -17,9 +17,9 @@ memcp.
 - **Retrieval is keyword matching.** Two words match when they are equal or share a
   four-character prefix, so `linter` finds `linting`. A question phrased in words that
   don't appear in the memory finds nothing.
-- **Some scripts match as runs of characters.** In Japanese, Chinese, Korean, Thai and
-  other scripts that don't separate words with spaces, or attach particles to them, a
-  query finds only an exact run of characters.
+- **Some scripts match as runs of characters.** In Chinese, Japanese, Korean, Thai, Lao,
+  Khmer and Myanmar, each run of characters in a query must appear in the memory as
+  written.
 - **Nothing is extracted.** `add_memory` stores what it is given. Its `infer` argument
   is accepted and ignored, and `memory_status` reports `extracts_facts: false`.
 

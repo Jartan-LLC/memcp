@@ -138,10 +138,46 @@ class TestScriptsBeyondAscii:
         assert score("東京 office", "Osaka office") == 0.5
         assert score("東京 office", "東京 office move") == 1.0
 
-    def test_ascii_text_tokenizes_as_the_general_path_does(self):
+    @pytest.mark.parametrize(
+        ("query", "content"),
+        [
+            ("서울 날씨", "서울의 날씨는 맑다"),
+            ("날씨 서울", "서울의 날씨는 맑다"),
+            ("부산 회의", "부산에서 회의가 있어요"),
+            ("東京 ラーメン", "東京で美味しいラーメンを食べた"),
+        ],
+        ids=["korean", "korean reordered", "korean particles", "japanese"],
+    )
+    def test_each_run_of_a_multi_word_query_is_matched_on_its_own(self, query: str, content: str):
+        assert score(query, content) == 1.0
+
+    def test_a_query_run_doesnt_match_across_a_separator_in_the_content(self):
+        assert score("京大", "東京、大阪に行く") is None
+
+    def test_an_iteration_mark_belongs_to_its_run(self):
+        assert score("佐々木", "木村と佐藤") is None
+        assert score("佐々木", "佐々木さんに会う") == 1.0
+
+    def test_han_beyond_the_basic_plane_belongs_to_its_run(self):
+        assert score("𠮷野家", "野家に行く") is None
+        assert score("𠮷野家", "𠮷野家に行く") == 1.0
+
+    def test_the_fast_path_tokenizes_as_the_general_path_does(self):
         from memcp.backends.keyword import _tokenize_any
 
-        samples = [STORED, QUESTION, "use? linting_rules 3.12 ABC-def", "a  b\tc\nd", ""]
+        samples = [
+            STORED,
+            QUESTION,
+            "use? linting_rules 3.12 ABC-def",
+            "a  b\tc\nd",
+            "",
+            "東京 office",
+            "word—word café “quoted”",
+            "서울 날씨",
+            "東京、 大阪 -- 京都",
+            "ジョン・スミス and ❤\ufe0f",
+            "İุ, lowercasing that yields a mark NFKC would reorder",
+        ]
         for text in samples:
             assert tokenize(text) == _tokenize_any(text), text
 

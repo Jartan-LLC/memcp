@@ -11,8 +11,9 @@ The rules, and why each exists:
 
 - **Tokens are runs of letters, digits and combining marks, in any script**, after NFKC
   and lowercasing. A character of a script written without spaces between words (Han,
-  kana, Hangul, Thai, Lao, Khmer, Myanmar) is a token of its own, and a run of them in a
-  query must appear as a run. The previous version split on whitespace
+  kana, Thai, Lao, Khmer, Myanmar) or with particles attached to words (Hangul) is a
+  token of its own; a run of them in a query must appear as a run, within one run of
+  the content. The previous version split on whitespace
   and asked whether each piece was a *substring* of the content, so `use?` failed
   against `uses` on the punctuation, and the one-letter token `i` from "What linter
   do I use?" matched every memory containing the letter i — giving unrelated
@@ -35,20 +36,34 @@ import unicodedata
 MIN_QUERY_TOKEN = 3
 SHARED_PREFIX = 4
 
-# Scripts written without spaces between words, plus Hangul, whose nouns carry their
-# particles: Thai, Lao, Myanmar, Hangul Jamo, Khmer, kana, CJK, Hangul syllables.
+# Scripts tokenized per character: written without spaces between words (Han, kana,
+# Thai, Lao, Khmer, Myanmar), or with particles attached to words (Hangul).
 _UNSPACED = re.compile(
-    "[\u0e00-\u0eff\u1000-\u109f\u1100-\u11ff\u1780-\u17ff\u3040-\u30ff"
-    "\u3130-\u318f\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]"
+    r"[\u0e00-\u0eff\u1000-\u109f\u1100-\u11ff\u1780-\u17ff\u3005-\u3007\u303b"
+    r"\u3040-\u30ff\u3130-\u318f\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af"
+    r"\uf900-\ufaff\U00020000-\U0003ffff]"
 )
 _ASCII_TOKEN = re.compile(r"[a-z0-9]+")
+# Never a token: marks a space or punctuation after a per-character run, so a query run
+# can't match across it.
+_BOUNDARY = " "
 
 
 def _is_mark(char: str) -> bool:
     return unicodedata.category(char).startswith("M")
 
 
+def _is_run_token(token: str) -> bool:
+    return bool(_UNSPACED.match(token))
+
+
 def _tokenize_any(text: str) -> list[str]:
+    return _tokens_of(unicodedata.normalize("NFKC", text).lower())
+
+
+def _tokens_of(folded: str) -> list[str]:
+    """Tokens of text already normalized and lowercased: normalizing again isn't safe,
+    since lowercasing can produce marks that NFKC then reorders."""
     tokens: list[str] = []
     word: list[str] = []
 
@@ -57,9 +72,10 @@ def _tokenize_any(text: str) -> list[str]:
             tokens.append("".join(word))
             word.clear()
 
-    for char in unicodedata.normalize("NFKC", text).lower():
+    for char in folded:
         if _UNSPACED.match(char):
             flush()
+            # Other characters of these blocks, such as U+30FB "・", join the run around them.
             if char.isalnum() or _is_mark(char):
                 tokens.append(char)
         elif char.isalnum():
@@ -68,34 +84,43 @@ def _tokenize_any(text: str) -> list[str]:
             word.append(char)  # a mark belongs to the letter before it, and alone to none
         else:
             flush()
+            if tokens and _is_run_token(tokens[-1]):
+                tokens.append(_BOUNDARY)
     flush()
+    if tokens and tokens[-1] == _BOUNDARY:
+        tokens.pop()
     return tokens
 
 
 def tokenize(text: str) -> list[str]:
-    # ASCII gives the same tokens through the regex, several times faster; every row
-    # of a search is scored.
+    # Every row of a search is scored, so only the pieces holding non-ASCII take the
+    # per-character path; the result is the same as _tokenize_any(text).
     if text.isascii():
         return _ASCII_TOKEN.findall(text.lower())
-    return _tokenize_any(text)
-
-
-def _is_run(unit: list[str]) -> bool:
-    return bool(_UNSPACED.match(unit[0]))
+    tokens: list[str] = []
+    for piece in unicodedata.normalize("NFKC", text).lower().split():
+        part = _ASCII_TOKEN.findall(piece) if piece.isascii() else _tokens_of(piece)
+        if not part:
+            continue
+        if tokens and _is_run_token(tokens[-1]):
+            tokens.append(_BOUNDARY)
+        tokens.extend(part)
+    return tokens
 
 
 def _units(tokens: list[str]) -> list[list[str]]:
-    """The query's scoring units: each word, and each run of unspaced-script tokens."""
+    """The query's scoring units: each word, and each per-character run."""
     units: list[list[str]] = []
     run: list[str] = []
     for token in tokens:
-        if _UNSPACED.match(token):
+        if _is_run_token(token):
             run.append(token)
             continue
         if run:
             units.append(run)
             run = []
-        units.append([token])
+        if token != _BOUNDARY:
+            units.append([token])
     if run:
         units.append(run)
     return units
@@ -143,7 +168,9 @@ def score(query: str, content: str) -> float | None:
 
     # A run counts whatever its length and must appear as a run; a word counts from
     # MIN_QUERY_TOKEN characters and may match by prefix.
-    scored = [u for u in _units(query_tokens) if _is_run(u) or len(u[0]) >= MIN_QUERY_TOKEN]
+    scored = [
+        u for u in _units(query_tokens) if _is_run_token(u[0]) or len(u[0]) >= MIN_QUERY_TOKEN
+    ]
     if not scored:
         return None
 
@@ -153,7 +180,7 @@ def score(query: str, content: str) -> float | None:
         for unit in scored
         if (
             _is_phrase_of(unit, content_tokens)
-            if _is_run(unit)
+            if _is_run_token(unit[0])
             else _matches(unit[0], unique_content)
         )
     )
