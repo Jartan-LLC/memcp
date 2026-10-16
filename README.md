@@ -28,7 +28,8 @@ mkdir memcp && cd memcp &&
 ```
 
 Keep the token that printed; `keys.toml` holds only its hash (on macOS, use
-`shasum -a 256` in place of `sha256sum`). Then start it:
+`shasum -a 256` in place of `sha256sum`). A key name holds only letters, digits, `_`, `.`
+and `-`; if your login has anything else, replace `$USER` with such a name. Then start it:
 
 ```bash
 docker compose up -d --wait

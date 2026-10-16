@@ -45,6 +45,9 @@ memcp.
    Keep the token that printed: your clients send it, and `keys.toml` holds only its
    hash. On macOS, use `shasum -a 256` in place of `sha256sum`.
 
+   A key name holds only letters, digits, `_`, `.` and `-`; if your login has anything
+   else, replace `$USER` with such a name.
+
 Then configure the backend you chose.
 
 ### Use mem0
@@ -165,11 +168,13 @@ is set.
 
 1. Download the current compose file, as in
    [Upgrade a Compose deployment](#upgrade-a-compose-deployment).
-2. For each `<token>:<user_id>` in `MEMCP_AUTH_TOKENS`, add a key to `keys.toml` with the
-   `user_id` as its space and the token's hash as its secret, made with the "token you
-   already have" command in [Manage keys](#manage-keys). A client keeps its token only if
-   it is random and as long as `openssl rand -hex 32` makes; give any other client a new
-   one, since a short or guessable token can be recovered from its hash.
+2. For each `<token>:<user_id>` in `MEMCP_AUTH_TOKENS`, add a key to `keys.toml` with its
+   own name, `writer` on the `user_id` as its space, and the token's hash as its secret,
+   made with the "token you already have" command in [Manage keys](#manage-keys). A client
+   keeps its token only if it is random and as long as `openssl rand -hex 32` makes; give
+   any other client a new one, since a short or guessable token can be recovered from its
+   hash. If `MEMCP_AUTH_TOKENS` was empty, the memories are in the space `default_user`:
+   add one key with `writer` on it and a new token's hash.
 3. Delete the `MEMCP_AUTH_TOKENS` line from `.env`.
 4. Pull and restart:
 
@@ -226,8 +231,8 @@ read -rs TOKEN && printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -
 Apply each change with `docker compose up -d --wait --force-recreate memcp`, which fails
 if memcp refuses the file. Don't give a removed
 key's name to a new key: memories record the name of the key that wrote them. memcp reads
-the file as its own user, so leave it readable (mode 644). It holds hashes, not tokens,
-which keep a random token secret but not a guessable one.
+the file as its own user, so leave it readable (mode 644). It holds hashes, not tokens:
+a hash keeps a random token secret, but not a guessable one.
 
 ## Put memcp behind a reverse proxy
 
@@ -269,9 +274,9 @@ comma-separated.
 - The compose file won't start without `keys.toml`, and the server refuses to run
   unauthenticated on any interface another machine can reach.
 - Give each client its own key, with `reader` where it only reads.
-- `keys.toml` holds only token hashes, and can be version-controlled while every token
-  in it is random (`openssl rand -hex 32`). `.env` holds the
-  mem0 API key: keep it at mode 600 and out of version control.
+- `keys.toml` holds only token hashes; version-control it only while every token it
+  hashes is random (`openssl rand -hex 32`).
+- `.env` holds the mem0 API key: keep it at mode 600 and out of version control.
 - Only the `127.0.0.1` and `localhost` Host names are admitted unless
   `MEMCP_ALLOWED_HOSTS` is set; a value replaces them.
 - With mem0, only memcp should reach mem0's API, dashboard and Postgres. A host firewall

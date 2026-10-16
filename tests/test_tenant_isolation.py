@@ -1,10 +1,7 @@
 """G7 — two tokens, two identities, and one that cannot reach the other's memories.
 
-memcp's whole security story is that tenant isolation happens *in memcp*: the bearer
-token resolves to a `user_id` and every backend call is scoped to it. Until this
-file existed, nothing asserted it end to end through the MCP surface — which is what
-made `SEC-2026-0038` (one shared token for fifteen agents) collapse isolation to a
-single tenant without anything failing.
+memcp's whole security story is that isolation happens *in memcp*: the bearer token
+resolves to a key, and every backend call names that key's granted space.
 
 So this drives the real ASGI stack with two real tokens, and asserts for **every
 registered tool** that Mallory can neither read, change, delete nor enumerate

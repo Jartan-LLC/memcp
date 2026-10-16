@@ -28,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - memcp refuses to start while `MEMCP_AUTH_TOKENS` is set. Each `token:user_id` there becomes a key with the `user_id` as its space, so it reaches the same memories. Its secret is the token's hash if the token is random, as `openssl rand -hex 32` makes; otherwise give that client a new token, since a guessable one can be recovered from its hash.
   - A `reader` key gets the new error code `forbidden` from `add_memory`, `update_memory`, `delete_memory`, `delete_all_memories` and `import_memories`.
   - memcp refuses to start on a malformed keys file, and on a granted space that is `*`, empty, or one the backend can't keep apart from others, such as one with whitespace at either end on mem0. Its errors never quote a secret.
-  - Without a keys file, memcp serves one key, `local`, with `writer` on the space `default_user`: the memories a 0.1.x server without tokens wrote.
-- Log records carry `key` and `space`, the name and space of the request's key (`null` outside a request), in place of `user_id`. Update any log query or alert on `user_id`.
+  - Without a keys file, memcp serves one key, `local`, with `writer` on the space `default_user`, which holds what a 0.1.x server without tokens wrote. With a keys file, as under `docker-compose.yml`, grant `default_user` to a key to reach those memories.
+- Log records carry `key` and `space`, the name and space of the request's key (`null` in JSON and `-` in plain format when no key is set: outside a request, on `/health`, and on a request refused with 401), in place of `user_id`. Update any log query or alert on `user_id`.
 - **`update_memory`'s `metadata` is a patch.** Keys you don't send are kept; on in_memory they were dropped before. Send a key as `null` to remove it. `content` is optional.
 - **Metadata follows one set of rules on `add_memory`, `update_memory` and `import_memories`, on every backend.** 0.1.2 stored it as given.
   - Values are strings, numbers, booleans or lists of strings. A key is at most 64 characters, and a memory's metadata at most 16 KiB as JSON.

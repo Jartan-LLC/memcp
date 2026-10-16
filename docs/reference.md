@@ -44,12 +44,12 @@ grants = [{ space = "notes", relation = "writer" }]
 | `name` | Required and unique; `[A-Za-z0-9_.-]`, 1 to 64 characters. Recorded as `author` on the key's writes |
 | `secrets` | One or more `sha256:` plus the 64 lowercase hex digits of a token's SHA-256. Each secret belongs to one key |
 | `grants` | Exactly one `{ space, relation }` |
-| `space` | The space the key reaches. Not `*` or empty, and not a name the backend refuses |
+| `space` | The space the key reaches. Not `*` or empty, and on mem0 without whitespace at either end |
 | `relation` | `reader` or `writer` |
 
 memcp refuses to start on a missing file, invalid TOML, an unknown field or any rule above.
-A space with whitespace or control characters, more than 128 characters, or a `spc_` or
-`__` prefix is logged as a warning and served. memcp reads the file at startup only.
+Any other space with whitespace or control characters, more than 128 characters, or a
+`spc_` or `__` prefix is logged as a warning and served. memcp reads the file at startup only.
 
 | Tool | Relation |
 |---|---|

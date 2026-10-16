@@ -28,7 +28,9 @@ Long-term memory shared across your tools and sessions.
 
 When to WRITE (add_memory): whenever a durable fact, preference, decision, or \
 piece of context worth recalling later comes up — or when asked to remember \
-something. Don't store transient one-off questions or throwaway debugging context.
+something. Don't store transient one-off questions or throwaway debugging context. \
+If a write returns `forbidden`, this server gives you read-only access: keep searching, \
+and don't try to write again.
 
 Tag writes with scope={"agent_id": "<name>"}, using your own name in lowercase, \
 hyphenated form (e.g. "claude-code", not "Claude Code"). The server normalizes \

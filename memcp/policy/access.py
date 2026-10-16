@@ -49,7 +49,9 @@ def check_granted_spaces(backend: MemoryBackend, spaces: Iterable[str]) -> None:
         try:
             refuse_unusable_partition(backend, space)
         except ValueError as e:
-            raise ValueError(f"granted space {space!r} can't be used: {e}") from None
+            raise ValueError(
+                f"MEMCP_KEYS_FILE grants the space {space!r}, which this backend can't use: {e}"
+            ) from None
         reason = _not_portable(space)
         if reason:
             logger.warning(

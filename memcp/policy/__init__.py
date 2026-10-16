@@ -1,9 +1,9 @@
 """The policy layer: every decision about what memcp accepts and returns.
 
-`Policy` is the only caller of a backend. Each method checks the current key's relation,
-validates its arguments, calls the backend in the key's space, and raises `PolicyError`
-for a request it refuses; a backend failure it doesn't decide on reaches the caller as
-`MemoryAPIError`.
+`Policy` is the only caller of a backend. Each data method checks the current key's
+relation, validates its arguments, calls the backend in the key's space, and raises
+`PolicyError` for a request it refuses; a backend failure it doesn't decide on reaches the
+caller as `MemoryAPIError`. `health` and `close` need no key.
 """
 
 from __future__ import annotations

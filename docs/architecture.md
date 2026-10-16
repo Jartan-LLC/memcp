@@ -16,7 +16,7 @@ that isn't in the tree belongs to that design, not to the code.
 | Backend | memcp's class for one kind of store, implementing `backends/base.py`. |
 | Space | Where memories live, and the unit of isolation. Every memory belongs to exactly one space, for life. |
 | Partition | The string a backend stores to mark a memory's space. Opaque to the backend, and never shown to a client. A space's partition is its name in the keys file. |
-| Key | A configured identity: a name, one or more secrets (bearer tokens), and one grant. Every request is made by one key. |
+| Key | A configured identity: a name, one or more secrets (SHA-256 hashes of its bearer tokens), and one grant. Every request is made by one key. |
 | Grant | A key's permission to use one space with one relation. |
 | Relation | `reader` (read memories) or `writer` (read, add, change and delete any memory in the space). |
 | Scope | `agent_id` and `run_id`: labels that organize memories inside a space. Not a security boundary. |
