@@ -17,10 +17,10 @@ memcp.
 - **Retrieval is keyword matching.** Two words match when they are equal or share a
   four-character prefix, so `linter` finds `linting`. A question phrased in words that
   don't appear in the memory finds nothing.
-- **Some scripts match by pairs of characters.** In Chinese, Japanese, Korean, Thai, Lao,
-  Khmer and Myanmar, a memory scores the share of the query's overlapping character
-  pairs it holds, so `東京の天気` ranks `明日の東京の天気` above `大阪の天気`. Short words
-  such as `AI` and `3` count in such a query.
+- **Some scripts match by pairs of characters.** In Chinese, Japanese and Korean, a memory
+  scores the share of the query's overlapping character pairs it holds, so `東京の天気`
+  ranks `明日の東京の天気` above `大阪の天気`. Thai, Lao, Khmer and Myanmar are split into
+  dictionary words. Short words such as `AI` and `3` count in a query in these scripts.
 - **Nothing is extracted.** `add_memory` stores what it is given. Its `infer` argument
   is accepted and ignored, and `memory_status` reports `extracts_facts: false`.
 

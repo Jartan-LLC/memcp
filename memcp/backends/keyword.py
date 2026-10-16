@@ -15,19 +15,21 @@ The rules, and why each exists:
   punctuation, and the one-letter token `i` from "What linter do I use?" matched every
   memory containing the letter i — giving unrelated memories the same score as the
   right one.
-- **Scripts written without spaces between words match by character pairs.** In Han,
-  kana, Thai, Lao, Khmer and Myanmar, and in Hangul, which attaches particles to its
-  words, each character is a token. A run of them in a query scores the share of its
-  overlapping pairs that the content holds; a lone character counts as itself. Lucene's
-  CJK bigram filter pairs Han, kana and Hangul the same way, while Lucene splits Thai
-  with a dictionary, so pairing the Southeast Asian scripts is this module's choice. A
-  word written against a run pairs with the character beside it, so `3月` ranks
-  `3月の会議` above `5月3日の会議`, and a memory may put a space between them. Finding
-  the words themselves takes a dictionary, and dictionary segmentation splits a short
-  query differently from a long memory. Pairs need neither.
-- **Query words under three characters are ignored**, unless the query has such a run.
-  They carry no signal and they are what made every memory a hit; next to a run, as the
-  `AI` of `AIの使い方` or the `3` of `3月`, a short word is what tells memories apart.
+- **Han, kana and Hangul match by character pairs.** Han and kana are written without
+  spaces between words, and Hangul attaches particles to its words, so each character
+  is a token. A run of them in a query scores the share of its overlapping pairs that
+  the content holds, as Lucene's CJK bigram filter does; a lone character counts as
+  itself. A word written against a run pairs with the character beside it, so `3月`
+  ranks `3月の会議` above `5月3日の会議`, and a memory may put a space between them.
+  Dictionary segmentation would split a short query differently from a long memory,
+  and it leaves Korean particles attached; pairs need no dictionary.
+- **Thai, Lao, Khmer and Myanmar split into dictionary words**, by ICU, as Lucene
+  splits Thai. Pairs of their characters, many of them vowel and tone marks, rank far
+  worse. A word matches exactly, or, from four characters, as the start of a compound:
+  `กรุงเทพ` finds `กรุงเทพมหานคร`.
+- **Query words under three characters are ignored**, unless the query holds one of
+  these scripts. They carry no signal and they are what made every memory a hit; there,
+  as the `AI` of `AIの使い方` or the `3` of `3月`, a short word tells memories apart.
 - **Two words match when they are equal, or share a four-character prefix.** That is
   what connects `linter` to `linting` without pretending to be a stemmer. Four is
   deliberately conservative: three would match `for` to `form` and `the` to `then`.
@@ -40,18 +42,22 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from itertools import pairwise
+
+from icu4py.breakers import WordBreaker
 
 MIN_QUERY_TOKEN = 3
 SHARED_PREFIX = 4
 
-# Scripts tokenized per character: written without spaces between words (Han, kana,
-# Thai, Lao, Khmer, Myanmar), or with particles attached to words (Hangul).
+# Scripts tokenized per character and matched by pairs: written without spaces between
+# words (Han, kana), or with particles attached to words (Hangul).
 _UNSPACED = re.compile(
-    r"[\u0e00-\u0eff\u1000-\u109f\u1100-\u11ff\u1780-\u17ff\u3005-\u3007\u303b"
-    r"\u3040-\u30ff\u3130-\u318f\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af"
-    r"\uf900-\ufaff\U00020000-\U0003ffff]"
+    r"[\u1100-\u11ff\u3005-\u3007\u303b\u3040-\u30ff\u3130-\u318f\u31f0-\u31ff"
+    r"\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\U00020000-\U0003ffff]"
 )
+# Scripts segmented into words by ICU's dictionaries: Thai, Lao, Myanmar, Khmer.
+_SEGMENTED = re.compile(r"[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff]")
 _ASCII_TOKEN = re.compile(r"[a-z0-9]+")
 # Never a token: marks a space or punctuation next to a per-character run, so the runs on
 # either side of it stay apart and no pair spans it.
@@ -66,6 +72,16 @@ def _is_run_token(token: str) -> bool:
     return bool(_UNSPACED.match(token))
 
 
+def _is_segmented(token: str) -> bool:
+    return bool(_SEGMENTED.match(token))
+
+
+@lru_cache(maxsize=4096)
+def _segment(text: str) -> tuple[str, ...]:
+    # Cached because a search tokenizes every row again, and rows recur across searches.
+    return tuple(w for w in WordBreaker(text, "und") if any(c.isalnum() for c in w))
+
+
 def _tokenize_any(text: str) -> list[str]:
     return _tokens_of(unicodedata.normalize("NFKC", text).lower())
 
@@ -75,6 +91,7 @@ def _tokens_of(folded: str) -> list[str]:
     since lowercasing can produce marks that NFKC then reorders."""
     tokens: list[str] = []
     word: list[str] = []
+    segment: list[str] = []
     gap = False
 
     def emit(token: str) -> None:
@@ -88,10 +105,21 @@ def _tokens_of(folded: str) -> list[str]:
         if word:
             emit("".join(word))
             word.clear()
+        if segment:
+            for segmented in _segment("".join(segment)):
+                emit(segmented)
+            segment.clear()
 
     for char in folded:
         if unicodedata.category(char) == "Cf" and char != "\u200b":
             continue  # joiners and soft hyphens sit inside words; a zero-width space ends one
+        if _SEGMENTED.match(char):
+            if word:
+                flush()
+            segment.append(char)
+            continue
+        if segment:
+            flush()
         if _UNSPACED.match(char):
             flush()
             # Other characters of these blocks, such as U+30FB "・", join the run around them.
@@ -164,6 +192,9 @@ def _matches(query_token: str, content_tokens: set[str]) -> bool:
         return True
     if len(query_token) < SHARED_PREFIX:
         return False
+    if _is_segmented(query_token):
+        # A compound such as กรุงเทพมหานคร is one word to ICU; the query may name its start.
+        return any(token.startswith(query_token) for token in content_tokens)
     prefix = query_token[:SHARED_PREFIX]
     return any(token.startswith(prefix) for token in content_tokens)
 
@@ -202,7 +233,8 @@ def score(query: str, content: str) -> float | None:
     # Each word and each run is one unit. A word scores 1 or 0, and a run the share of
     # its pairs the content holds, so a near-miss run scores below the right one.
     query_words, query_runs = _words_and_runs(query_tokens)
-    floor = 1 if query_runs else MIN_QUERY_TOKEN
+    unspaced = bool(query_runs) or any(map(_is_segmented, query_words))
+    floor = 1 if unspaced else MIN_QUERY_TOKEN
     counted = [word for word in query_words if len(word) >= floor]
     if not counted and not query_runs:
         return None

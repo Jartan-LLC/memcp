@@ -14,6 +14,7 @@ requires-python = ">=3.12"
 # (mcp 2.0 removed `mcp.server.fastmcp`, which is exactly how this got found).
 dependencies = [
     "httpx>=0.27,<1",
+    "icu4py>=1.1,<2", # ICU word segmentation for Thai, Lao, Khmer and Myanmar keyword search
     "mcp>=2.0,<3",
     "pydantic>=2.13.4,<3",
     "pydantic-settings>=2.14.1,<3",

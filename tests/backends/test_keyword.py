@@ -224,6 +224,33 @@ class TestScriptsBeyondAscii:
     def test_a_memory_may_space_a_word_off_its_run(self, query: str, content: str):
         assert score(query, content) == 1.0
 
+    @pytest.mark.parametrize(
+        ("text", "words"),
+        [
+            ("ราคา100บาท", ["ราคา", "100", "บาท"]),
+            ("ใช้AI ช่วยเขียน", ["ใช้", "ai", "ช่วย", "เขียน"]),
+            ("ຂ້ອຍຮັກເຈົ້າ", ["ຂ້ອຍ", "ຮັກ", "ເຈົ້າ"]),
+            ("ខ្ញុំស្រលាញ់អ្នក", ["ខ្ញុំ", "ស្រលាញ់", "អ្នក"]),
+            ("ကျွန်တော်မင်္ဂလာပါ", ["ကျွန်တော်", "မင်္ဂလာ", "ပါ"]),
+        ],
+        ids=["thai with a number", "thai with latin", "lao", "khmer", "myanmar"],
+    )
+    def test_southeast_asian_scripts_split_into_dictionary_words(
+        self, text: str, words: list[str]
+    ):
+        assert tokenize(text) == words
+
+    def test_a_southeast_asian_word_matches_the_compound_it_begins(self):
+        assert score("กรุงเทพ", "ฉันอยู่กรุงเทพมหานคร") == 1.0
+        assert score("กรุงเทพ", "ไปกรุงศรีอยุธยา") is None
+
+    def test_a_short_southeast_asian_word_matches_only_itself(self):
+        assert score("ไป", "ไปรษณีย์อยู่ใกล้") is None
+        assert score("ไป", "ไปกินข้าว") == 1.0
+
+    def test_a_short_word_in_a_thai_query_counts(self):
+        assert _outranks("ใช้AI", "ใช้ AI ช่วยเขียน", "ใช้มือเขียน")
+
     def test_a_lone_character_in_a_query_matches_inside_a_run(self):
         assert _outranks("猫 好き", "猫が好きだ", "犬が好きだ")
 
