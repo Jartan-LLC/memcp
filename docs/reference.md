@@ -64,8 +64,8 @@ Names, argument schemas and behaviour annotations are frozen in
 
 Every memory a read tool returns carries `author`: the name of the key whose write last
 changed it, set by the server — a caller cannot set it. Without a keys file it is `local`.
-It is `null` for a memory written before memcp recorded authors, or written by 0.1.x
-without tokens. It records which key wrote the memory, not where the facts came from —
+It is `null` for a memory written by 0.1.2 or earlier, which didn't record authors. It
+records which key wrote the memory, not where the facts came from —
 see the server's own MCP instructions for how a client is told to treat it.
 
 sqlite and in_memory keep `author` outside metadata, where no caller can write it. mem0

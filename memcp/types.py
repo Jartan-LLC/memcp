@@ -158,8 +158,7 @@ def canonical_error(code: str, message: str, *, retry: bool = False) -> dict[str
 class System(TypedDict, total=False):
     """Fields only policy sets: the memory's space, and the keys that last wrote and created it.
 
-    Any field is absent on a memory written before memcp recorded it, and `author` and
-    `created_by` on one an earlier release wrote without a token.
+    Any field is absent on a memory written before memcp recorded it.
     """
 
     space: str
@@ -238,7 +237,7 @@ class HistoryEntry:
     timestamp: str
     content_before: str | None = None
     content_after: str | None = None
-    # The principal that performed this event, where the backend can record one
+    # The key that performed this event, where the backend can record one
     # per event. None on a backend whose own history log has no room for it
     # (mem0's `/memories/{id}/history` is entirely upstream-managed) or on an
     # event recorded before this field existed.

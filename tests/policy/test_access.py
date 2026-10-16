@@ -55,7 +55,7 @@ INVALID_WRITES: dict[str, Callable[[Policy], Coroutine[Any, Any, Any]]] = {
     "add": lambda p: p.add(""),
     "update": lambda p: p.update("not a memory id"),
     "delete": lambda p: p.delete("not a memory id"),
-    "delete_all": lambda p: p.delete_all({}),
+    "delete_all": lambda p: p.delete_all({"user_id": "x"}),
     "import_memories": lambda p: p.import_memories([]),
 }
 

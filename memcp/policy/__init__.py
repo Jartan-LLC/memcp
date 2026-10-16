@@ -171,7 +171,7 @@ class Policy:
         threshold: float = 0.0,
     ) -> list[Memory]:
         """The caller's memories that match `query`, ranked by the backend."""
-        user_id = require("reader").grant.space
+        partition = require("reader").grant.space
         with _validation():
             validate_query(query)
             validate_limit(limit)
@@ -179,22 +179,22 @@ class Policy:
                 raise ValueError("threshold must be between 0.0 and 1.0")
         scope = validate_scope(scope, self._scope_keys)
         found = await self._backend.search(
-            user_id, query, scope=scope, limit=limit, threshold=threshold
+            partition, query, scope=scope, limit=limit, threshold=threshold
         )
-        return _in_scope([check_space(m, user_id, "search", m.id) for m in found], scope)
+        return _in_scope([check_space(m, partition, "search", m.id) for m in found], scope)
 
     async def get(self, memory_id: str) -> Memory:
         """One of the caller's memories; `not_found` when missing or someone else's."""
         return await self._read(require("reader").grant.space, memory_id, "get")
 
-    async def _read(self, user_id: str, memory_id: str, operation: str) -> Memory:
+    async def _read(self, partition: str, memory_id: str, operation: str) -> Memory:
         with _validation():
             validate_memory_id(memory_id)
         with _not_found():
-            result = await self._backend.get(user_id, memory_id)
+            result = await self._backend.get(partition, memory_id)
         if result is None:
             raise PolicyError("not_found", NOT_FOUND_MSG)
-        return check_space(result, user_id, operation, memory_id)
+        return check_space(result, partition, operation, memory_id)
 
     async def update(
         self,
@@ -231,20 +231,20 @@ class Policy:
 
     async def delete(self, memory_id: str) -> bool:
         """Delete one of the caller's memories; `not_found` when missing or someone else's."""
-        user_id = require("writer").grant.space
-        await self._read(user_id, memory_id, "delete")
+        partition = require("writer").grant.space
+        await self._read(partition, memory_id, "delete")
         with _not_found():
-            return await self._backend.delete(user_id, memory_id)
+            return await self._backend.delete(partition, memory_id)
 
     async def delete_all(self, scope: dict[str, Any]) -> int | None:
         """Delete the caller's memories in a non-empty, concrete scope; the count if known."""
-        user_id = require("writer").grant.space
+        partition = require("writer").grant.space
         cleaned = validate_scope(scope, self._scope_keys)
         if not cleaned:
             raise PolicyError(
                 "scope_required", "delete_all_memories requires at least one scope key."
             )
-        return await self._backend.delete_all(user_id, cleaned)
+        return await self._backend.delete_all(partition, cleaned)
 
     async def list_memories(
         self,
@@ -254,36 +254,36 @@ class Policy:
         cursor: str | None = None,
     ) -> ListResult:
         """One page of the caller's memories."""
-        user_id = require("reader").grant.space
+        partition = require("reader").grant.space
         with _validation():
             validate_limit(limit)
         scope = validate_scope(scope, self._scope_keys)
         # A backend raises ValueError for a cursor it can't read.
         with _validation():
             page = await self._backend.list_memories(
-                user_id, scope=scope, limit=limit, cursor=cursor
+                partition, scope=scope, limit=limit, cursor=cursor
             )
         page.memories = _in_scope(
-            [check_space(m, user_id, "list", m.id) for m in page.memories], scope
+            [check_space(m, partition, "list", m.id) for m in page.memories], scope
         )
         return page
 
     async def history(self, memory_id: str) -> list[HistoryEntry]:
         """A memory's change log; `not_found` when missing or someone else's."""
-        user_id = require("reader").grant.space
-        await self._read(user_id, memory_id, "history")
+        partition = require("reader").grant.space
+        await self._read(partition, memory_id, "history")
         with _not_found():
-            return await self._backend.history(user_id, memory_id)
+            return await self._backend.history(partition, memory_id)
 
     async def entities(
         self, *, scope: dict[str, Any] | None = None, limit: int = 100
     ) -> EntitiesResult:
         """Entity counts over the caller's memories."""
-        user_id = require("reader").grant.space
+        partition = require("reader").grant.space
         with _validation():
             validate_limit(limit)
         scope = validate_scope(scope, self._scope_keys)
-        return await self._backend.entities(user_id, scope=scope, limit=limit)
+        return await self._backend.entities(partition, scope=scope, limit=limit)
 
     async def export_memories(self) -> ExportPayload:
         """Every memory of the caller's, up to the export cap."""
