@@ -27,7 +27,9 @@ def is_loopback(host: str) -> bool:
 class Config(BaseSettings):
     """Server configuration. All values come from environment variables."""
 
-    model_config = {"env_prefix": "", "populate_by_name": True}
+    # Errors reach stderr at startup; pydantic would otherwise quote the input, tokens and
+    # API keys included.
+    model_config = {"env_prefix": "", "populate_by_name": True, "hide_input_in_errors": True}
 
     memcp_backend: Literal["mem0", "in_memory", "sqlite"] = Field(alias="MEMCP_BACKEND")
 

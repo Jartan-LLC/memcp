@@ -134,7 +134,7 @@ survives a restart.
 |---|---|
 | Stop, keeping memories | `docker compose down` |
 | Stop and delete memories | `docker compose down --volumes`; with mem0, the memories are in mem0's database: `make clean` in `mem0/server` deletes them, and mem0's admin account with them |
-| Add, change or remove a key | Edit `keys.toml` ([Manage keys](#manage-keys)), then `docker compose restart memcp` |
+| Add, change or remove a key | Edit `keys.toml` ([Manage keys](#manage-keys)), then `docker compose up -d --wait --force-recreate memcp` |
 | Change compose settings | Put them in `docker-compose.override.yml`, which an upgrade doesn't overwrite. Keep one `memcp` entry there: merge each snippet into it, list every network in its `networks:`, and declare each network once under the top-level `networks:` |
 
 ### Upgrade a Compose deployment
@@ -200,10 +200,11 @@ secrets = ["sha256:<64 hex digits>"]
 grants = [{ space = "notes", relation = "writer" }]
 ```
 
-Hash a token for `secrets`:
+Generate a token and print its hash for `secrets`:
 
 ```bash
-printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
+TOKEN=$(openssl rand -hex 32) && echo "$TOKEN" &&
+  printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
 ```
 
 | Task | Change in `keys.toml` |
@@ -212,9 +213,10 @@ printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
 | Let a client only read | Set its grant's `relation` to `reader` |
 | Share a space | Grant the same `space` to each client's key |
 | Rotate a token | Add the new token's hash to the key's `secrets`, move clients to the new token, then remove the old hash |
-| Revoke a client | Remove its hash, or its whole key |
+| Revoke a client | Remove its hash; remove the whole key if that is its only one |
 
-Restart memcp after each change: `docker compose restart memcp`. Don't give a removed
+Apply each change with `docker compose up -d --wait --force-recreate memcp`, which fails
+if memcp refuses the file. Don't give a removed
 key's name to a new key: memories record the name of the key that wrote them. memcp reads
 the file as its own user, so leave it readable (mode 644); it holds no token.
 
