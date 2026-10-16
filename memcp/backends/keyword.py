@@ -28,8 +28,10 @@ The rules, and why each exists:
   worse. A word matches exactly, or, from four characters, as the start of a compound:
   `กรุงเทพ` finds `กรุงเทพมหานคร`.
 - **Query words under three characters are ignored**, unless the query holds one of
-  these scripts. They carry no signal and they are what made every memory a hit; there,
-  as the `AI` of `AIの使い方` or the `3` of `3月`, a short word tells memories apart.
+  these scripts and the word is written against a run, capitalised or holds a digit.
+  They carry no signal and they are what made every memory a hit; there, as the `AI` of
+  `AIの使い方` or the `3` of `3月`, a short word tells memories apart, while a lowercase
+  `is` or `of` would match every memory.
 - **Two words match when they are equal, or share a four-character prefix.** That is
   what connects `linter` to `linting` without pretending to be a stemmer. Four is
   deliberately conservative: three would match `for` to `form` and `the` to `then`.
@@ -42,7 +44,6 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from functools import lru_cache
 from itertools import pairwise
 
 from icu4py.breakers import WordBreaker
@@ -59,6 +60,7 @@ _UNSPACED = re.compile(
 # Scripts segmented into words by ICU's dictionaries: Thai, Lao, Myanmar, Khmer.
 _SEGMENTED = re.compile(r"[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff]")
 _ASCII_TOKEN = re.compile(r"[a-z0-9]+")
+_ASCII_WORD = re.compile(r"[A-Za-z0-9]+")
 # Never a token: marks a space or punctuation next to a per-character run, so the runs on
 # either side of it stay apart and no pair spans it.
 _BOUNDARY = " "
@@ -76,10 +78,8 @@ def _is_segmented(token: str) -> bool:
     return bool(_SEGMENTED.match(token))
 
 
-@lru_cache(maxsize=4096)
-def _segment(text: str) -> tuple[str, ...]:
-    # Cached because a search tokenizes every row again, and rows recur across searches.
-    return tuple(w for w in WordBreaker(text, "und") if any(c.isalnum() for c in w))
+def _segment(text: str) -> list[str]:
+    return [w for w in WordBreaker(text, "und") if any(c.isalnum() for c in w)]
 
 
 def _tokenize_any(text: str) -> list[str]:
@@ -113,7 +113,7 @@ def _tokens_of(folded: str) -> list[str]:
     for char in folded:
         if unicodedata.category(char) == "Cf" and char != "\u200b":
             continue  # joiners and soft hyphens sit inside words; a zero-width space ends one
-        if _SEGMENTED.match(char):
+        if _SEGMENTED.match(char) and not char.isdigit():  # ICU glues digits to words
             if word:
                 flush()
             segment.append(char)
@@ -233,9 +233,24 @@ def score(query: str, content: str) -> float | None:
     # Each word and each run is one unit. A word scores 1 or 0, and a run the share of
     # its pairs the content holds, so a near-miss run scores below the right one.
     query_words, query_runs = _words_and_runs(query_tokens)
-    unspaced = bool(query_runs) or any(map(_is_segmented, query_words))
-    floor = 1 if unspaced else MIN_QUERY_TOKEN
-    counted = [word for word in query_words if len(word) >= floor]
+    counted = [word for word in query_words if len(word) >= MIN_QUERY_TOKEN]
+    if query_runs or any(map(_is_segmented, query_words)):
+        # A short word tells memories apart when it's written against a run, as the 3 of
+        # 3月, or marked, as AI or v2; a lowercase is or of only matches every memory.
+        attached = {token for run in query_runs for token in run}
+        marked = {
+            w.lower()
+            for w in _ASCII_WORD.findall(unicodedata.normalize("NFKC", query))
+            if not w.islower() or any(c.isdigit() for c in w)
+        }
+        counted = [
+            word
+            for word in query_words
+            if len(word) >= MIN_QUERY_TOKEN
+            or _is_segmented(word)
+            or word in attached
+            or word in marked
+        ]
     if not counted and not query_runs:
         return None
 

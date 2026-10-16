@@ -11,8 +11,8 @@ behaviour and an LLM is what this backend exists to avoid needing. Both are
 documented in the README rather than approximated.
 
 Concurrency: one connection in WAL mode behind a lock, with every call run off
-the event loop via `asyncio.to_thread`. `sqlite3` is stdlib, so this backend adds
-no dependency.
+the event loop via `asyncio.to_thread`. `sqlite3` is stdlib, so storage needs no
+service or extra package.
 """
 
 from __future__ import annotations

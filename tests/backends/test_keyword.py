@@ -244,9 +244,38 @@ class TestScriptsBeyondAscii:
         assert score("กรุงเทพ", "ฉันอยู่กรุงเทพมหานคร") == 1.0
         assert score("กรุงเทพ", "ไปกรุงศรีอยุธยา") is None
 
+    def test_a_short_southeast_asian_word_counts(self):
+        assert _outranks("ไป ร้าน", "ฉันไปร้านกาแฟ", "ฉันอยู่ร้านกาแฟ")
+
     def test_a_short_southeast_asian_word_matches_only_itself(self):
         assert score("ไป", "ไปรษณีย์อยู่ใกล้") is None
         assert score("ไป", "ไปกินข้าว") == 1.0
+
+    @pytest.mark.parametrize("query", ["who is 田中", "what is 寿司 made of", "where is กรุงเทพ"])
+    def test_a_lowercase_short_word_in_a_mixed_query_doesnt_count(self, query: str):
+        right = {
+            "who is 田中": "田中さんは営業部の部長です",
+            "what is 寿司 made of": "寿司は米と魚で作る",
+            "where is กรุงเทพ": "ฉันอยู่กรุงเทพมหานคร",
+        }[query]
+        for unrelated in ("The report is ready", "The plan is a draft", "Notes of the week"):
+            assert _outranks(query, right, unrelated)
+
+    @pytest.mark.parametrize(
+        ("text", "words"),
+        [
+            ("ราคา๑๐๐บาท", ["ราคา", "๑๐๐", "บาท"]),
+            ("ថ្ងៃទី១៥", ["ថ្ងៃទី", "១៥"]),
+        ],
+        ids=["thai digits", "khmer digits"],
+    )
+    def test_southeast_asian_digits_split_from_the_words_around_them(
+        self, text: str, words: list[str]
+    ):
+        assert tokenize(text) == words
+
+    def test_a_lowercase_short_word_written_against_a_run_counts(self):
+        assert _outranks("db設計", "DBの設計を見直す", "APIの設計を見直す")
 
     def test_a_short_word_in_a_thai_query_counts(self):
         assert _outranks("ใช้AI", "ใช้ AI ช่วยเขียน", "ใช้มือเขียน")
@@ -299,6 +328,7 @@ class TestScriptsBeyondAscii:
             "東京、 大阪 -- 京都",
             "ジョン・スミス and ❤\ufe0f",
             "İุ, lowercasing that yields a mark NFKC would reorder",
+            "ราคา๑๐๐บาท ใช้AI, ສະບາຍດີ ខ្ញុំ 3 ကျွန်တော် 東京",
             "3月 と A社, x 東京 ,5時",
         ]
         for text in samples:

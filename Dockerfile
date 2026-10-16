@@ -33,6 +33,8 @@ RUN adduser --disabled-password --gecos "" memcp \
 
 COPY --from=build /usr/local/lib /usr/local/lib
 COPY --from=build /usr/local/bin/memcp /usr/local/bin/memcp
+# icu4py bundles ICU's libraries but not ICU's notice, which must travel with every copy.
+COPY LICENSE-ICU /usr/share/licenses/icu/LICENSE
 
 USER memcp
 
