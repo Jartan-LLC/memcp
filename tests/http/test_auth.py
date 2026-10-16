@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -109,14 +110,20 @@ async def test_the_key_is_reset_after_the_request(tmp_path: Path):
     ],
     ids=["no header", "unknown token", "empty token", "no space", "no prefix", "basic"],
 )
-async def test_without_a_known_token_the_request_gets_401(tmp_path: Path, header: bytes | None):
+async def test_without_a_known_token_the_request_gets_401(
+    tmp_path: Path, header: bytes | None, caplog: pytest.LogCaptureFixture
+):
     captured: list[Key] = []
     gate = BearerGate(_capturing(captured), load_keys(str(_keys_file(tmp_path))))
     headers = [] if header is None else [(b"authorization", header)]
-    status, body = await _make_request(gate, headers)
+    with caplog.at_level(logging.WARNING, logger="memcp.http.auth"):
+        status, body = await _make_request(gate, headers)
     assert status == 401
     assert json.loads(body)["error"]["code"] == "unauthorized"
     assert captured == []
+    assert caplog.records, "a rejected request should be logged"
+    assert WRITER_TOKEN not in caplog.text
+    assert "wrong-token" not in caplog.text
 
 
 async def test_lifespan_passes_through(tmp_path: Path):

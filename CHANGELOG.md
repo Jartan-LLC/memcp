@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Keys replace tokens.** `MEMCP_KEYS_FILE` names a TOML file of keys, and "Upgrade from 0.1.x" in `docs/deployment.md` moves a deployment onto it.
   - Each key has a name, the SHA-256 hashes of its tokens, and one grant: a space and a relation, `reader` or `writer`. The file holds no token.
-  - memcp refuses to start while `MEMCP_AUTH_TOKENS` is set. Each `token:user_id` there becomes a key with that token's hash as its secret and the `user_id` as its space, so it reaches the same memories.
+  - memcp refuses to start while `MEMCP_AUTH_TOKENS` is set. Each `token:user_id` there becomes a key with the `user_id` as its space, so it reaches the same memories. Its secret is the token's hash if the token is random, as `openssl rand -hex 32` makes; otherwise give that client a new token, since a guessable one can be recovered from its hash.
   - A `reader` key gets the new error code `forbidden` from `add_memory`, `update_memory`, `delete_memory`, `delete_all_memories` and `import_memories`.
   - memcp refuses to start on a malformed keys file, and on a granted space that is `*`, empty, or one the backend can't keep apart from others, such as one with whitespace at either end on mem0. Its errors never quote a secret.
   - Without a keys file, memcp serves one key, `local`, with `writer` on the space `default_user`: the memories a 0.1.x server without tokens wrote.

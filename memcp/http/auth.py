@@ -1,7 +1,7 @@
 """Authentication — the keys file, bearer token resolution and the ASGI gate.
 
 Identity flows: Bearer token → its SHA-256 → `Key` → ContextVar (`memcp.identity`) →
-policy. The keys file holds only digests, so nothing in it grants access.
+policy. The keys file holds only digests, which keep a random token secret.
 """
 
 from __future__ import annotations
