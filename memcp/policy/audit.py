@@ -1,8 +1,8 @@
 """The audit log: one record per policy operation, on the logger `memcp.audit`.
 
 A record names the operation, the key (or a migration's operator), its space and
-relation, the outcome, and the memory ids or the scope and a count. It never holds
-content, a query or metadata.
+relation, the outcome, and the memory ids or the scope and a count; a migration's also
+names its source space. It never holds content, a query or metadata.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ class AuditEntry:
 def can_record() -> bool:
     """Whether an INFO record would reach a handler that writes it: `setup_logging()`
     makes this true."""
-    if logger.disabled or not logger.isEnabledFor(logging.INFO):
+    if not logger.isEnabledFor(logging.INFO):  # also False for a disabled logger
         return False
     current: logging.Logger | None = logger
     while current is not None:
@@ -92,15 +92,18 @@ def audited(
         raise
     finally:
         logger.info(
-            "audit operation=%s outcome=%s relation=%s ids=%s count=%s scope=%s source_space=%s",
+            "audit operation=%s outcome=%s key=%s space=%s relation=%s ids=%s count=%s scope=%s"
+            " source_space=%s",
             entry.operation,
             entry.outcome,
+            entry.key,
+            entry.space,
             entry.relation,
             entry.ids,
             entry.count,
             entry.scope,
             entry.source_space,
-            # key and space fill the fields every log line carries, so a migration, which
-            # runs outside a request, names its operator and target there too.
+            # In the message for any formatter; in extra for memcp's, whose key and space
+            # fields would otherwise be empty for a migration, which runs outside a request.
             extra={"audit": asdict(entry), "key": entry.key, "space": entry.space},
         )

@@ -305,10 +305,10 @@ async def migrate(
 
     `target_partition` defaults to `partition`; pass it to land the memories under a
     different partition on the target. `operator` names who runs the migration; the audit
-    record gives it as the key. Raises ValueError, before reading anything, for an empty
+    record gives it as the key. Raises ValueError, before reading anything, for a blank
     operator, logging that would drop the audit record, an empty or `*` partition, or one
-    its backend refuses. Both backends need
-    the `list` capability. What does not survive the trip is listed in `docs/reference.md`
+    its backend refuses. Both backends need the `list` capability. What does not survive
+    the trip is listed in `docs/reference.md`
     ("Moving memories between backends"), except `author`: each copy keeps the source
     memory's system fields, with `space` set to the target partition.
     """

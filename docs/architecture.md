@@ -191,7 +191,8 @@ as a granted space would be (`*`, empty, or refused by that backend's
 `validate_partition`); space-checks every memory it reads from the source; and writes each
 to the target as given (`infer=False`), with `system` copied from the source and `space`
 set to the target partition. It is audited as the operation `migrate`; its caller passes an
-operator name, which the audit records as the key name.
+operator name, which the audit records as the key name. It also refuses a blank operator,
+and logging that would drop its audit record.
 
 **Trust within a space:** all keys with `writer` on one space trust each other. On a backend
 that extracts facts (`infer=True`), `system["author"]` records the key that called add, not

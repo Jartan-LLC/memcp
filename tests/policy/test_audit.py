@@ -85,44 +85,78 @@ async def test_a_refused_argument_is_recorded_by_its_code(caplog: pytest.LogCapt
     assert [r.audit["outcome"] for r in records] == ["validation_error"]  # type: ignore[attr-defined]
 
 
-@pytest.mark.parametrize(("status", "outcome"), [(500, "backend_error"), (408, "timeout")])
-async def test_a_backend_failure_is_recorded_and_still_raised(
-    status: int, outcome: str, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+async def test_a_refused_by_id_call_records_its_valid_id(caplog: pytest.LogCaptureFixture):
+    policy = Policy(_Everything())
+    forbidden = await _run(policy, lambda p: p.delete(MISSING_ID), caplog, relation="reader")
+    caplog.clear()
+    refused = await _run(policy, lambda p: p.update(MISSING_ID), caplog)
+    assert [(r.audit["outcome"], r.audit["ids"]) for r in forbidden + refused] == [  # type: ignore[attr-defined]
+        ("forbidden", [MISSING_ID]),
+        ("validation_error", [MISSING_ID]),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("raised", "outcome"),
+    [
+        (MemoryAPIError(500, "store said no"), "backend_error"),
+        (MemoryAPIError(408, "store said no"), "timeout"),
+        (asyncio.CancelledError(), "cancelled"),
+        (RuntimeError("bug"), "error"),
+    ],
+    ids=["5xx", "timeout", "cancelled", "unexpected"],
+)
+async def test_a_failed_call_is_recorded_and_still_raised(
+    raised: BaseException,
+    outcome: str,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     backend = _Everything()
 
     async def fail(*args: Any, **kwargs: Any) -> Any:
-        raise MemoryAPIError(status, "store said no")
+        raise raised
 
     monkeypatch.setattr(backend, "search", fail)
     token = set_key(make_key("team"))
     try:
-        with caplog.at_level(logging.INFO, logger="memcp.audit"), pytest.raises(MemoryAPIError):
+        with caplog.at_level(logging.INFO, logger="memcp.audit"), pytest.raises(type(raised)):
             await Policy(backend).search("anything")
     finally:
         reset_key(token)
     assert [r.audit["outcome"] for r in _records(caplog)] == [outcome]  # type: ignore[attr-defined]
 
 
+# --- what a record holds ---------------------------------------------------------------
+
+
 async def test_records_name_ids_scope_and_counts(caplog: pytest.LogCaptureFixture):
     policy = Policy(_Everything())
     token = set_key(make_key("team", name="laptop"))
     try:
+        await policy.add("before", scope={"agent_id": "b"}, infer=False)
         with caplog.at_level(logging.INFO, logger="memcp.audit"):
             added = await policy.add("a fact", scope={"agent_id": "a"}, infer=False)
             memory_id = added[0].id  # type: ignore[index]
             await policy.get(memory_id)
             await policy.search("fact", scope={"agent_id": "a"})
+            await policy.list_memories(scope={"agent_id": "a"})
+            await policy.export_memories()
+            await policy.entities(scope={"agent_id": "a"})
+            await policy.import_memories([{"content": "three"}, {"content": "four"}])
             await policy.delete_all({"agent_id": "a"})
     finally:
         reset_key(token)
-    audits = [r.audit for r in _records(caplog)]  # type: ignore[attr-defined]
-    assert [a["operation"] for a in audits] == ["add", "get", "search", "delete_all"]
-    assert audits[0]["ids"] == [memory_id]
-    assert audits[0]["scope"] == {"agent_id": "a"}
-    assert audits[1]["ids"] == [memory_id]
-    assert (audits[2]["count"], audits[2]["scope"]) == (1, {"agent_id": "a"})
-    assert (audits[3]["count"], audits[3]["scope"]) == (1, {"agent_id": "a"})
+    audits = {r.audit["operation"]: r.audit for r in _records(caplog)}  # type: ignore[attr-defined]
+    a = {"agent_id": "a"}
+    assert (audits["add"]["ids"], audits["add"]["scope"]) == ([memory_id], a)
+    assert audits["get"]["ids"] == [memory_id]
+    assert (audits["search"]["count"], audits["search"]["scope"]) == (1, a)
+    assert (audits["list_memories"]["count"], audits["list_memories"]["scope"]) == (1, a)
+    assert audits["export_memories"]["count"] == 2
+    assert (audits["entities"]["count"], audits["entities"]["scope"]) == (0, a)
+    assert audits["import_memories"]["count"] == 2
+    assert (audits["delete_all"]["count"], audits["delete_all"]["scope"]) == (1, a)
 
 
 async def test_no_record_carries_content_a_query_or_metadata(caplog: pytest.LogCaptureFixture):
@@ -158,17 +192,16 @@ async def test_a_malformed_memory_id_is_not_recorded(
     assert CONTENT not in JsonFormatter().format(records[0])
 
 
-async def test_the_json_line_carries_the_audit_object_and_plain_text_its_fields(
-    caplog: pytest.LogCaptureFixture,
-):
+async def test_every_formatter_shows_the_actor(caplog: pytest.LogCaptureFixture):
+    """memcp's JSON and plain formats, and a bare `%(message)s` as basicConfig gives."""
     records = await _run(Policy(_Everything()), lambda p: p.get(MISSING_ID), caplog)
     payload = json.loads(JsonFormatter().format(records[0]))
     assert payload["logger"] == "memcp.audit"
     assert payload["audit"] == records[0].audit  # type: ignore[attr-defined]
-    plain = PlainFormatter().format(records[0])
-    for field in ("operation=get", "outcome=not_found", "key=laptop", "space=team"):
-        assert plain.count(field) == 1, plain
     assert (payload["key"], payload["space"]) == ("laptop", "team")
+    for text in (PlainFormatter().format(records[0]), records[0].getMessage()):
+        for field in ("operation=get", "outcome=not_found", "key=laptop", "space=team"):
+            assert field in text, text
 
 
 # --- migrate -------------------------------------------------------------------------
@@ -179,18 +212,21 @@ async def test_a_migration_is_recorded_under_its_operator(caplog: pytest.LogCapt
     await source.add("team", CONTENT, infer=False)
     with caplog.at_level(logging.INFO, logger="memcp.audit"):
         report = await migrate(source, target, "team", target_partition="moved", operator="ops")
-    audits = [r.audit for r in _records(caplog)]  # type: ignore[attr-defined]
-    assert len(audits) == 1
-    assert (audits[0]["operation"], audits[0]["key"], audits[0]["space"]) == (
+    records = _records(caplog)
+    assert len(records) == 1
+    audit = records[0].audit  # type: ignore[attr-defined]
+    assert (audit["operation"], audit["key"], audit["space"], audit["source_space"]) == (
         "migrate",
         "ops",
         "moved",
+        "team",
     )
-    assert (audits[0]["relation"], audits[0]["outcome"]) == (None, "ok")
-    assert audits[0]["count"] == report.imported == 1
-    line = json.loads(JsonFormatter().format(_records(caplog)[0]))
+    assert (audit["relation"], audit["outcome"]) == (None, "ok")
+    assert audit["count"] == report.imported == 1
+    line = json.loads(JsonFormatter().format(records[0]))
     assert (line["key"], line["space"]) == ("ops", "moved")
-    assert "key=ops space=moved" in PlainFormatter().format(_records(caplog)[0])
+    for text in (PlainFormatter().format(records[0]), records[0].getMessage()):
+        assert "key=ops space=moved" in text, text
     assert CONTENT not in json.dumps(line)
 
 
@@ -206,97 +242,22 @@ async def test_a_migration_needs_an_operator(operator: str):
         await migrate(InMemoryBackend(), InMemoryBackend(), "team", operator=operator)
 
 
-# --- setup -----------------------------------------------------------------------------
-
-
-def test_the_audit_logger_stays_at_info_whatever_the_log_level(monkeypatch: pytest.MonkeyPatch):
-    from memcp.http import logging as http_logging
-
-    seen: list[dict[str, Any]] = []
-    monkeypatch.setattr(http_logging.logging.config, "dictConfig", seen.append)
-    http_logging.setup_logging(level="WARNING")
-    assert seen[0]["loggers"]["memcp.audit"]["level"] == "INFO"
-    assert seen[0]["loggers"]["memcp"]["level"] == "WARNING"
-
-
-# --- refusals keep what the call named -------------------------------------------------
-
-
-async def test_a_refused_by_id_call_records_its_valid_id(caplog: pytest.LogCaptureFixture):
-    policy = Policy(_Everything())
-    forbidden = await _run(policy, lambda p: p.delete(MISSING_ID), caplog, relation="reader")
-    caplog.clear()
-    refused = await _run(policy, lambda p: p.update(MISSING_ID), caplog)
-    assert [(r.audit["outcome"], r.audit["ids"]) for r in forbidden + refused] == [  # type: ignore[attr-defined]
-        ("forbidden", [MISSING_ID]),
-        ("validation_error", [MISSING_ID]),
-    ]
-
-
-@pytest.mark.parametrize(
-    ("raised", "outcome"),
-    [(asyncio.CancelledError(), "cancelled"), (RuntimeError("bug"), "error")],
-    ids=["cancelled", "unexpected"],
-)
-async def test_an_interrupted_call_is_recorded_and_still_raised(
-    raised: BaseException,
-    outcome: str,
-    caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    backend = _Everything()
-
-    async def fail(*args: Any, **kwargs: Any) -> Any:
-        raise raised
-
-    monkeypatch.setattr(backend, "search", fail)
-    token = set_key(make_key("team"))
-    try:
-        with caplog.at_level(logging.INFO, logger="memcp.audit"), pytest.raises(type(raised)):
-            await Policy(backend).search("anything")
-    finally:
-        reset_key(token)
-    assert [r.audit["outcome"] for r in _records(caplog)] == [outcome]  # type: ignore[attr-defined]
-
-
-async def test_counts_and_scope_of_the_remaining_operations(caplog: pytest.LogCaptureFixture):
-    policy = Policy(_Everything())
-    token = set_key(make_key("team"))
-    try:
-        await policy.add("one", scope={"agent_id": "a"}, infer=False)
-        await policy.add("two", scope={"agent_id": "b"}, infer=False)
-        with caplog.at_level(logging.INFO, logger="memcp.audit"):
-            await policy.list_memories(scope={"agent_id": "a"})
-            await policy.export_memories()
-            await policy.entities(scope={"agent_id": "a"})
-            await policy.import_memories([{"content": "three"}, {"content": "four"}])
-    finally:
-        reset_key(token)
-    audits = {r.audit["operation"]: r.audit for r in _records(caplog)}  # type: ignore[attr-defined]
-    assert (audits["list_memories"]["count"], audits["list_memories"]["scope"]) == (
-        1,
-        {"agent_id": "a"},
-    )
-    assert audits["export_memories"]["count"] == 2
-    assert (audits["entities"]["count"], audits["entities"]["scope"]) == (0, {"agent_id": "a"})
-    assert audits["import_memories"]["count"] == 2
-
-
-# --- migrate needs somewhere to write its record ------------------------------------
-
-
-async def test_a_migration_records_its_source_space(caplog: pytest.LogCaptureFixture):
-    with caplog.at_level(logging.INFO, logger="memcp.audit"):
-        await migrate(
-            InMemoryBackend(), InMemoryBackend(), "team", target_partition="moved", operator="ops"
-        )
-    audit = _records(caplog)[0].audit  # type: ignore[attr-defined]
-    assert (audit["source_space"], audit["space"]) == ("team", "moved")
-
-
 class _Unreadable(InMemoryBackend):
     async def list_memories(self, *args: Any, **kwargs: Any) -> Any:
         raise AssertionError("migrate read the source")
+
+
+def _only_handler(
+    audit: logging.Logger, monkeypatch: pytest.MonkeyPatch, handler: logging.Handler | None
+) -> None:
+    monkeypatch.setattr(audit, "propagate", False)
+    monkeypatch.setattr(audit, "handlers", [] if handler is None else [handler])
+
+
+def _handler(cls: type[logging.Handler], level: int) -> logging.Handler:
+    handler = cls()
+    handler.setLevel(level)
+    return handler
 
 
 @pytest.mark.parametrize(
@@ -310,24 +271,33 @@ async def test_a_migration_whose_record_would_be_lost_is_refused(
         monkeypatch.setattr(audit, "level", logging.WARNING)
     elif cause == "disabled":
         monkeypatch.setattr(audit, "disabled", True)
+    elif cause == "no handler":
+        _only_handler(audit, monkeypatch, None)
+    elif cause == "warning handler":
+        _only_handler(audit, monkeypatch, _handler(logging.StreamHandler, logging.WARNING))
     else:
-        monkeypatch.setattr(audit, "propagate", False)
-        handler = {
-            "no handler": None,
-            "warning handler": logging.StreamHandler(),
-            "null handler": logging.NullHandler(),
-        }[cause]
-        if handler is not None:
-            handler.setLevel(logging.WARNING if cause == "warning handler" else logging.NOTSET)
-        monkeypatch.setattr(audit, "handlers", [] if handler is None else [handler])
+        _only_handler(audit, monkeypatch, _handler(logging.NullHandler, logging.NOTSET))
     with pytest.raises(ValueError, match="setup_logging"):
         await migrate(_Unreadable(), InMemoryBackend(), "team", operator="ops")
 
 
-def test_the_audit_logger_writes_each_record_once(monkeypatch: pytest.MonkeyPatch):
+async def test_a_migration_runs_with_a_handler_at_exactly_info(monkeypatch: pytest.MonkeyPatch):
+    audit = logging.getLogger("memcp.audit")
+    _only_handler(audit, monkeypatch, _handler(logging.StreamHandler, logging.INFO))
+    report = await migrate(InMemoryBackend(), InMemoryBackend(), "team", operator="ops")
+    assert report.exported == 0
+
+
+# --- setup -----------------------------------------------------------------------------
+
+
+def test_the_audit_logger_stays_at_info_and_doesnt_propagate(monkeypatch: pytest.MonkeyPatch):
+    """At INFO whatever MEMCP_LOG_LEVEL says; not propagating, so each record prints once."""
     from memcp.http import logging as http_logging
 
     seen: list[dict[str, Any]] = []
     monkeypatch.setattr(http_logging.logging.config, "dictConfig", seen.append)
-    http_logging.setup_logging()
-    assert seen[0]["loggers"]["memcp.audit"]["propagate"] is False
+    http_logging.setup_logging(level="WARNING")
+    audit = seen[0]["loggers"]["memcp.audit"]
+    assert (audit["level"], audit["propagate"]) == ("INFO", False)
+    assert seen[0]["loggers"]["memcp"]["level"] == "WARNING"
