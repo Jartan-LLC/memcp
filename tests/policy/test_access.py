@@ -126,6 +126,44 @@ async def test_a_writer_may_write(operation: str):
         reset_key(token)
 
 
+class _Recording(InMemoryBackend):
+    """Records the partition every data call names."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.partitions: list[str] = []
+
+    def capabilities(self) -> set[str]:
+        return set(ALL_CAPABILITIES)
+
+    def __getattribute__(self, name: str) -> Any:
+        attr = super().__getattribute__(name)
+        if name not in BACKEND_DATA_METHODS:
+            return attr
+
+        def record(partition: str, *args: Any, **kwargs: Any) -> Any:
+            self.partitions.append(partition)
+            return attr(partition, *args, **kwargs)
+
+        return record
+
+
+@pytest.mark.parametrize("operation", sorted(READS | WRITES))
+async def test_every_operation_reaches_only_the_granted_space(operation: str):
+    """The key's name is not its space: a key named `laptop` reaches only `team`."""
+    backend = _Recording()
+    policy = Policy(backend)
+    token = set_key(make_key("team", "writer", name="laptop"))
+    try:
+        await CALLS[operation](policy)
+    except (PolicyError, NotImplementedError):
+        pass  # a missing memory, or in_memory's absent entities; the call was still made
+    finally:
+        reset_key(token)
+    assert backend.partitions, f"{operation} made no backend call"
+    assert set(backend.partitions) == {"team"}
+
+
 @pytest.mark.parametrize("operation", sorted(READS | WRITES))
 async def test_no_operation_runs_without_a_key(operation: str):
     policy = Policy(_Untouchable())
