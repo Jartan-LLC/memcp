@@ -15,7 +15,9 @@ search by meaning and fact extraction, [use mem0](https://github.com/Jartan-LLC/
 
 ### With Docker
 
-Needs Docker.
+Needs Docker. The command names your key and its space after your login, `$USER`. A key
+name holds only letters, digits, `_`, `.` and `-`: if your login has anything else, or
+`USER` is unset, replace `$USER` with such a name.
 
 ```bash
 mkdir memcp && cd memcp &&
@@ -28,8 +30,7 @@ mkdir memcp && cd memcp &&
 ```
 
 Keep the token that printed; `keys.toml` holds only its hash (on macOS, use
-`shasum -a 256` in place of `sha256sum`). A key name holds only letters, digits, `_`, `.`
-and `-`; if your login has anything else, replace `$USER` with such a name. Then start it:
+`shasum -a 256` in place of `sha256sum`). Then start it:
 
 ```bash
 docker compose up -d --wait

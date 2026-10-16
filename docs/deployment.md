@@ -34,7 +34,8 @@ memcp.
    ```
 
 2. Generate a token, and write `keys.toml` with a key that holds `writer` on a space,
-   both named after your login:
+   both named after your login. A key name holds only letters, digits, `_`, `.` and `-`:
+   if your login has anything else, or `USER` is unset, replace `$USER` with such a name.
 
    ```bash
    TOKEN=$(openssl rand -hex 32) && echo "$TOKEN" &&
@@ -44,9 +45,6 @@ memcp.
 
    Keep the token that printed: your clients send it, and `keys.toml` holds only its
    hash. On macOS, use `shasum -a 256` in place of `sha256sum`.
-
-   A key name holds only letters, digits, `_`, `.` and `-`; if your login has anything
-   else, replace `$USER` with such a name.
 
 Then configure the backend you chose.
 
@@ -181,6 +179,9 @@ is set.
    ```bash
    docker compose pull && docker compose up -d --wait
    ```
+
+5. Give each client that got a new token its token, as in
+   [Start memcp and connect a client](#start-memcp-and-connect-a-client).
 
 ### Pin a release
 

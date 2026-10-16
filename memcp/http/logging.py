@@ -58,7 +58,7 @@ class KeyContextFilter(logging.Filter):
         try:
             key = current_key()
         except LookupError:
-            return True  # no key: startup, /health, a refused request, shutdown
+            return True  # no key: startup, /health, a request refused with 401, shutdown
         record.key = key.name
         record.space = key.grant.space
         return True
