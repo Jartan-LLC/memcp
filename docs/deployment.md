@@ -164,23 +164,29 @@ survives a restart.
 `keys.toml` replaces 0.1.x's `MEMCP_AUTH_TOKENS`, and memcp refuses to start while that
 is set.
 
-1. Download the current compose file, as in
+1. Stop the 0.1.x deployment with its own compose file, before replacing that file:
+
+   ```bash
+   docker compose down
+   ```
+
+2. Download the current compose file, as in
    [Upgrade a Compose deployment](#upgrade-a-compose-deployment).
-2. For each `<token>:<user_id>` in `MEMCP_AUTH_TOKENS`, add a key to `keys.toml` with its
+3. For each `<token>:<user_id>` in `MEMCP_AUTH_TOKENS`, add a key to `keys.toml` with its
    own name, `writer` on the `user_id` as its space, and the token's hash as its secret,
    made with the "token you already have" command in [Manage keys](#manage-keys). A client
    keeps its token only if it is random and as long as `openssl rand -hex 32` makes; give
    any other client a new one, since a short or guessable token can be recovered from its
    hash. If `MEMCP_AUTH_TOKENS` was empty, the memories are in the space `default_user`:
    add one key with `writer` on it and a new token's hash.
-3. Delete the `MEMCP_AUTH_TOKENS` line from `.env`.
-4. Pull and restart:
+4. Delete the `MEMCP_AUTH_TOKENS` line from `.env`.
+5. Pull and start:
 
    ```bash
    docker compose pull && docker compose up -d --wait
    ```
 
-5. Give each client that got a new token its token, as in
+6. Give each client that got a new token its token, as in
    [Start memcp and connect a client](#start-memcp-and-connect-a-client).
 
 ### Pin a release

@@ -21,7 +21,7 @@ and a conformance suite every backend passes.
 
 ---
 
-## v0.3 — Third Backend (Cognee)
+## v0.3 — Cognee, a fourth backend
 
 Validate the contract against a fundamentally different backend. The conformance suite,
 the cross-backend round trip and the CI mem0 stack are Cognee's gates.
