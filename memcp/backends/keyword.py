@@ -9,7 +9,10 @@ here knows that "linter" and "static analysis" are related — only that "linter
 
 The rules, and why each exists:
 
-- **Tokens are runs of letters and digits.** The previous version split on whitespace
+- **Tokens are runs of letters, digits and combining marks, in any script**, after NFKC
+  and lowercasing. A character of a script written without spaces between words (Han,
+  kana, Thai, Lao, Khmer, Myanmar) is a token of its own, so a run of them is found by
+  the phrase match. The previous version split on whitespace
   and asked whether each piece was a *substring* of the content, so `use?` failed
   against `uses` on the punctuation, and the one-letter token `i` from "What linter
   do I use?" matched every memory containing the letter i — giving unrelated
@@ -27,15 +30,37 @@ The rules, and why each exists:
 from __future__ import annotations
 
 import re
+import unicodedata
 
 MIN_QUERY_TOKEN = 3
 SHARED_PREFIX = 4
 
-_TOKEN = re.compile(r"[a-z0-9]+")
+_UNSPACED = re.compile(
+    "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]"
+)
+
+
+def _in_word(char: str) -> bool:
+    return char.isalnum() or unicodedata.category(char).startswith("M")
 
 
 def tokenize(text: str) -> list[str]:
-    return _TOKEN.findall(text.lower())
+    tokens: list[str] = []
+    word: list[str] = []
+    for char in unicodedata.normalize("NFKC", text).lower():
+        if _UNSPACED.match(char):
+            if word:
+                tokens.append("".join(word))
+                word = []
+            tokens.append(char)
+        elif _in_word(char):
+            word.append(char)
+        elif word:
+            tokens.append("".join(word))
+            word = []
+    if word:
+        tokens.append("".join(word))
+    return tokens
 
 
 def _matches(query_token: str, content_tokens: set[str]) -> bool:

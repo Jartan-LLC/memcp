@@ -39,7 +39,7 @@ Upgrading a 0.1.x Compose deployment changes how clients authenticate and where 
   - A memory a backend returns outside the requested scope is left out of search and list results, with a warning from `memcp.policy`.
 - **`agent_id` is normalized** on every write and filter: lowercased, trimmed, each run of other characters turned into one hyphen, and hyphens at either end dropped. The server's MCP instructions ask clients to send their own name in that form, such as `claude-code`. A filter no longer reaches a memory stored under an `agent_id` that isn't in that form.
 - Import treats the same content in a different scope as a different memory, not a duplicate.
-- in_memory's keyword search matches words: runs of `a`–`z` and `0`–`9` after lowercasing, ignoring query words under three characters, with two words matching when they are equal or share their first four characters. An exact phrase scores 1.0. Any other letter ends a word, so text in other scripts isn't found, and accented words match only on their unaccented parts. It used to match any substring, so a one-letter word matched almost everything.
+- in_memory's keyword search matches words: runs of letters and digits in any script, ignoring query words under three characters, with two words matching when they are equal or share their first four characters. An exact phrase scores 1.0. In a script written without spaces between words, such as Japanese, Chinese or Thai, a query finds an exact run of characters. It used to match any substring, so a one-letter word matched almost everything.
 - in_memory no longer registers `memory_entities`. It answered with one synthetic node and no relationships.
 - Log records carry `key` and `space`, the name and space of the request's key, in place of `user_id` (`user=` in plain format). Both are `null` in JSON and `-` in plain format when no key is set: outside a request, on `/health`, and on a request refused with 401. Update any log query or alert on `user_id` or `user=`.
 - Two loggers are renamed: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter`, and `memcp.auth` is now `memcp.http.auth`. Update any log filter or alert that matches the old names.
@@ -50,6 +50,7 @@ Upgrading a 0.1.x Compose deployment changes how clients authenticate and where 
 - **An audit log.** Every memory operation writes one record to the logger `memcp.audit`, whether it succeeds or is refused: the operation, the key's name, space and relation, the outcome (`ok` or the error code), and the memory ids or the scope and a count. It holds no content, query or metadata, and logs at `INFO` whatever `MEMCP_LOG_LEVEL` says. JSON logs carry it as an `audit` object. `docs/reference.md` lists the fields.
 - `MEMCP_ALLOWED_HOSTS` sets a Host header allow-list for DNS-rebinding protection. The MCP SDK turns that protection on by itself only when `MEMCP_HOST` is `127.0.0.1`, `localhost` or `::1`, and leaves it off for every other value, `0.0.0.0` included.
 - `memory_status` reports `extracts_facts` and `retrieval`, so a client can tell whether `infer` does anything.
+- Each `add_memory` result carries `event`: `add`, `update` or `delete`. With `infer=true` on mem0, extraction can update or delete memories the space already held, and `delete` names one it removed.
 - `memcp.policy.transfer.migrate(source, target, partition, operator=..., target_partition=..., on_conflict=...)` moves one space's memories between backends, for an operator's own scripts. It is recorded in the audit log under the operator's name, and refused, before anything is read, for a blank operator, logging that would drop that record, an empty or `*` partition, one either backend can't match exactly, or an `on_conflict` the target can't carry out.
 - The Docker image is published for `linux/arm64` too, carries a build-provenance attestation, and is also tagged with its minor version, such as `0.2`.
 
@@ -57,6 +58,7 @@ Upgrading a 0.1.x Compose deployment changes how clients authenticate and where 
 
 - **On mem0, `list_memories`, export and import's duplicate check saw only a space's first 20 memories**, mem0's default page. They now read up to mem0's ceiling of 1000, and say when that ceiling may have cut them short: `list_memories` and `memory_entities` return `incomplete: true`, `export_memories` `truncated: true`, and `import_memories` `dedup_incomplete: true`. A space of exactly 1000 memories reads the same way, since mem0 can't tell it from more.
 - A memory id ending in a line break is refused with `validation_error`. On mem0 it failed the call with an unhandled error.
+- On mem0, a success response that isn't JSON, such as a proxy's error page, gets `backend_error`. It failed the call with an unhandled error.
 
 ### Security
 

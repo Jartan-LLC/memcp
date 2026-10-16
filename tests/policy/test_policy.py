@@ -733,6 +733,34 @@ async def test_a_memory_without_system_fields_passes_on_its_partition(
     assert (await policy.get("foreign")).id == "foreign"
 
 
+async def test_add_doesnt_fetch_a_memory_its_extraction_deleted(
+    policy: Policy,
+    backend: InMemoryBackend,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    """An extracting store can delete a memory a new fact contradicts; that add still
+    succeeds, and only what it added or updated is fetched and space-checked (#140)."""
+    kept = (await backend.add(TENANT, "kept fact", infer=False))[0].id
+
+    async def extract(*args: Any, **kwargs: Any) -> list[AddResult]:
+        return [AddResult(id="gone", event="delete"), AddResult(id=kept, event="update")]
+
+    fetched: list[str] = []
+    real_get = backend.get
+
+    async def get(partition: str, memory_id: str) -> Memory | None:
+        fetched.append(memory_id)
+        return await real_get(partition, memory_id)
+
+    monkeypatch.setattr(backend, "add", extract)
+    monkeypatch.setattr(backend, "get", get)
+    result = await policy.add("a contradicting fact")
+    assert [(r.id, r.event) for r in result] == [("gone", "delete"), (kept, "update")]  # type: ignore[union-attr]
+    assert fetched == [kept]
+    assert "isolation_violation" not in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # system stamps
 # ---------------------------------------------------------------------------

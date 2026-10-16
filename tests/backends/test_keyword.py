@@ -87,6 +87,38 @@ class TestScoringRules:
         assert tokenize("Python 3.12, ruff!") == ["python", "3", "12", "ruff"]
 
 
+class TestScriptsBeyondAscii:
+    """A word is letters, digits and combining marks in any script (#146)."""
+
+    def test_accented_and_cyrillic_words_stay_whole(self):
+        assert tokenize("Café Zürich naïve") == ["café", "zürich", "naïve"]
+        assert tokenize("Я живу в Москва") == ["я", "живу", "в", "москва"]
+
+    def test_a_cyrillic_word_is_found(self):
+        assert score("Москва", "Я живу в Москва") is not None
+
+    def test_an_accented_word_doesnt_match_its_ascii_fragments(self):
+        assert score("Zürich office", "Meeting Richard at the office") == 0.5
+
+    def test_composed_and_decomposed_forms_match(self):
+        assert score("café", "cafe\u0301 au lait") is not None
+
+    def test_a_word_with_combining_marks_stays_whole(self):
+        assert len(tokenize("मैं हिन्दी बोलता हूँ")) == 4
+        assert score("हिन्दी", "मैं हिन्दी बोलता हूँ") is not None
+
+    @pytest.mark.parametrize(
+        ("query", "content"),
+        [("東京", "私は東京に住んでいます"), ("กรุงเทพ", "ฉันอยู่กรุงเทพมหานคร")],
+        ids=["japanese", "thai"],
+    )
+    def test_a_run_in_an_unspaced_script_is_found_as_a_phrase(self, query: str, content: str):
+        assert score(query, content) == 1.0
+
+    def test_an_absent_run_in_an_unspaced_script_is_not_found(self):
+        assert score("大阪", "私は東京に住んでいます") is None
+
+
 async def test_search_returns_only_real_hits():
     """The scorer's contract, through a backend rather than directly."""
     backend = InMemoryBackend()

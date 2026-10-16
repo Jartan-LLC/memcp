@@ -169,6 +169,7 @@ async def test_add_memory_returns_result(mcp_with_tools):
     assert len(result["results"]) == 1
     assert result["results"][0]["id"]
     assert result["results"][0]["status"] == "ready"
+    assert result["results"][0]["event"] == "add"
 
 
 async def test_add_memory_with_scope(mcp_with_tools):

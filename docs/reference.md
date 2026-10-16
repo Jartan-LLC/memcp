@@ -128,7 +128,7 @@ without `metadata` leaves the stored metadata as it is, and `metadata: {}` clear
 
 | Tool | Description |
 |---|---|
-| `add_memory` | Store a fact/preference/decision. On `mem0`, extracts facts by default (may store nothing) and `infer=false` stores verbatim. On `sqlite` and `in_memory` there is no model, so content is always stored verbatim and `infer` has no effect — the tool's own description says which, per deployment. Bulk: use `import_memories` |
+| `add_memory` | Store a fact/preference/decision. On `mem0`, extracts facts by default (may store nothing) and `infer=false` stores verbatim. On `sqlite` and `in_memory` there is no model, so content is always stored verbatim and `infer` has no effect — the tool's own description says which, per deployment. Each result's `event` is `add`, `update` or `delete`. Bulk: use `import_memories` |
 | `search_memory` | Ranked search — semantic on `mem0`, keyword on `sqlite` and `in_memory`. `threshold` filters by minimum score (0-1). For browsing: `list_memories` |
 | `get_memory` | Fetch one memory by ID. Returns full content, scope, and metadata |
 | `delete_memory` | Delete one memory by ID. Confirm with user first |
@@ -218,7 +218,7 @@ schema, and a `migrate()` call with a blank operator.
 **`sqlite` and `in_memory` — no model behind them:**
 
 - Retrieval is keyword matching, not vector similarity. Tokens match when they are equal or share a four-character prefix, so `linter` finds `linting` but a question phrased in different words finds nothing
-- A word is a run of `a`–`z` and `0`–`9` after lowercasing; any other letter ends it, so text in other scripts isn't found, and accented words match only on their unaccented parts
+- In Japanese, Chinese, Thai and other scripts written without spaces between words, a query finds only an exact run of characters
 - `add_memory` stores content verbatim. There is no fact extraction, so `infer` is accepted and ignored; `memory_status` reports `extracts_facts: false`
 - No knowledge graph, so `memory_entities` is not registered at all
 

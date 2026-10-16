@@ -30,7 +30,8 @@ def register(mcp: Any, policy: Policy) -> None:
     @mcp.tool(
         description=(
             "Store a fact/preference/decision. Extracts salient facts by "
-            "default (may store nothing); infer=false for verbatim. "
+            "default (may store nothing); infer=false for verbatim. Each result's "
+            "event says whether extraction added, updated or deleted that memory. "
             "Bulk: use import_memories."
         )
         if policy.extracts_facts
@@ -108,7 +109,13 @@ def _serialize_add_result(result: Any) -> Any:
     if isinstance(result, list):
         return {
             "results": [
-                {"id": r.id, "status": r.status, "created_at": r.created_at} for r in result
+                {"id": r.id, "status": r.status, "created_at": r.created_at, "event": r.event}
+                for r in result
             ]
         }
-    return {"id": result.id, "status": result.status, "created_at": result.created_at}
+    return {
+        "id": result.id,
+        "status": result.status,
+        "created_at": result.created_at,
+        "event": result.event,
+    }
