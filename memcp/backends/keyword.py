@@ -12,8 +12,9 @@ The rules, and why each exists:
 - **Tokens are runs of letters, digits and combining marks, in any script**, after NFKC
   and lowercasing. A character of a script written without spaces between words (Han,
   kana, Thai, Lao, Khmer, Myanmar) or with particles attached to words (Hangul) is a
-  token of its own; a run of them in a query must appear as a run, within one run of
-  the content. The previous version split on whitespace
+  token of its own; a run of them in a query, with any word written against it as the
+  3 of 3月 is, must appear as written, within one run of the content. The previous
+  version split on whitespace
   and asked whether each piece was a *substring* of the content, so `use?` failed
   against `uses` on the punctuation, and the one-letter token `i` from "What linter
   do I use?" matched every memory containing the letter i — giving unrelated
@@ -44,8 +45,8 @@ _UNSPACED = re.compile(
     r"\uf900-\ufaff\U00020000-\U0003ffff]"
 )
 _ASCII_TOKEN = re.compile(r"[a-z0-9]+")
-# Never a token: marks a space or punctuation after a per-character run, so a query run
-# can't match across it.
+# Never a token: marks a space or punctuation next to a per-character run, so a query run
+# can't match across it. A word with no boundary between it and a run is written against it.
 _BOUNDARY = " "
 
 
@@ -66,10 +67,18 @@ def _tokens_of(folded: str) -> list[str]:
     since lowercasing can produce marks that NFKC then reorders."""
     tokens: list[str] = []
     word: list[str] = []
+    gap = False
+
+    def emit(token: str) -> None:
+        nonlocal gap
+        if gap and tokens and (_is_run_token(tokens[-1]) or _is_run_token(token)):
+            tokens.append(_BOUNDARY)
+        tokens.append(token)
+        gap = False
 
     def flush() -> None:
         if word:
-            tokens.append("".join(word))
+            emit("".join(word))
             word.clear()
 
     for char in folded:
@@ -79,7 +88,7 @@ def _tokens_of(folded: str) -> list[str]:
             flush()
             # Other characters of these blocks, such as U+30FB "・", join the run around them.
             if char.isalnum() or _is_mark(char):
-                tokens.append(char)
+                emit(char)
         elif char.isalnum():
             word.append(char)
         elif _is_mark(char):
@@ -89,11 +98,8 @@ def _tokens_of(folded: str) -> list[str]:
                 word.append(char)
         else:
             flush()
-            if tokens and _is_run_token(tokens[-1]):
-                tokens.append(_BOUNDARY)
+            gap = True
     flush()
-    if tokens and tokens[-1] == _BOUNDARY:
-        tokens.pop()
     return tokens
 
 
@@ -107,28 +113,29 @@ def tokenize(text: str) -> list[str]:
         part = _ASCII_TOKEN.findall(piece) if piece.isascii() else _tokens_of(piece)
         if not part:
             continue
-        if tokens and _is_run_token(tokens[-1]):
+        if tokens and (_is_run_token(tokens[-1]) or _is_run_token(part[0])):
             tokens.append(_BOUNDARY)
         tokens.extend(part)
     return tokens
 
 
 def _units(tokens: list[str]) -> list[list[str]]:
-    """The query's scoring units: each word, and each per-character run."""
+    """The query's scoring units: each word, and each per-character run together with the
+    words written against it, so the 3 of 3月 isn't dropped as a short word."""
     units: list[list[str]] = []
-    run: list[str] = []
+    previous = _BOUNDARY
     for token in tokens:
-        if _is_run_token(token):
-            run.append(token)
-            continue
-        if run:
-            units.append(run)
-            run = []
         if token != _BOUNDARY:
-            units.append([token])
-    if run:
-        units.append(run)
+            if previous != _BOUNDARY and (_is_run_token(previous) or _is_run_token(token)):
+                units[-1].append(token)
+            else:
+                units.append([token])
+        previous = token
     return units
+
+
+def _is_run(unit: list[str]) -> bool:
+    return any(_is_run_token(token) for token in unit)
 
 
 def _matches(query_token: str, content_tokens: set[str]) -> bool:
@@ -171,11 +178,9 @@ def score(query: str, content: str) -> float | None:
     if _is_phrase_of(query_tokens, content_tokens):
         return 1.0
 
-    # A run counts whatever its length and must appear as a run; a word counts from
+    # A run counts whatever its length and must appear as written; a word counts from
     # MIN_QUERY_TOKEN characters and may match by prefix.
-    scored = [
-        u for u in _units(query_tokens) if _is_run_token(u[0]) or len(u[0]) >= MIN_QUERY_TOKEN
-    ]
+    scored = [u for u in _units(query_tokens) if _is_run(u) or len(u[0]) >= MIN_QUERY_TOKEN]
     if not scored:
         return None
 
@@ -185,7 +190,7 @@ def score(query: str, content: str) -> float | None:
         for unit in scored
         if (
             _is_phrase_of(unit, content_tokens)
-            if _is_run_token(unit[0])
+            if _is_run(unit)
             else _matches(unit[0], unique_content)
         )
     )

@@ -154,13 +154,43 @@ class TestScriptsBeyondAscii:
     def test_a_query_run_doesnt_match_across_a_separator_in_the_content(self):
         assert score("京大", "東京、大阪に行く") is None
 
+    @pytest.mark.parametrize(
+        ("query", "content"),
+        [
+            ("3月", "5月の会議"),
+            ("3時", "13時に会う"),
+            ("10時", "3時に会う"),
+            ("第3回会議", "第5回会議"),
+            ("A社の件", "B社の件"),
+            ("3월", "5월 회의"),
+            ("2024年3月の売上", "2024年5月の売上"),
+        ],
+        ids=[
+            "month",
+            "hour in a longer number",
+            "hour",
+            "ordinal",
+            "latin letter",
+            "korean",
+            "date",
+        ],
+    )
+    def test_a_word_written_against_a_run_belongs_to_it(self, query: str, content: str):
+        assert score(query, content) is None
+        assert score(query, query + "の件") == 1.0
+
+    def test_a_word_separated_from_a_run_isnt_part_of_it(self):
+        assert score("3月", "3 月") is None
+
     def test_an_iteration_mark_belongs_to_its_run(self):
         assert score("佐々木", "木村と佐藤") is None
         assert score("佐々木", "佐々木さんに会う") == 1.0
+        assert tokenize("二\u3007\u3007四年") == ["二", "\u3007", "\u3007", "四", "年"]
 
     def test_han_beyond_the_basic_plane_belongs_to_its_run(self):
         assert score("𠮷野家", "野家に行く") is None
         assert score("𠮷野家", "𠮷野家に行く") == 1.0
+        assert tokenize("𠮷𩸽") == ["𠮷", "𩸽"]
 
     @pytest.mark.parametrize(
         ("query", "content"),
@@ -198,6 +228,7 @@ class TestScriptsBeyondAscii:
             "東京、 大阪 -- 京都",
             "ジョン・スミス and ❤\ufe0f",
             "İุ, lowercasing that yields a mark NFKC would reorder",
+            "3月 と A社, x 東京 ,5時",
         ]
         for text in samples:
             assert tokenize(text) == _tokenize_any(text), text

@@ -218,7 +218,7 @@ schema, and a `migrate()` call with a blank operator.
 **`sqlite` and `in_memory` — no model behind them:**
 
 - Retrieval is keyword matching, not vector similarity. Tokens match when they are equal or share a four-character prefix, so `linter` finds `linting` but a question phrased in different words finds nothing
-- In Chinese, Japanese, Korean, Thai, Lao, Khmer and Myanmar, each run of characters in a query must appear in the memory as written: the words of these scripts aren't separated by spaces, or carry their particles
+- In Chinese, Japanese, Korean, Thai, Lao, Khmer and Myanmar, each run of characters in a query, with any number or word written against it as in `3月`, must appear in the memory as written: the words of these scripts aren't separated by spaces, or carry their particles
 - `add_memory` stores content verbatim. There is no fact extraction, so `infer` is accepted and ignored; `memory_status` reports `extracts_facts: false`
 - No knowledge graph, so `memory_entities` is not registered at all
 
