@@ -56,6 +56,13 @@ def test_a_file_that_is_not_toml_is_refused_without_quoting_it(tmp_path: Path):
     _refused(path, "isn't valid TOML")
 
 
+def test_a_file_that_is_not_utf8_is_refused_by_name(tmp_path: Path):
+    path = tmp_path / "keys.toml"
+    path.write_bytes(_key().encode("utf-16"))
+    message = _refused(path, "MEMCP_KEYS_FILE .*keys.toml isn't UTF-8")
+    assert "0x" not in message
+
+
 @pytest.mark.parametrize("text", ["", "keys = []\n"], ids=["empty file", "no keys"])
 def test_a_file_with_no_keys_is_refused(tmp_path: Path, text: str):
     _refused(_write(tmp_path, text), "keys")
@@ -141,6 +148,11 @@ def test_a_secret_under_two_keys_is_refused(tmp_path: Path):
         ("phone", TOKEN, "team", "writer"),
     )
     _refused(path, "keys 2 and 3 .*same secret")
+
+
+def test_the_same_secret_twice_under_one_key_is_refused(tmp_path: Path):
+    path = _write(tmp_path, _key(secrets=f'["{secret(TOKEN)}", "{secret(TOKEN)}"]'))
+    _refused(path, "key 1 lists the same secret twice")
 
 
 # --- grants --------------------------------------------------------------------

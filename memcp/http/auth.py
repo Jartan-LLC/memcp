@@ -84,6 +84,9 @@ def load_keys(path: str) -> KeyTable:
             raw = tomllib.load(f)
     except OSError as e:
         raise ValueError(f"MEMCP_KEYS_FILE {path} can't be read: {e.strerror}") from None
+    except UnicodeDecodeError:
+        # Not the decoder's message: it quotes a byte of the file.
+        raise ValueError(f"MEMCP_KEYS_FILE {path} isn't UTF-8") from None
     except tomllib.TOMLDecodeError as e:
         raise ValueError(f"MEMCP_KEYS_FILE {path} isn't valid TOML: {e}") from None
     try:
@@ -109,6 +112,8 @@ def load_keys(path: str) -> KeyTable:
         key = Key(name=entry.name, grant=Grant(space=grant.space, relation=grant.relation))
         for secret in entry.secrets:
             digest = secret.removeprefix(_SECRET_PREFIX)
+            if owner.get(digest) == n:
+                raise ValueError(f"MEMCP_KEYS_FILE {path}: key {n} lists the same secret twice")
             if digest in owner:
                 raise ValueError(
                     f"MEMCP_KEYS_FILE {path}: keys {owner[digest]} and {n} list the same secret"

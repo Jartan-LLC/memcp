@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 from pathlib import Path
 from typing import Any
@@ -265,3 +267,46 @@ def test_a_granted_space_the_backend_refuses_stops_startup(
     config = Config(MEMCP_BACKEND="in_memory", MEMCP_HOST="0.0.0.0", MEMCP_KEYS_FILE=str(path))
     with pytest.raises(ValueError, match=f"space {space!r}"):
         create_app(config)
+
+
+async def _without_the_test_key(fn: Any) -> Any:
+    """Run `fn()` in an empty context, as a server is: the autouse fixture's key is a
+    test convenience, and a path that read the key outside the gate would pass with it."""
+    return await asyncio.create_task(fn(), context=contextvars.Context())
+
+
+async def test_health_and_dev_mode_tools_need_no_key_beyond_the_gate(config: Config):
+    async def serve() -> tuple[int, Any]:
+        app, backend = create_app(config)
+        async with (
+            LifespanManager(app) as manager,
+            AsyncClient(transport=ASGITransport(app=manager.app), base_url=BASE_URL) as client,
+        ):
+            health = await client.get("/health")
+            added = await _call(client, None, "add_memory", {"content": "a fact", "infer": False})
+            fetched = await _call(
+                client, None, "get_memory", {"memory_id": added["results"][0]["id"]}
+            )
+        await backend.close()
+        return health.status_code, fetched
+
+    status, fetched = await _without_the_test_key(serve)
+    assert status == 200
+    assert fetched["author"] == "local"
+
+
+async def test_with_a_keys_file_health_needs_no_token_and_a_token_reaches_tools(tmp_path: Path):
+    async def serve() -> tuple[int, Any]:
+        app, backend = create_app(_keyed_config(tmp_path))
+        async with (
+            LifespanManager(app) as manager,
+            AsyncClient(transport=ASGITransport(app=manager.app), base_url=BASE_URL) as client,
+        ):
+            health = await client.get("/health")
+            found = await _call(client, READER_TOKEN, "search_memory", {"query": "anything"})
+        await backend.close()
+        return health.status_code, found
+
+    status, found = await _without_the_test_key(serve)
+    assert status == 200
+    assert found["results"] == []

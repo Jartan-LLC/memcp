@@ -166,8 +166,8 @@ is set.
 1. Download the current compose file, as in
    [Upgrade a Compose deployment](#upgrade-a-compose-deployment).
 2. For each `<token>:<user_id>` in `MEMCP_AUTH_TOKENS`, add a key to `keys.toml` with the
-   token's hash as its secret and the `user_id` as its space
-   ([Manage keys](#manage-keys)). Clients keep their tokens.
+   `user_id` as its space and the token's hash as its secret, made with the "token you
+   already have" command in [Manage keys](#manage-keys). Clients keep their tokens.
 3. Delete the `MEMCP_AUTH_TOKENS` line from `.env`.
 4. Pull and restart:
 
@@ -205,6 +205,12 @@ Generate a token and print its hash for `secrets`:
 ```bash
 TOKEN=$(openssl rand -hex 32) && echo "$TOKEN" &&
   printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
+```
+
+Or hash a token you already have: paste it after running this, then press Enter.
+
+```bash
+read -rs TOKEN && printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
 ```
 
 | Task | Change in `keys.toml` |
