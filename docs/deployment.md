@@ -180,19 +180,20 @@ is set.
    hash. If `MEMCP_AUTH_TOKENS` was empty, the memories are in the space `default_user`:
    add one key with `writer` on it and a new token's hash.
 4. Delete the `MEMCP_AUTH_TOKENS` line from `.env`.
-5. With mem0, remove the metadata key `_memcp_system` from every memory in mem0's store.
-   0.1.x stored callers' metadata as given, and memcp reads that key as server-set
+5. With mem0, remove the metadata key `_memcp_system` from every memory in mem0's store
    ([reference.md](reference.md#mcp-tools)).
-6. If clients reach memcp from other machines, put it behind a reverse proxy, as in
-   [Put memcp behind a reverse proxy](#put-memcp-behind-a-reverse-proxy). The compose file
-   publishes memcp on `127.0.0.1:8080` only, and admits only loopback Host names.
-7. Pull and start:
+6. If `docker-compose.override.yml` publishes a port for memcp, remove that `ports:`
+   entry: Compose adds it to the compose file's own `127.0.0.1:8080`.
+7. If clients reach memcp from other machines, put it behind a reverse proxy, or, if a
+   proxy already routes to it, set `MEMCP_ALLOWED_HOSTS` to the names clients use, as in
+   [Put memcp behind a reverse proxy](#put-memcp-behind-a-reverse-proxy).
+8. Pull and start:
 
    ```bash
    docker compose pull && docker compose up -d --wait
    ```
 
-8. Point each client at `http://127.0.0.1:8080/mcp`, or at the proxy's URL, with its
+9. Point each client at `http://127.0.0.1:8080/mcp`, or at the proxy's URL, with its
    token, as in [Start memcp and connect a client](#start-memcp-and-connect-a-client).
 
 ### Pin a release

@@ -26,7 +26,7 @@ Upgrading from 0.1.x changes how clients authenticate and where they connect: fo
   - Values are strings, numbers, booleans or lists of strings. A key is at most 64 characters, and a memory's metadata at most 16 KiB as JSON.
   - A reserved key (listed under Metadata in `docs/reference.md`) and a `_memcp_` key are refused.
   - A write that breaks a rule gets `validation_error`, which names the key for every rule but the size cap. `import_memories` lists the entry in `errors` instead.
-  - Metadata already stored that breaks these rules is still returned. An update that doesn't grow it is accepted, so its keys can be removed, except a key whose name is now reserved.
+  - Metadata already stored that breaks these rules is still returned, except `_memcp_` keys, which reads and exports leave out. An update that doesn't grow it is accepted, so its keys can be removed, except a key whose name is now reserved.
   - Export, then import, refuses such a memory, content included, and lists it in `errors`.
   - `import_memories` with `on_conflict=overwrite` replaces the metadata when the entry has `metadata`; on mem0 it used to merge. A reserved key already stored stays.
 - **Every tool applies the same scope rules, on every backend.**
