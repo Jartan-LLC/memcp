@@ -17,6 +17,8 @@ memcp.
 - **Retrieval is keyword matching.** Two words match when they are equal or share a
   four-character prefix, so `linter` finds `linting`. A question phrased in words that
   don't appear in the memory finds nothing.
+- **Words are `a`–`z` and `0`–`9` only.** Any other letter ends a word, so text in other
+  scripts isn't found, and accented words match only on their unaccented parts.
 - **Nothing is extracted.** `add_memory` stores what it is given. Its `infer` argument
   is accepted and ignored, and `memory_status` reports `extracts_facts: false`.
 
@@ -162,7 +164,8 @@ survives a restart.
 ### Upgrade from 0.1.x
 
 `keys.toml` replaces 0.1.x's `MEMCP_AUTH_TOKENS`, and memcp refuses to start while that
-is set.
+is set. Without Docker, do steps 3 and 4, set `MEMCP_KEYS_FILE` to the keys file's path,
+and restart memcp.
 
 1. Stop the 0.1.x deployment with its own compose file, before replacing that file:
 

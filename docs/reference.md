@@ -218,6 +218,7 @@ schema, and a `migrate()` call with a blank operator.
 **`sqlite` and `in_memory` — no model behind them:**
 
 - Retrieval is keyword matching, not vector similarity. Tokens match when they are equal or share a four-character prefix, so `linter` finds `linting` but a question phrased in different words finds nothing
+- A word is a run of `a`–`z` and `0`–`9` after lowercasing; any other letter ends it, so text in other scripts isn't found, and accented words match only on their unaccented parts
 - `add_memory` stores content verbatim. There is no fact extraction, so `infer` is accepted and ignored; `memory_status` reports `extracts_facts: false`
 - No knowledge graph, so `memory_entities` is not registered at all
 

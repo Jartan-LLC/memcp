@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-10-16
 
-Upgrading from 0.1.x changes how clients authenticate and where they connect: follow "Upgrade from 0.1.x" in `docs/deployment.md`.
+Upgrading a 0.1.x Compose deployment changes how clients authenticate and where they connect: follow "Upgrade from 0.1.x" in `docs/deployment.md`. Without Docker, write a keys file ("Manage keys" there), set `MEMCP_KEYS_FILE` to its path, and unset `MEMCP_AUTH_TOKENS`.
 
 ### Changed
 
@@ -39,7 +39,7 @@ Upgrading from 0.1.x changes how clients authenticate and where they connect: fo
   - A memory a backend returns outside the requested scope is left out of search and list results, with a warning from `memcp.policy`.
 - **`agent_id` is normalized** on every write and filter: lowercased, trimmed, each run of other characters turned into one hyphen, and hyphens at either end dropped. The server's MCP instructions ask clients to send their own name in that form, such as `claude-code`. A filter no longer reaches a memory stored under an `agent_id` that isn't in that form.
 - Import treats the same content in a different scope as a different memory, not a duplicate.
-- in_memory's keyword search matches words: runs of letters and digits, ignoring query words under three characters, with two words matching when they are equal or share their first four characters. An exact phrase scores 1.0. It used to match any substring, so a one-letter word matched almost everything.
+- in_memory's keyword search matches words: runs of `a`–`z` and `0`–`9` after lowercasing, ignoring query words under three characters, with two words matching when they are equal or share their first four characters. An exact phrase scores 1.0. Any other letter ends a word, so text in other scripts isn't found, and accented words match only on their unaccented parts. It used to match any substring, so a one-letter word matched almost everything.
 - in_memory no longer registers `memory_entities`. It answered with one synthetic node and no relationships.
 - Log records carry `key` and `space`, the name and space of the request's key, in place of `user_id` (`user=` in plain format). Both are `null` in JSON and `-` in plain format when no key is set: outside a request, on `/health`, and on a request refused with 401. Update any log query or alert on `user_id` or `user=`.
 - Two loggers are renamed: `memcp.backend.mem0` is now `memcp.backends.mem0.adapter`, and `memcp.auth` is now `memcp.http.auth`. Update any log filter or alert that matches the old names.
