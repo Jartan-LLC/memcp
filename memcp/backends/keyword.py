@@ -11,8 +11,8 @@ The rules, and why each exists:
 
 - **Tokens are runs of letters, digits and combining marks, in any script**, after NFKC
   and lowercasing. A character of a script written without spaces between words (Han,
-  kana, Thai, Lao, Khmer, Myanmar) is a token of its own, so a run of them is found by
-  the phrase match. The previous version split on whitespace
+  kana, Hangul, Thai, Lao, Khmer, Myanmar) is a token of its own, and a run of them in a
+  query must appear as a run. The previous version split on whitespace
   and asked whether each piece was a *substring* of the content, so `use?` failed
   against `uses` on the punctuation, and the one-letter token `i` from "What linter
   do I use?" matched every memory containing the letter i — giving unrelated
@@ -35,32 +35,70 @@ import unicodedata
 MIN_QUERY_TOKEN = 3
 SHARED_PREFIX = 4
 
+# Scripts written without spaces between words, plus Hangul, whose nouns carry their
+# particles: Thai, Lao, Myanmar, Hangul Jamo, Khmer, kana, CJK, Hangul syllables.
 _UNSPACED = re.compile(
-    "[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]"
+    "[\u0e00-\u0eff\u1000-\u109f\u1100-\u11ff\u1780-\u17ff\u3040-\u30ff"
+    "\u3130-\u318f\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]"
 )
+_ASCII_TOKEN = re.compile(r"[a-z0-9]+")
 
 
-def _in_word(char: str) -> bool:
-    return char.isalnum() or unicodedata.category(char).startswith("M")
+def _is_mark(char: str) -> bool:
+    return unicodedata.category(char).startswith("M")
+
+
+def _tokenize_any(text: str) -> list[str]:
+    tokens: list[str] = []
+    word: list[str] = []
+
+    def flush() -> None:
+        if word:
+            tokens.append("".join(word))
+            word.clear()
+
+    for char in unicodedata.normalize("NFKC", text).lower():
+        if _UNSPACED.match(char):
+            flush()
+            if char.isalnum() or _is_mark(char):
+                tokens.append(char)
+        elif char.isalnum():
+            word.append(char)
+        elif word and _is_mark(char):
+            word.append(char)  # a mark belongs to the letter before it, and alone to none
+        else:
+            flush()
+    flush()
+    return tokens
 
 
 def tokenize(text: str) -> list[str]:
-    tokens: list[str] = []
-    word: list[str] = []
-    for char in unicodedata.normalize("NFKC", text).lower():
-        if _UNSPACED.match(char):
-            if word:
-                tokens.append("".join(word))
-                word = []
-            tokens.append(char)
-        elif _in_word(char):
-            word.append(char)
-        elif word:
-            tokens.append("".join(word))
-            word = []
-    if word:
-        tokens.append("".join(word))
-    return tokens
+    # ASCII gives the same tokens through the regex, several times faster; every row
+    # of a search is scored.
+    if text.isascii():
+        return _ASCII_TOKEN.findall(text.lower())
+    return _tokenize_any(text)
+
+
+def _is_run(unit: list[str]) -> bool:
+    return bool(_UNSPACED.match(unit[0]))
+
+
+def _units(tokens: list[str]) -> list[list[str]]:
+    """The query's scoring units: each word, and each run of unspaced-script tokens."""
+    units: list[list[str]] = []
+    run: list[str] = []
+    for token in tokens:
+        if _UNSPACED.match(token):
+            run.append(token)
+            continue
+        if run:
+            units.append(run)
+            run = []
+        units.append([token])
+    if run:
+        units.append(run)
+    return units
 
 
 def _matches(query_token: str, content_tokens: set[str]) -> bool:
@@ -103,12 +141,22 @@ def score(query: str, content: str) -> float | None:
     if _is_phrase_of(query_tokens, content_tokens):
         return 1.0
 
-    scored = [t for t in query_tokens if len(t) >= MIN_QUERY_TOKEN]
+    # A run counts whatever its length and must appear as a run; a word counts from
+    # MIN_QUERY_TOKEN characters and may match by prefix.
+    scored = [u for u in _units(query_tokens) if _is_run(u) or len(u[0]) >= MIN_QUERY_TOKEN]
     if not scored:
         return None
 
     unique_content = set(content_tokens)
-    matched = sum(1 for token in scored if _matches(token, unique_content))
+    matched = sum(
+        1
+        for unit in scored
+        if (
+            _is_phrase_of(unit, content_tokens)
+            if _is_run(unit)
+            else _matches(unit[0], unique_content)
+        )
+    )
     if matched == 0:
         return None
     return matched / len(scored)

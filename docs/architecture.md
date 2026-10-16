@@ -165,7 +165,7 @@ has one, equal the partition policy asked for. A failed space check fails the re
 
 | Operation | Before calling the backend | After |
 |---|---|---|
-| add | Set the partition; set `system` to `{space, author, created_by}`, author and creator both the calling key; refuse caller-supplied `system` or reserved metadata | For each item: an `added` or `updated` item is fetched and space-checked (an `updated` item keeps its stored `created_by`, which the backend guarantees); a `deleted` item is audited by id |
+| add | Set the partition; set `system` to `{space, author, created_by}`, author and creator both the calling key; refuse caller-supplied `system` or reserved metadata | For each item: one whose `event` is `add` or `update` is fetched and space-checked (an `update` item keeps its stored `created_by`, which the backend guarantees); a `delete` item is audited by id |
 | search, list, export | Scope validated; partition set | Space check on every memory. A memory whose scope doesn't contain the requested scope is dropped, with a warning |
 | get | — | Space check |
 | update | Fetch the memory and space-check it; send `system` with its stored `created_by` (absent if it has none), `author` set to the calling key, and `space` | Space check on the updated memory |
@@ -208,7 +208,7 @@ whose words the facts came from.
 - returns, on every memory, the partition it stored and the `system` fields it stored, as
   stored, never copied from the request;
 - stores `system` as policy passes it, on add and on update, except that an add item it
-  reports as `updated` keeps the memory's stored `created_by` and `space`;
+  reports as `update` keeps the memory's stored `created_by` and `space`;
 - refuses a metadata key under `_memcp_` or in the reserved set with `MemoryAPIError` 400,
   on add and on update, whether the key is set or removed;
 - implements the required methods: `add`, `search`, `get`, `delete`, `delete_all`,
@@ -223,7 +223,7 @@ whose words the facts came from.
   (policy applies the threshold to that score; a backend may use it as a hint);
 - returns a `next_cursor` from `list` whenever more memories exist within its declared
   list ceiling, and marks the result incomplete when memories exist beyond it;
-- reports each add item's action: `added`, `updated` or `deleted`;
+- reports each add item's `event`: `add`, `update` or `delete`;
 - refuses a partition its store can't match by exact equality, on every call
   (`validate_partition`);
 - refuses `delete_all` with an empty scope or an empty, null or wildcard value;

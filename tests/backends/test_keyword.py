@@ -118,6 +118,33 @@ class TestScriptsBeyondAscii:
     def test_an_absent_run_in_an_unspaced_script_is_not_found(self):
         assert score("大阪", "私は東京に住んでいます") is None
 
+    @pytest.mark.parametrize(
+        ("query", "content"),
+        [("서울", "서울에 살아요"), ("부산시", "부산시에서 일해요")],
+        ids=["two syllables", "three syllables"],
+    )
+    def test_a_korean_noun_before_a_particle_is_found(self, query: str, content: str):
+        assert score(query, content) == 1.0
+
+    def test_punctuation_in_an_unspaced_script_separates(self):
+        assert score("ジョンスミス", "ジョン・スミス") == 1.0
+        assert "・" not in tokenize("ジョン・スミス")
+
+    def test_a_mark_with_nothing_before_it_is_not_a_token(self):
+        assert tokenize("❤\ufe0f love") == ["love"]
+        assert score("❤\ufe0f", "❤\ufe0f unrelated") is None
+
+    def test_the_unspaced_part_of_a_mixed_query_counts(self):
+        assert score("東京 office", "Osaka office") == 0.5
+        assert score("東京 office", "東京 office move") == 1.0
+
+    def test_ascii_text_tokenizes_as_the_general_path_does(self):
+        from memcp.backends.keyword import _tokenize_any
+
+        samples = [STORED, QUESTION, "use? linting_rules 3.12 ABC-def", "a  b\tc\nd", ""]
+        for text in samples:
+            assert tokenize(text) == _tokenize_any(text), text
+
 
 async def test_search_returns_only_real_hits():
     """The scorer's contract, through a backend rather than directly."""

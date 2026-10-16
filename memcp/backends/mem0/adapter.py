@@ -219,7 +219,7 @@ class Mem0Backend(MemoryBackend):
             return []
         added: list[AddResult] = []
         for r in result.get("results", []):
-            mem0_event = str(r.get("event", "ADD")).upper()
+            mem0_event = str(r.get("event") or "ADD").upper()
             if mem0_event in _NO_CHANGE_EVENTS:
                 continue
             event = _ADD_EVENTS.get(mem0_event)

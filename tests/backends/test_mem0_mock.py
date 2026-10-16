@@ -76,6 +76,19 @@ async def test_add_reports_what_extraction_did_to_each_memory(backend):
 
 
 @respx.mock
+@pytest.mark.parametrize("event", ["PENDING", None], ids=["unknown", "null"])
+async def test_an_unrecognised_add_event_is_kept_as_an_add(backend, event, caplog):
+    """Kept, so policy still fetches and space-checks the memory."""
+    respx.post(f"{BASE}/memories").mock(
+        return_value=httpx.Response(
+            200, json={"results": [{"id": "m-x", "event": event, "memory": "x"}]}
+        )
+    )
+    results = await backend.add(USER, "a fact", infer=True)
+    assert [(r.id, r.event) for r in results] == [("m-x", "add")]
+
+
+@respx.mock
 @pytest.mark.parametrize(
     "body", [b"<html>proxy error</html>", b"{truncated"], ids=["html", "truncated"]
 )
