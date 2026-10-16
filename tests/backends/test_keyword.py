@@ -158,13 +158,22 @@ class TestScriptsBeyondAscii:
         ("query", "content"),
         [
             ("3月", "5月の会議"),
+            ("3月", "5月3日の会議"),
             ("3時", "13時に会う"),
             ("10時", "3時に会う"),
             ("第3回会議", "第5回会議"),
             ("A社の件", "B社の件"),
             ("3월", "5월 회의"),
         ],
-        ids=["month", "hour in a longer number", "hour", "ordinal", "latin letter", "korean"],
+        ids=[
+            "month",
+            "day of another month",
+            "hour in a longer number",
+            "hour",
+            "ordinal",
+            "latin letter",
+            "korean",
+        ],
     )
     def test_a_short_word_written_against_a_run_belongs_to_it(self, query: str, content: str):
         assert score(query, content) is None
@@ -189,8 +198,33 @@ class TestScriptsBeyondAscii:
     def test_a_long_word_next_to_a_run_is_found_apart_from_it(self, query: str, content: str):
         assert score(query, content) is not None
 
-    def test_a_word_separated_from_a_run_isnt_part_of_it(self):
-        assert score("3月", "3 月") is None
+    @pytest.mark.parametrize(
+        ("query", "content"),
+        [
+            ("3月", "3 月の会議"),
+            ("用AI写代码", "我用 AI 写代码"),
+            ("AIの使い方", "AI の使い方を学ぶ"),
+            ("v2対応", "v2 対応済み"),
+            ("3วัน", "อีก 3 วัน"),
+        ],
+        ids=["month", "chinese", "japanese", "version", "thai"],
+    )
+    def test_a_memory_may_space_a_word_off_its_run(self, query: str, content: str):
+        assert score(query, content) == 1.0
+
+    def test_a_query_word_spaced_off_a_run_counts_on_its_own(self):
+        assert score("in 東京", "東京で会議") == 1.0
+
+    @pytest.mark.parametrize(
+        ("query", "wrong", "right"),
+        [("1-2月", "3-2月の予定", "1-2月の予定"), ("A-B社", "C-B社との契約", "A-B社との契約")],
+        ids=["months", "companies"],
+    )
+    def test_short_words_chained_to_a_run_all_belong_to_it(
+        self, query: str, wrong: str, right: str
+    ):
+        assert score(query, wrong) is None
+        assert score(query, right) == 1.0
 
     def test_an_iteration_mark_belongs_to_its_run(self):
         assert score("佐々木", "木村と佐藤") is None

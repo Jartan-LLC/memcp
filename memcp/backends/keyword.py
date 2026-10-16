@@ -14,10 +14,11 @@ The rules, and why each exists:
   kana, Thai, Lao, Khmer, Myanmar) or with particles attached to words (Hangul) is a
   token of its own; a run of them in a query, with any word under three characters
   written against it as the 3 of 3月 is, must appear as written, within one run of the
-  content. The previous version split on whitespace and asked whether each piece was a
-  *substring* of the content, so `use?` failed against `uses` on the punctuation, and
-  the one-letter token `i` from "What linter do I use?" matched every memory containing
-  the letter i — giving unrelated memories the same score as the right one.
+  content, where a space between such a word and the run doesn't count. The previous
+  version split on whitespace and asked whether each piece was a *substring* of the
+  content, so `use?` failed against `uses` on the punctuation, and the one-letter token
+  `i` from "What linter do I use?" matched every memory containing the letter i —
+  giving unrelated memories the same score as the right one.
 - **Query words under three characters are ignored.** They carry no signal and they
   are what made every memory a hit. A per-character run counts whatever its length.
 - **Two words match when they are equal, or share a four-character prefix.** That is
@@ -120,8 +121,8 @@ def tokenize(text: str) -> list[str]:
 
 def _units(tokens: list[str]) -> list[list[str]]:
     """The query's scoring units: each word, and each per-character run together with the
-    short words written against it, so the 3 of 3月 isn't dropped under the floor. A
-    longer word, such as the Python of Python으로, stays a unit of its own."""
+    short words chained to it, so the 3 of 3月 and the 1-2 of 1-2月 aren't dropped under
+    the floor. A longer word, such as the Python of Python으로, stays a unit of its own."""
     units: list[list[str]] = []
     previous = _BOUNDARY
     for token in tokens:
@@ -135,13 +136,24 @@ def _units(tokens: list[str]) -> list[list[str]]:
 
 
 def _joins(left: str, right: str) -> bool:
-    if not (_is_run_token(left) or _is_run_token(right)):
-        return False
+    # Short words chain to each other too; a chain with no run in it stays under the floor.
     return all(_is_run_token(t) or len(t) < MIN_QUERY_TOKEN for t in (left, right))
 
 
 def _is_run(unit: list[str]) -> bool:
     return any(_is_run_token(token) for token in unit)
+
+
+def _runs_of(tokens: list[str]) -> list[str]:
+    """Content tokens for matching a run unit: a memory may space a word off the run it's
+    written against, as in "AI の使い方", so only a boundary between two runs is kept."""
+    if _BOUNDARY not in tokens:
+        return tokens
+    return [
+        token
+        for i, token in enumerate(tokens)
+        if token != _BOUNDARY or (_is_run_token(tokens[i - 1]) and _is_run_token(tokens[i + 1]))
+    ]
 
 
 def _matches(query_token: str, content_tokens: set[str]) -> bool:
@@ -191,11 +203,12 @@ def score(query: str, content: str) -> float | None:
         return None
 
     unique_content = set(content_tokens)
+    run_content = _runs_of(content_tokens)
     matched = sum(
         1
         for unit in scored
         if (
-            _is_phrase_of(unit, content_tokens)
+            _is_phrase_of(unit, run_content)
             if _is_run(unit)
             else _matches(unit[0], unique_content)
         )

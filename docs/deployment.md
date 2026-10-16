@@ -20,6 +20,7 @@ memcp.
 - **Some scripts match as runs of characters.** In Chinese, Japanese, Korean, Thai, Lao,
   Khmer and Myanmar, each run of characters in a query, with any word or number under
   three characters written against it as in `3月`, must appear in the memory as written.
+  The memory may put a space between that word and the run, as in `3 月`.
 - **Nothing is extracted.** `add_memory` stores what it is given. Its `infer` argument
   is accepted and ignored, and `memory_status` reports `extracts_facts: false`.
 
