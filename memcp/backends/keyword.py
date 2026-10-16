@@ -12,13 +12,12 @@ The rules, and why each exists:
 - **Tokens are runs of letters, digits and combining marks, in any script**, after NFKC
   and lowercasing. A character of a script written without spaces between words (Han,
   kana, Thai, Lao, Khmer, Myanmar) or with particles attached to words (Hangul) is a
-  token of its own; a run of them in a query, with any word written against it as the
-  3 of 3月 is, must appear as written, within one run of the content. The previous
-  version split on whitespace
-  and asked whether each piece was a *substring* of the content, so `use?` failed
-  against `uses` on the punctuation, and the one-letter token `i` from "What linter
-  do I use?" matched every memory containing the letter i — giving unrelated
-  memories the same score as the right one.
+  token of its own; a run of them in a query, with any word under three characters
+  written against it as the 3 of 3月 is, must appear as written, within one run of the
+  content. The previous version split on whitespace and asked whether each piece was a
+  *substring* of the content, so `use?` failed against `uses` on the punctuation, and
+  the one-letter token `i` from "What linter do I use?" matched every memory containing
+  the letter i — giving unrelated memories the same score as the right one.
 - **Query words under three characters are ignored.** They carry no signal and they
   are what made every memory a hit. A per-character run counts whatever its length.
 - **Two words match when they are equal, or share a four-character prefix.** That is
@@ -121,17 +120,24 @@ def tokenize(text: str) -> list[str]:
 
 def _units(tokens: list[str]) -> list[list[str]]:
     """The query's scoring units: each word, and each per-character run together with the
-    words written against it, so the 3 of 3月 isn't dropped as a short word."""
+    short words written against it, so the 3 of 3月 isn't dropped under the floor. A
+    longer word, such as the Python of Python으로, stays a unit of its own."""
     units: list[list[str]] = []
     previous = _BOUNDARY
     for token in tokens:
         if token != _BOUNDARY:
-            if previous != _BOUNDARY and (_is_run_token(previous) or _is_run_token(token)):
+            if previous != _BOUNDARY and _joins(previous, token):
                 units[-1].append(token)
             else:
                 units.append([token])
         previous = token
     return units
+
+
+def _joins(left: str, right: str) -> bool:
+    if not (_is_run_token(left) or _is_run_token(right)):
+        return False
+    return all(_is_run_token(t) or len(t) < MIN_QUERY_TOKEN for t in (left, right))
 
 
 def _is_run(unit: list[str]) -> bool:

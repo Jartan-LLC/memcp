@@ -18,8 +18,8 @@ memcp.
   four-character prefix, so `linter` finds `linting`. A question phrased in words that
   don't appear in the memory finds nothing.
 - **Some scripts match as runs of characters.** In Chinese, Japanese, Korean, Thai, Lao,
-  Khmer and Myanmar, each run of characters in a query, with any number or word written
-  against it as in `3月`, must appear in the memory as written.
+  Khmer and Myanmar, each run of characters in a query, with any word or number under
+  three characters written against it as in `3月`, must appear in the memory as written.
 - **Nothing is extracted.** `add_memory` stores what it is given. Its `infer` argument
   is accepted and ignored, and `memory_status` reports `extracts_facts: false`.
 
