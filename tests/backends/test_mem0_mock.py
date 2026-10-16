@@ -77,7 +77,7 @@ async def test_add_reports_what_extraction_did_to_each_memory(backend):
 
 @respx.mock
 @pytest.mark.parametrize("event", ["PENDING", None], ids=["unknown", "null"])
-async def test_an_unrecognised_add_event_is_kept_as_an_add(backend, event, caplog):
+async def test_an_unrecognised_add_event_is_kept_as_an_add(backend, event):
     """Kept, so policy still fetches and space-checks the memory."""
     respx.post(f"{BASE}/memories").mock(
         return_value=httpx.Response(
@@ -100,6 +100,12 @@ async def test_a_2xx_body_that_isnt_json_is_a_backend_error(backend, body):
     with pytest.raises(MemoryAPIError) as failed:
         await backend.search(USER, "anything")
     assert failed.value.status == 502
+
+
+@respx.mock
+async def test_add_with_null_results_stores_nothing(backend):
+    respx.post(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={"results": None}))
+    assert await backend.add(USER, "nothing here", infer=True) == []
 
 
 @respx.mock

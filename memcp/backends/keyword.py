@@ -18,9 +18,9 @@ The rules, and why each exists:
   against `uses` on the punctuation, and the one-letter token `i` from "What linter
   do I use?" matched every memory containing the letter i — giving unrelated
   memories the same score as the right one.
-- **Query tokens under three characters are ignored.** They carry no signal and they
-  are what made every memory a hit.
-- **Two tokens match when they are equal, or share a four-character prefix.** That is
+- **Query words under three characters are ignored.** They carry no signal and they
+  are what made every memory a hit. A per-character run counts whatever its length.
+- **Two words match when they are equal, or share a four-character prefix.** That is
   what connects `linter` to `linting` without pretending to be a stemmer. Four is
   deliberately conservative: three would match `for` to `form` and `the` to `then`.
 - **An exact phrase hit scores 1.0.** Quoting the thing you stored should find it.
@@ -73,6 +73,8 @@ def _tokens_of(folded: str) -> list[str]:
             word.clear()
 
     for char in folded:
+        if unicodedata.category(char) == "Cf" and char != "\u200b":
+            continue  # joiners and soft hyphens sit inside words; a zero-width space ends one
         if _UNSPACED.match(char):
             flush()
             # Other characters of these blocks, such as U+30FB "・", join the run around them.
@@ -80,8 +82,11 @@ def _tokens_of(folded: str) -> list[str]:
                 tokens.append(char)
         elif char.isalnum():
             word.append(char)
-        elif word and _is_mark(char):
-            word.append(char)  # a mark belongs to the letter before it, and alone to none
+        elif _is_mark(char):
+            # A mark belongs to the letter before it; after a run character, or alone, it's
+            # dropped, so a variation selector doesn't split a run.
+            if word:
+                word.append(char)
         else:
             flush()
             if tokens and _is_run_token(tokens[-1]):

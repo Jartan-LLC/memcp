@@ -218,7 +218,7 @@ class Mem0Backend(MemoryBackend):
             logger.warning("Unexpected mem0 POST response shape: %s", type(result).__name__)
             return []
         added: list[AddResult] = []
-        for r in result.get("results", []):
+        for r in result.get("results") or []:
             mem0_event = str(r.get("event") or "ADD").upper()
             if mem0_event in _NO_CHANGE_EVENTS:
                 continue

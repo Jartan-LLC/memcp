@@ -162,6 +162,27 @@ class TestScriptsBeyondAscii:
         assert score("𠮷野家", "野家に行く") is None
         assert score("𠮷野家", "𠮷野家に行く") == 1.0
 
+    @pytest.mark.parametrize(
+        ("query", "content"),
+        [
+            ("میروم", "من می\u200cروم"),
+            ("می\u200cروم", "من میروم"),
+            ("preset", "a pre\u00adset value"),
+            ("葛飾", "葛\U000e0100飾区に住む"),
+        ],
+        ids=[
+            "persian zwnj in content",
+            "persian zwnj in query",
+            "soft hyphen",
+            "variation selector",
+        ],
+    )
+    def test_invisible_joiners_and_selectors_dont_split(self, query: str, content: str):
+        assert score(query, content) == 1.0
+
+    def test_a_zero_width_space_separates_words(self):
+        assert score("bar", "foo\u200bbar") == 1.0
+
     def test_the_fast_path_tokenizes_as_the_general_path_does(self):
         from memcp.backends.keyword import _tokenize_any
 
