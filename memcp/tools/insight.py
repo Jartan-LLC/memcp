@@ -1,4 +1,4 @@
-"""Tools that describe the server and a tenant's memories: status, history, entities."""
+"""Tools that describe the server and a space's memories: status, history, entities."""
 
 from __future__ import annotations
 

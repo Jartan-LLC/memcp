@@ -43,8 +43,8 @@ as a release deployment.
    cp .env.example .env && chmod 600 .env
    ```
 
-3. In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>` with a token from
-   `openssl rand -hex 32`.
+3. Write `keys.toml`, as in step 2 of
+   [Get memcp's compose files](docs/deployment.md#get-memcps-compose-files).
 4. Build and start it:
 
    ```bash

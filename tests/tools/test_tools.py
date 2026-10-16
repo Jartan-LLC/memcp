@@ -849,117 +849,122 @@ async def test_backend_error_on_entities(mcp_with_graph):
 
 async def test_tenant_isolation_through_tools(mcp_with_tools):
     """Two different tenants see completely separate memory pools via tools."""
-    from memcp.identity import reset_tenant, set_tenant
+    from memcp.identity import reset_key, set_key
+    from tests.keys import make_key
 
     mcp, _ = mcp_with_tools
 
     # Alice adds a memory
-    tok = set_tenant("alice")
+    tok = set_key(make_key("alice"))
     await mcp.call("add_memory", content="alice secret fact")
-    reset_tenant(tok)
+    reset_key(tok)
 
     # Bob adds a memory
-    tok = set_tenant("bob")
+    tok = set_key(make_key("bob"))
     await mcp.call("add_memory", content="bob secret fact")
-    reset_tenant(tok)
+    reset_key(tok)
 
     # Alice searches — should only see her own
-    tok = set_tenant("alice")
+    tok = set_key(make_key("alice"))
     result = await mcp.call("search_memory", query="secret fact")
     contents = [r["content"] for r in result["results"]]
     assert "alice secret fact" in contents
     assert "bob secret fact" not in contents
-    reset_tenant(tok)
+    reset_key(tok)
 
     # Bob searches — should only see his own
-    tok = set_tenant("bob")
+    tok = set_key(make_key("bob"))
     result = await mcp.call("search_memory", query="secret fact")
     contents = [r["content"] for r in result["results"]]
     assert "bob secret fact" in contents
     assert "alice secret fact" not in contents
-    reset_tenant(tok)
+    reset_key(tok)
 
 
 async def test_tenant_isolation_list(mcp_with_tools):
     """list_memories respects tenant boundaries."""
-    from memcp.identity import reset_tenant, set_tenant
+    from memcp.identity import reset_key, set_key
+    from tests.keys import make_key
 
     mcp, _ = mcp_with_tools
 
-    tok = set_tenant("user_x")
+    tok = set_key(make_key("user_x"))
     await mcp.call("add_memory", content="x data")
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_tenant("user_y")
+    tok = set_key(make_key("user_y"))
     await mcp.call("add_memory", content="y data")
     listing = await mcp.call("list_memories")
     contents = [m["content"] for m in listing["memories"]]
     assert "y data" in contents
     assert "x data" not in contents
-    reset_tenant(tok)
+    reset_key(tok)
 
 
 async def test_tenant_isolation_delete(mcp_with_tools):
     """One tenant cannot delete another's memories."""
-    from memcp.identity import reset_tenant, set_tenant
+    from memcp.identity import reset_key, set_key
+    from tests.keys import make_key
 
     mcp, _ = mcp_with_tools
 
-    tok = set_tenant("owner")
+    tok = set_key(make_key("owner"))
     added = await mcp.call("add_memory", content="owned data")
     memory_id = added["results"][0]["id"]
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_tenant("attacker")
+    tok = set_key(make_key("attacker"))
     result = await mcp.call("delete_memory", memory_id=memory_id)
     assert result["error"]["code"] == "not_found"
-    reset_tenant(tok)
+    reset_key(tok)
 
     # Verify still exists for owner
-    tok = set_tenant("owner")
+    tok = set_key(make_key("owner"))
     result = await mcp.call("get_memory", memory_id=memory_id)
     assert result["content"] == "owned data"
-    reset_tenant(tok)
+    reset_key(tok)
 
 
 async def test_tenant_isolation_update(mcp_with_tools):
     """One tenant cannot update another's memories."""
-    from memcp.identity import reset_tenant, set_tenant
+    from memcp.identity import reset_key, set_key
+    from tests.keys import make_key
 
     mcp, _ = mcp_with_tools
 
-    tok = set_tenant("owner")
+    tok = set_key(make_key("owner"))
     added = await mcp.call("add_memory", content="original")
     memory_id = added["results"][0]["id"]
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_tenant("attacker")
+    tok = set_key(make_key("attacker"))
     result = await mcp.call("update_memory", memory_id=memory_id, content="hijacked")
     assert result["error"]["code"] == "not_found"
-    reset_tenant(tok)
+    reset_key(tok)
 
     # Verify unchanged for owner
-    tok = set_tenant("owner")
+    tok = set_key(make_key("owner"))
     result = await mcp.call("get_memory", memory_id=memory_id)
     assert result["content"] == "original"
-    reset_tenant(tok)
+    reset_key(tok)
 
 
 async def test_tenant_isolation_history(mcp_with_tools):
     """One tenant cannot read another's memory history."""
-    from memcp.identity import reset_tenant, set_tenant
+    from memcp.identity import reset_key, set_key
+    from tests.keys import make_key
 
     mcp, _ = mcp_with_tools
 
-    tok = set_tenant("owner")
+    tok = set_key(make_key("owner"))
     added = await mcp.call("add_memory", content="private data")
     memory_id = added["results"][0]["id"]
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_tenant("attacker")
+    tok = set_key(make_key("attacker"))
     result = await mcp.call("memory_history", memory_id=memory_id)
     assert result["error"]["code"] == "not_found"
-    reset_tenant(tok)
+    reset_key(tok)
 
 
 # ---------------------------------------------------------------------------
@@ -1347,18 +1352,19 @@ async def test_import_memories_refuses_user_id_in_an_entry_scope(mcp_with_tools)
 
 
 async def test_import_memories_tenant_isolation(mcp_with_tools):
-    from memcp.identity import reset_tenant, set_tenant
+    from memcp.identity import reset_key, set_key
+    from tests.keys import make_key
 
     mcp, _ = mcp_with_tools
 
-    tok = set_tenant("importer")
+    tok = set_key(make_key("importer"))
     await mcp.call("import_memories", memories=[{"content": "imported data"}])
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_tenant("other_user")
+    tok = set_key(make_key("other_user"))
     search = await mcp.call("search_memory", query="imported data")
     assert len(search["results"]) == 0
-    reset_tenant(tok)
+    reset_key(tok)
 
 
 # ---------------------------------------------------------------------------
@@ -1397,21 +1403,22 @@ async def test_export_memories_empty(mcp_with_tools):
 
 async def test_export_memories_tenant_isolation(mcp_with_tools):
     """Export only returns the current tenant's memories."""
-    from memcp.identity import reset_tenant, set_tenant
+    from memcp.identity import reset_key, set_key
+    from tests.keys import make_key
 
     mcp, _ = mcp_with_tools
 
-    tok = set_tenant("exporter")
+    tok = set_key(make_key("exporter"))
     await mcp.call("add_memory", content="my data")
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_tenant("other_user")
+    tok = set_key(make_key("other_user"))
     await mcp.call("add_memory", content="their data")
     result = await mcp.call("export_memories")
     contents = {m["content"] for m in result["memories"]}
     assert "their data" in contents
     assert "my data" not in contents
-    reset_tenant(tok)
+    reset_key(tok)
 
 
 async def test_export_memories_backend_error(mcp_with_tools):

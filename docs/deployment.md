@@ -33,14 +33,17 @@ memcp.
      chmod 600 .env
    ```
 
-2. Generate a token:
+2. Generate a token, and write `keys.toml` with a key that holds `writer` on a space,
+   both named after your login:
 
    ```bash
-   openssl rand -hex 32
+   TOKEN=$(openssl rand -hex 32) && echo "$TOKEN" &&
+     printf '[[keys]]\nname = "%s"\nsecrets = ["sha256:%s"]\ngrants = [{ space = "%s", relation = "writer" }]\n' \
+       "$USER" "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)" "$USER" > keys.toml
    ```
 
-3. In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>`. `<your-name>` is the tenant
-   your memories belong to; give each person or team its own token and name.
+   Keep the token that printed: your clients send it, and `keys.toml` holds only its
+   hash. On macOS, use `shasum -a 256` in place of `sha256sum`.
 
 Then configure the backend you chose.
 
@@ -131,7 +134,7 @@ survives a restart.
 |---|---|
 | Stop, keeping memories | `docker compose down` |
 | Stop and delete memories | `docker compose down --volumes`; with mem0, the memories are in mem0's database: `make clean` in `mem0/server` deletes them, and mem0's admin account with them |
-| Replace a token | Edit `MEMCP_AUTH_TOKENS` in `.env`, then `docker compose up -d --wait` |
+| Add, change or remove a key | Edit `keys.toml` ([Manage keys](#manage-keys)), then `docker compose restart memcp` |
 | Change compose settings | Put them in `docker-compose.override.yml`, which an upgrade doesn't overwrite. Keep one `memcp` entry there: merge each snippet into it, list every network in its `networks:`, and declare each network once under the top-level `networks:` |
 
 ### Upgrade a Compose deployment
@@ -155,6 +158,23 @@ survives a restart.
    docker compose pull && docker compose up -d --wait
    ```
 
+### Upgrade from 0.1.x
+
+`keys.toml` replaces 0.1.x's `MEMCP_AUTH_TOKENS`, and memcp refuses to start while that
+is set.
+
+1. Download the current compose file, as in
+   [Upgrade a Compose deployment](#upgrade-a-compose-deployment).
+2. For each `<token>:<user_id>` in `MEMCP_AUTH_TOKENS`, add a key to `keys.toml` with the
+   token's hash as its secret and the `user_id` as its space
+   ([Manage keys](#manage-keys)). Clients keep their tokens.
+3. Delete the `MEMCP_AUTH_TOKENS` line from `.env`.
+4. Pull and restart:
+
+   ```bash
+   docker compose pull && docker compose up -d --wait
+   ```
+
 ### Pin a release
 
 The compose file runs the latest release. To stay on one, name it in
@@ -167,6 +187,36 @@ services:
   memcp:
     image: ghcr.io/jartan-llc/memcp:<version>
 ```
+
+## Manage keys
+
+Each key in `keys.toml` has a name, the hashes of its tokens and one grant: a space and
+a relation, `reader` or `writer`. [reference.md](reference.md#keys-file) has every rule.
+
+```toml
+[[keys]]
+name = "laptop"
+secrets = ["sha256:<64 hex digits>"]
+grants = [{ space = "notes", relation = "writer" }]
+```
+
+Hash a token for `secrets`:
+
+```bash
+printf 'sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
+```
+
+| Task | Change in `keys.toml` |
+|---|---|
+| Add a client | Add a `[[keys]]` block with a new name and a new token's hash |
+| Let a client only read | Set its grant's `relation` to `reader` |
+| Share a space | Grant the same `space` to each client's key |
+| Rotate a token | Add the new token's hash to the key's `secrets`, move clients to the new token, then remove the old hash |
+| Revoke a client | Remove its hash, or its whole key |
+
+Restart memcp after each change: `docker compose restart memcp`. Don't give a removed
+key's name to a new key: memories record the name of the key that wrote them. memcp reads
+the file as its own user, so leave it readable (mode 644); it holds no token.
 
 ## Put memcp behind a reverse proxy
 
@@ -205,9 +255,11 @@ comma-separated.
 ## Security checklist
 
 - memcp is published on `127.0.0.1` only; anything wider is your change to make.
-- The compose file won't start without `MEMCP_AUTH_TOKENS`, and the server refuses to
-  run unauthenticated on any interface another machine can reach.
-- `.env` holds the tokens: keep it at mode 600 and out of version control.
+- The compose file won't start without `keys.toml`, and the server refuses to run
+  unauthenticated on any interface another machine can reach.
+- Give each client its own key, with `reader` where it only reads.
+- `keys.toml` holds only token hashes and can be version-controlled. `.env` holds the
+  mem0 API key: keep it at mode 600 and out of version control.
 - Only the `127.0.0.1` and `localhost` Host names are admitted unless
   `MEMCP_ALLOWED_HOSTS` is set; a value replaces them.
 - With mem0, only memcp should reach mem0's API, dashboard and Postgres. A host firewall
@@ -223,5 +275,6 @@ pipx install memcp-server
 MEMCP_BACKEND=sqlite MEMCP_SQLITE_PATH="$HOME/.memcp/memcp.sqlite3" MEMCP_HOST=127.0.0.1 memcp
 ```
 
-Clients connect to `http://127.0.0.1:8080/mcp` with no token. [reference.md](reference.md)
-lists every variable.
+Clients connect to `http://127.0.0.1:8080/mcp` with no token. To require tokens, set
+`MEMCP_KEYS_FILE` to a [keys file](#manage-keys). [reference.md](reference.md) lists every
+variable.

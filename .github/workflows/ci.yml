@@ -210,11 +210,14 @@ jobs:
 
       - name: Verify container starts and health endpoint responds
         run: |
+          printf '[[keys]]\nname = "ci"\nsecrets = ["sha256:%s"]\ngrants = [{ space = "ci-user", relation = "writer" }]\n' \
+            "$(printf %s ci-token | sha256sum | cut -d' ' -f1)" > ci-keys.toml
           docker run -d --name memcp-ci \
             -e MEMCP_BACKEND=mem0 \
             -e MEM0_API_BASE=http://localhost:9999 \
             -e MEM0_API_KEY=fake \
-            -e MEMCP_AUTH_TOKENS=ci-token:ci-user \
+            -e MEMCP_KEYS_FILE=/etc/memcp/keys.toml \
+            -v "$PWD/ci-keys.toml:/etc/memcp/keys.toml:ro" \
             -p 8080:8080 \
             memcp:ci
           STATUS=""
@@ -236,14 +239,18 @@ jobs:
       - name: docker-compose.yml comes up healthy and checks Host headers
         run: |
           cp .env.example .env
-          sed -i 's/^MEMCP_AUTH_TOKENS=.*/MEMCP_AUTH_TOKENS=ci-token:ci-user/' .env
-          for required in MEMCP_BACKEND MEMCP_AUTH_TOKENS; do
-            grep -v "^$required=" .env > env.partial
-            if docker compose --env-file env.partial config -q 2>/dev/null; then
-              echo "docker-compose.yml accepted a missing $required"; exit 1
-            fi
-          done
-          docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --wait
+          grep -v "^MEMCP_BACKEND=" .env > env.partial
+          if docker compose --env-file env.partial config -q 2>/dev/null; then
+            echo "docker-compose.yml accepted a missing MEMCP_BACKEND"; exit 1
+          fi
+          compose() { docker compose -f docker-compose.yml -f docker-compose.build.yml "$@"; }
+          if out=$(compose up -d --build --wait 2>&1); then
+            echo "docker-compose.yml started without keys.toml"; exit 1
+          fi
+          grep -q "bind source path does not exist" <<<"$out" || { echo "$out"; exit 1; }
+          printf '[[keys]]\nname = "ci"\nsecrets = ["sha256:%s"]\ngrants = [{ space = "ci-user", relation = "writer" }]\n' \
+            "$(printf %s ci-token | sha256sum | cut -d' ' -f1)" > keys.toml
+          compose up -d --build --wait
           init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
           mcp() {
             curl -s -o /dev/null -w '%{http_code}' -H "Host: $1" -H 'Authorization: Bearer ci-token' \

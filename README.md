@@ -22,11 +22,13 @@ mkdir memcp && cd memcp &&
   curl -fsSLO https://raw.githubusercontent.com/Jartan-LLC/memcp/main/docker-compose.yml &&
   curl -fsSL -o .env https://raw.githubusercontent.com/Jartan-LLC/memcp/main/.env.example &&
   chmod 600 .env &&
-  openssl rand -hex 32
+  TOKEN=$(openssl rand -hex 32) && echo "$TOKEN" &&
+  printf '[[keys]]\nname = "%s"\nsecrets = ["sha256:%s"]\ngrants = [{ space = "%s", relation = "writer" }]\n' \
+    "$USER" "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)" "$USER" > keys.toml
 ```
 
-In `.env`, set `MEMCP_AUTH_TOKENS=<token>:<your-name>` with the token that printed, then
-start it:
+Keep the token that printed; `keys.toml` holds only its hash (on macOS, use
+`shasum -a 256` in place of `sha256sum`). Then start it:
 
 ```bash
 docker compose up -d --wait
@@ -42,12 +44,12 @@ MEMCP_BACKEND=sqlite MEMCP_SQLITE_PATH="$HOME/.memcp/memcp.sqlite3" MEMCP_HOST=1
 ```
 
 Where the system Python refuses `pip install` (an "externally managed" environment),
-use `pipx install memcp-server`. With no `MEMCP_AUTH_TOKENS`, memcp serves one tenant on
+use `pipx install memcp-server`. With no `MEMCP_KEYS_FILE`, memcp serves one key on
 loopback and clients connect without a token.
 
 ## Connect from Claude Code
 
-With your token (the part of `MEMCP_AUTH_TOKENS` before the colon):
+With the token you generated:
 
 ```bash
 claude mcp add --scope user --transport http memcp http://localhost:8080/mcp \
@@ -55,7 +57,7 @@ claude mcp add --scope user --transport http memcp http://localhost:8080/mcp \
 ```
 
 Behind a reverse proxy, the URL is `https://<your-host>/mcp`. A server started with
-`memcp` on loopback and no `MEMCP_AUTH_TOKENS` takes no `--header`.
+`memcp` on loopback and no `MEMCP_KEYS_FILE` takes no `--header`.
 
 ## Try it
 
@@ -77,14 +79,14 @@ find it. `mem0` is the backend that matches on meaning.
 - Durable, keyless local storage (`sqlite`), or mem0 on pgvector for semantic search and a knowledge graph
 - Add, search, list, update and delete memories over MCP — 12 tools, frozen surface
 - Flat scope-based filtering (`agent_id`, `run_id`)
-- Per-tenant bearer token auth, never defaulted
+- Bearer-token keys, each read-only or read-write on one space, stored as hashes
 - Stateless HTTP transport — safe behind reverse proxies
 
 ## Documentation
 
 | Document | What it covers |
 |---|---|
-| [deployment.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md) | Running memcp with Docker Compose — backends, tokens, reverse proxies, and running the server without Docker |
+| [deployment.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md) | Running memcp with Docker Compose — backends, keys, reverse proxies, and running the server without Docker |
 | [reference.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/reference.md) | Environment variables, the 12 MCP tools, and known limitations per backend |
 | [architecture.md](https://github.com/Jartan-LLC/memcp/blob/main/docs/architecture.md) | How memcp is divided into packages, how it keeps spaces apart, and what a backend must guarantee |
 | [CONTRIBUTING.md](https://github.com/Jartan-LLC/memcp/blob/main/CONTRIBUTING.md) | Working on memcp itself — setup and the check loop |

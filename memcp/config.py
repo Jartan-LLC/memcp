@@ -38,21 +38,16 @@ class Config(BaseSettings):
     # sqlite backend config
     memcp_sqlite_path: str = Field(default="memcp.sqlite3", alias="MEMCP_SQLITE_PATH")
 
+    # Path to the keys file (http/auth.load_keys). Unset means dev mode: one local key.
+    memcp_keys_file: str | None = Field(default=None, alias="MEMCP_KEYS_FILE")
+
+    # Read only to refuse them: the keys file replaced both.
     memcp_auth_tokens: str | None = Field(default=None, alias="MEMCP_AUTH_TOKENS")
-
-    @field_validator("memcp_auth_tokens", mode="before")
-    @classmethod
-    def _empty_tokens_is_none(cls, v: str | None) -> str | None:
-        return v if v else None
-
-    # Optional token:seat mapping, layered onto MEMCP_AUTH_TOKENS so two tokens can
-    # share a tenant with distinct seats without touching that variable's own
-    # 'token:user_id' parsing — see StaticResolver.from_env.
     memcp_auth_seats: str | None = Field(default=None, alias="MEMCP_AUTH_SEATS")
 
-    @field_validator("memcp_auth_seats", mode="before")
+    @field_validator("memcp_keys_file", "memcp_auth_tokens", "memcp_auth_seats", mode="before")
     @classmethod
-    def _empty_seats_is_none(cls, v: str | None) -> str | None:
+    def _empty_is_none(cls, v: str | None) -> str | None:
         return v if v else None
 
     host: str = Field(default="0.0.0.0", alias="MEMCP_HOST")
@@ -98,25 +93,43 @@ class Config(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _refuse_unauthenticated_exposure(self) -> Config:
-        """Refuse the one combination that has no safe reading: no token, public bind.
+    def _refuse_replaced_variables(self) -> Config:
+        """Refuse the token variables the keys file replaced, rather than ignore them.
 
-        memcp resolves tenant identity *from* the bearer token, so a server with no
-        token configured has one tenant called `default_user` and no gate in front of
-        it. On loopback that is a legitimate single-user dev server. On any other
-        interface it is an open memory store on the network — SEC-2026-0059, and the
-        shape SEC-2026-0038 already has in production.
+        Ignoring them would serve a 0.1.x deployment on loopback unauthenticated, as the
+        key 'local'. The value is never quoted: it holds tokens.
+        """
+        for name, value in (
+            ("MEMCP_AUTH_TOKENS", self.memcp_auth_tokens),
+            ("MEMCP_AUTH_SEATS", self.memcp_auth_seats),
+        ):
+            if value:
+                raise ValueError(
+                    f"Refusing to start: {name} is set, and MEMCP_KEYS_FILE replaces it.\n"
+                    f"  Write a keys file, set MEMCP_KEYS_FILE to its path and unset {name}: "
+                    "https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md"
+                    "#upgrade-from-01x"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _refuse_unauthenticated_exposure(self) -> Config:
+        """Refuse the one combination that has no safe reading: no keys file, public bind.
+
+        Without a keys file every request is served as the one local key, with no gate
+        in front of it. On loopback that is a legitimate single-user dev server. On any
+        other interface it is an open memory store on the network — SEC-2026-0059.
 
         The default bind is deliberately left at 0.0.0.0: a container that listens on
         loopback publishes nothing, so flipping the default would break every existing
-        deployment to fix a case that setting a token also fixes.
+        deployment to fix a case that a keys file also fixes.
         """
-        if not self.memcp_auth_tokens and not is_loopback(self.host):
+        if not self.memcp_keys_file and not is_loopback(self.host):
             raise ValueError(
                 f"Refusing to start: MEMCP_HOST={self.host} is reachable from other "
-                "machines and MEMCP_AUTH_TOKENS is unset, so every request would be "
-                "served as one unauthenticated tenant.\n"
-                "  Set MEMCP_AUTH_TOKENS=<token>:<user_id> to serve it authenticated, "
+                "machines and MEMCP_KEYS_FILE is unset, so every request would be "
+                "served unauthenticated as the key 'local'.\n"
+                "  Set MEMCP_KEYS_FILE to a keys file to serve it authenticated, "
                 "or MEMCP_HOST=127.0.0.1 to keep it on this machine."
             )
         return self
