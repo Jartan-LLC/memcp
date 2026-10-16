@@ -14,8 +14,15 @@ import pytest
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.backends.keyword import score, tokenize
 
+from .keyword_cases import CASES, MISSES
+
 STORED = "Prefers Python 3.12 and uses ruff for linting"
 QUESTION = "What linter do I use?"
+
+
+def _outranks(query: str, right: str, wrong: str) -> bool:
+    found = score(query, right)
+    return found is not None and found > (score(query, wrong) or 0.0)
 
 
 class TestTheReadmeWalkthrough:
@@ -155,15 +162,19 @@ class TestScriptsBeyondAscii:
         assert score("京大", "東京、大阪に行く") is None
 
     @pytest.mark.parametrize(
-        ("query", "content"),
+        ("query", "right", "wrong"),
         [
-            ("3月", "5月の会議"),
-            ("3月", "5月3日の会議"),
-            ("3時", "13時に会う"),
-            ("10時", "3時に会う"),
-            ("第3回会議", "第5回会議"),
-            ("A社の件", "B社の件"),
-            ("3월", "5월 회의"),
+            ("3月", "3月の会議", "5月の会議"),
+            ("3月", "3月の会議", "5月3日の会議"),
+            ("3時", "3時に会う", "13時に会う"),
+            ("10時", "10時に会う", "3時に会う"),
+            ("第3回会議", "第3回会議", "第5回会議"),
+            ("A社の件", "A社の件", "B社の件"),
+            ("3월", "3월 회의", "5월 회의"),
+            ("2024年3月の売上", "2024年3月の売上", "2024年5月の売上"),
+            ("1-2月", "1-2月の予定", "3-2月の予定"),
+            ("A-B社", "A-B社との契約", "C-B社との契約"),
+            ("in 東京", "東京で会議", "大阪で会議"),
         ],
         ids=[
             "month",
@@ -173,15 +184,16 @@ class TestScriptsBeyondAscii:
             "ordinal",
             "latin letter",
             "korean",
+            "date",
+            "months",
+            "companies",
+            "english word",
         ],
     )
-    def test_a_short_word_written_against_a_run_belongs_to_it(self, query: str, content: str):
-        assert score(query, content) is None
-        assert score(query, query + "の件") == 1.0
-
-    def test_a_long_word_written_against_a_run_counts_on_its_own(self):
-        assert score("2024年3月の売上", "2024年3月の売上") == 1.0
-        assert score("2024年3月の売上", "2024年5月の売上") == 0.5
+    def test_a_short_word_in_a_query_with_a_run_tells_memories_apart(
+        self, query: str, right: str, wrong: str
+    ):
+        assert _outranks(query, right, wrong)
 
     @pytest.mark.parametrize(
         ("query", "content"),
@@ -212,19 +224,8 @@ class TestScriptsBeyondAscii:
     def test_a_memory_may_space_a_word_off_its_run(self, query: str, content: str):
         assert score(query, content) == 1.0
 
-    def test_a_query_word_spaced_off_a_run_counts_on_its_own(self):
-        assert score("in 東京", "東京で会議") == 1.0
-
-    @pytest.mark.parametrize(
-        ("query", "wrong", "right"),
-        [("1-2月", "3-2月の予定", "1-2月の予定"), ("A-B社", "C-B社との契約", "A-B社との契約")],
-        ids=["months", "companies"],
-    )
-    def test_short_words_chained_to_a_run_all_belong_to_it(
-        self, query: str, wrong: str, right: str
-    ):
-        assert score(query, wrong) is None
-        assert score(query, right) == 1.0
+    def test_a_lone_character_in_a_query_matches_inside_a_run(self):
+        assert _outranks("猫 好き", "猫が好きだ", "犬が好きだ")
 
     def test_an_iteration_mark_belongs_to_its_run(self):
         assert score("佐々木", "木村と佐藤") is None
@@ -232,8 +233,7 @@ class TestScriptsBeyondAscii:
         assert tokenize("二\u3007\u3007四年") == ["二", "\u3007", "\u3007", "四", "年"]
 
     def test_han_beyond_the_basic_plane_belongs_to_its_run(self):
-        assert score("𠮷野家", "野家に行く") is None
-        assert score("𠮷野家", "𠮷野家に行く") == 1.0
+        assert _outranks("𠮷野家", "𠮷野家に行く", "野家に行く")
         assert tokenize("𠮷𩸽") == ["𠮷", "𩸽"]
 
     @pytest.mark.parametrize(
@@ -288,3 +288,19 @@ async def test_search_returns_only_real_hits():
     results = await backend.search("alice", QUESTION)
     assert [m.content for m in results] == [STORED]
     await backend.close()
+
+
+@pytest.mark.parametrize(
+    ("query", "right", "wrong"),
+    [
+        pytest.param(
+            *case,
+            marks=[pytest.mark.xfail(strict=True, reason=MISSES[case[:2]])]
+            if case[:2] in MISSES
+            else [],
+        )
+        for case in CASES
+    ],
+)
+def test_the_right_memory_outranks_the_near_miss(query: str, right: str, wrong: str):
+    assert _outranks(query, right, wrong)

@@ -10,17 +10,24 @@ here knows that "linter" and "static analysis" are related — only that "linter
 The rules, and why each exists:
 
 - **Tokens are runs of letters, digits and combining marks, in any script**, after NFKC
-  and lowercasing. A character of a script written without spaces between words (Han,
-  kana, Thai, Lao, Khmer, Myanmar) or with particles attached to words (Hangul) is a
-  token of its own; a run of them in a query, with any word under three characters
-  written against it as the 3 of 3月 is, must appear as written, within one run of the
-  content, where a space between such a word and the run doesn't count. The previous
-  version split on whitespace and asked whether each piece was a *substring* of the
-  content, so `use?` failed against `uses` on the punctuation, and the one-letter token
-  `i` from "What linter do I use?" matched every memory containing the letter i —
-  giving unrelated memories the same score as the right one.
-- **Query words under three characters are ignored.** They carry no signal and they
-  are what made every memory a hit. A per-character run counts whatever its length.
+  and lowercasing. The previous version split on whitespace and asked whether each
+  piece was a *substring* of the content, so `use?` failed against `uses` on the
+  punctuation, and the one-letter token `i` from "What linter do I use?" matched every
+  memory containing the letter i — giving unrelated memories the same score as the
+  right one.
+- **Scripts written without spaces between words match by character pairs.** In Han,
+  kana, Thai, Lao, Khmer and Myanmar, and in Hangul, which attaches particles to its
+  words, each character is a token. A run of them in a query scores the share of its
+  overlapping pairs that the content holds; a lone character counts as itself. Lucene's
+  CJK bigram filter pairs Han, kana and Hangul the same way, while Lucene splits Thai
+  with a dictionary, so pairing the Southeast Asian scripts is this module's choice. A
+  word written against a run pairs with the character beside it, so `3月` ranks
+  `3月の会議` above `5月3日の会議`, and a memory may put a space between them. Finding
+  the words themselves takes a dictionary, and dictionary segmentation splits a short
+  query differently from a long memory. Pairs need neither.
+- **Query words under three characters are ignored**, unless the query has such a run.
+  They carry no signal and they are what made every memory a hit; next to a run, as the
+  `AI` of `AIの使い方` or the `3` of `3月`, a short word is what tells memories apart.
 - **Two words match when they are equal, or share a four-character prefix.** That is
   what connects `linter` to `linting` without pretending to be a stemmer. Four is
   deliberately conservative: three would match `for` to `form` and `the` to `then`.
@@ -33,6 +40,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from itertools import pairwise
 
 MIN_QUERY_TOKEN = 3
 SHARED_PREFIX = 4
@@ -45,8 +53,8 @@ _UNSPACED = re.compile(
     r"\uf900-\ufaff\U00020000-\U0003ffff]"
 )
 _ASCII_TOKEN = re.compile(r"[a-z0-9]+")
-# Never a token: marks a space or punctuation next to a per-character run, so a query run
-# can't match across it. A word with no boundary between it and a run is written against it.
+# Never a token: marks a space or punctuation next to a per-character run, so the runs on
+# either side of it stay apart and no pair spans it.
 _BOUNDARY = " "
 
 
@@ -119,41 +127,36 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
-def _units(tokens: list[str]) -> list[list[str]]:
-    """The query's scoring units: each word, and each per-character run together with the
-    short words chained to it, so the 3 of 3月 and the 1-2 of 1-2月 aren't dropped under
-    the floor. A longer word, such as the Python of Python으로, stays a unit of its own."""
-    units: list[list[str]] = []
+def _words_and_runs(tokens: list[str]) -> tuple[list[str], list[list[str]]]:
+    """The words, and the per-character runs with any word written against them, so 3月
+    pairs its 3 with its 月 and doesn't match the 3 and the 月 of 5月3日."""
+    words = [token for token in tokens if token != _BOUNDARY and not _is_run_token(token)]
+    groups: list[list[str]] = []
     previous = _BOUNDARY
     for token in tokens:
         if token != _BOUNDARY:
-            if previous != _BOUNDARY and _joins(previous, token):
-                units[-1].append(token)
+            if previous != _BOUNDARY and (_is_run_token(previous) or _is_run_token(token)):
+                groups[-1].append(token)
             else:
-                units.append([token])
+                groups.append([token])
         previous = token
-    return units
+    return words, [group for group in groups if any(map(_is_run_token, group))]
 
 
-def _joins(left: str, right: str) -> bool:
-    # Short words chain to each other too; a chain with no run in it stays under the floor.
-    return all(_is_run_token(t) or len(t) < MIN_QUERY_TOKEN for t in (left, right))
-
-
-def _is_run(unit: list[str]) -> bool:
-    return any(_is_run_token(token) for token in unit)
-
-
-def _runs_of(tokens: list[str]) -> list[str]:
-    """Content tokens for matching a run unit: a memory may space a word off the run it's
-    written against, as in "AI の使い方", so only a boundary between two runs is kept."""
-    if _BOUNDARY not in tokens:
-        return tokens
+def _unspaced(tokens: list[str]) -> list[str]:
+    """Content tokens without the boundaries between a word and a run: a memory may space
+    a word off the run it's written against, as in "3 月"; the query's spacing counts."""
     return [
         token
         for i, token in enumerate(tokens)
         if token != _BOUNDARY or (_is_run_token(tokens[i - 1]) and _is_run_token(tokens[i + 1]))
     ]
+
+
+def _pairs(run: list[str]) -> list[str]:
+    if len(run) == 1:
+        return run
+    return [a + b for a, b in pairwise(run)]
 
 
 def _matches(query_token: str, content_tokens: set[str]) -> bool:
@@ -196,23 +199,22 @@ def score(query: str, content: str) -> float | None:
     if _is_phrase_of(query_tokens, content_tokens):
         return 1.0
 
-    # A run counts whatever its length and must appear as written; a word counts from
-    # MIN_QUERY_TOKEN characters and may match by prefix.
-    scored = [u for u in _units(query_tokens) if _is_run(u) or len(u[0]) >= MIN_QUERY_TOKEN]
-    if not scored:
+    # Each word and each run is one unit. A word scores 1 or 0, and a run the share of
+    # its pairs the content holds, so a near-miss run scores below the right one.
+    query_words, query_runs = _words_and_runs(query_tokens)
+    floor = 1 if query_runs else MIN_QUERY_TOKEN
+    counted = [word for word in query_words if len(word) >= floor]
+    if not counted and not query_runs:
         return None
 
-    unique_content = set(content_tokens)
-    run_content = _runs_of(content_tokens)
-    matched = sum(
-        1
-        for unit in scored
-        if (
-            _is_phrase_of(unit, run_content)
-            if _is_run(unit)
-            else _matches(unit[0], unique_content)
-        )
-    )
-    if matched == 0:
+    content_words, content_runs = _words_and_runs(_unspaced(content_tokens))
+    unique_words = set(content_words)
+    content_pairs = {pair for run in content_runs for pair in _pairs(run)}
+    content_pairs.update(token for run in content_runs for token in run if _is_run_token(token))
+    credit = sum(1.0 for word in counted if _matches(word, unique_words))
+    for run in query_runs:
+        pairs = _pairs(run)
+        credit += sum(pair in content_pairs for pair in pairs) / len(pairs)
+    if credit == 0:
         return None
-    return matched / len(scored)
+    return credit / (len(counted) + len(query_runs))
