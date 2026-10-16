@@ -24,6 +24,9 @@ class JsonFormatter(logging.Formatter):
             "key": getattr(record, "key", None),
             "space": getattr(record, "space", None),
         }
+        audit = getattr(record, "audit", None)
+        if audit is not None:
+            payload["audit"] = audit
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str)
@@ -97,6 +100,12 @@ def setup_logging(*, level: str = "INFO", fmt: str = "json") -> None:
             "loggers": {
                 "memcp": {
                     "level": level,
+                    "handlers": ["stdout"],
+                    "propagate": False,
+                },
+                # The audit record is a security record: MEMCP_LOG_LEVEL doesn't silence it.
+                "memcp.audit": {
+                    "level": "INFO",
                     "handlers": ["stdout"],
                     "propagate": False,
                 },
