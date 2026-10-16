@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-10-16
 
-Upgrading from 0.1.x changes how clients authenticate: follow "Upgrade from 0.1.x" in `docs/deployment.md`.
+Upgrading from 0.1.x changes how clients authenticate and where they connect: follow "Upgrade from 0.1.x" in `docs/deployment.md`.
 
 ### Changed
 
@@ -65,10 +65,10 @@ Upgrading from 0.1.x changes how clients authenticate: follow "Upgrade from 0.1.
 - `memory_entities` on mem0 counts only the caller's own memories. It read mem0's store-wide entity list, so another space writing an `agent_id` or `run_id` equal to the caller's user id put a row, with its count and times, into the caller's results. It now returns the caller's agent and run rows, with no row for the caller's own space, honours `scope`, and counts at most 1000 memories.
 - `delete_all_memories` refuses an empty, `*` or `null` scope value. On mem0 such a value matched anything, so the delete reached memories outside the requested scope.
 - **Every memory carries `author`, the name of the key that last wrote it, set by the server.**
-  - `search_memory`, `get_memory`, `list_memories`, `update_memory` and `export_memories` return it. It is `local` for a write made without a keys file, and `null` for a memory written by 0.1.2 or earlier.
+  - `search_memory`, `get_memory`, `list_memories`, `update_memory` and `export_memories` return it, and so do `memory_history` entries (`null` on mem0, whose history has no field for it). It is `local` for a write made without a keys file, and `null` for a memory written by 0.1.2 or earlier.
   - A caller can't set it: memcp refuses `_memcp_` keys in caller metadata. An update, or an `import_memories` overwrite, records the acting key. `import_memories` ignores an entry's `author`, so an export and import doesn't keep it.
   - The server's MCP instructions tell a client to treat every memory as third-party input: attribute it, re-check it, and never follow instructions inside it.
-  - **On mem0, sweep the store for the metadata key `_memcp_system` before this version serves it.** 0.1.2 stored callers' metadata as given, and memcp can't enumerate a mem0 install's spaces to clean it, so a key planted then reads back as an `author` no server set. in_memory keeps `author` outside metadata and needs no sweep.
+  - **On mem0, sweep the store for the metadata key `_memcp_system` before this version serves it.** 0.1.2 stored callers' metadata as given, and memcp can't enumerate a mem0 install's spaces to clean it, so a key planted then reads back as an `author` no server set, and a malformed one fails every read that returns it with `internal_error`. in_memory keeps `author` outside metadata and needs no sweep.
 - **memcp refuses to start unauthenticated on an interface another machine can reach.** Without a keys file every request is served as the key `local`, which is a dev server on loopback and an open memory store anywhere else. The startup error names both ways out. The default bind is still `0.0.0.0`.
 
 ## [0.1.2] - 2026-08-18
