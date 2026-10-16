@@ -17,7 +17,7 @@ from memcp.backends import MemoryBackend
 from memcp.backends.base import RETRIEVAL_KINDS, Retrieval
 from memcp.backends.capabilities import ALL_CAPABILITIES
 from memcp.policy.access import require
-from memcp.policy.audit import AuditEntry, audited
+from memcp.policy.audit import audited
 from memcp.policy.metadata import (
     as_patch,
     check_metadata_size,
@@ -75,6 +75,14 @@ def _not_found() -> Iterator[None]:
         if e.status in (404, 410):
             raise PolicyError("not_found", NOT_FOUND_MSG) from e
         raise
+
+
+def _recordable(memory_id: str) -> list[str] | None:
+    """The id to audit, if it is a valid id: a client could send anything here."""
+    try:
+        return [validate_memory_id(memory_id)]
+    except ValueError:
+        return None
 
 
 def _matches(stored: Any, requested: Any) -> bool:
@@ -193,15 +201,12 @@ class Policy:
     async def get(self, memory_id: str) -> Memory:
         """One of the caller's memories; `not_found` when missing or someone else's."""
         with audited("get") as entry:
-            return await self._read(require("reader").grant.space, memory_id, "get", entry)
+            entry.ids = _recordable(memory_id)
+            return await self._read(require("reader").grant.space, memory_id, "get")
 
-    async def _read(
-        self, partition: str, memory_id: str, operation: str, entry: AuditEntry
-    ) -> Memory:
+    async def _read(self, partition: str, memory_id: str, operation: str) -> Memory:
         with _validation():
             validate_memory_id(memory_id)
-        # Recorded only once it is a valid id: a client could send anything here.
-        entry.ids = [memory_id]
         with _not_found():
             result = await self._backend.get(partition, memory_id)
         if result is None:
@@ -219,6 +224,7 @@ class Policy:
         both, with the caller as author and its creator kept; `not_found` when missing or
         someone else's."""
         with audited("update") as entry:
+            entry.ids = _recordable(memory_id)
             key = require("writer")
             partition = key.grant.space
             with _validation():
@@ -228,7 +234,7 @@ class Policy:
                     validate_content(content)
                 if metadata:
                     validate_metadata(metadata, nulls=True)
-            existing = await self._read(partition, memory_id, "update", entry)
+            existing = await self._read(partition, memory_id, "update")
             patch = as_patch(metadata) if metadata else None
             if patch is not None:
                 # Checked against the read above, not inside the write, so two concurrent
@@ -247,8 +253,9 @@ class Policy:
     async def delete(self, memory_id: str) -> bool:
         """Delete one of the caller's memories; `not_found` when missing or someone else's."""
         with audited("delete") as entry:
+            entry.ids = _recordable(memory_id)
             partition = require("writer").grant.space
-            await self._read(partition, memory_id, "delete", entry)
+            await self._read(partition, memory_id, "delete")
             with _not_found():
                 return await self._backend.delete(partition, memory_id)
 
@@ -291,8 +298,9 @@ class Policy:
     async def history(self, memory_id: str) -> list[HistoryEntry]:
         """A memory's change log; `not_found` when missing or someone else's."""
         with audited("history") as entry:
+            entry.ids = _recordable(memory_id)
             partition = require("reader").grant.space
-            await self._read(partition, memory_id, "history", entry)
+            await self._read(partition, memory_id, "history")
             with _not_found():
                 return await self._backend.history(partition, memory_id)
 

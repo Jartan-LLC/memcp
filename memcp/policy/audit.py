@@ -7,6 +7,7 @@ content, a query or metadata.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -31,9 +32,17 @@ class AuditEntry:
     ids: list[str] | None = None
     count: int | None = None
     scope: dict[str, Any] | None = None
+    source_space: str | None = None
+
+
+def can_record() -> bool:
+    """Whether a record would reach a handler: `setup_logging()` makes this true."""
+    return logger.isEnabledFor(logging.INFO) and logger.hasHandlers()
 
 
 def _outcome(e: BaseException) -> str:
+    if isinstance(e, asyncio.CancelledError):
+        return "cancelled"
     if isinstance(e, PolicyError):
         return e.code
     if isinstance(e, MemoryAPIError):
@@ -45,15 +54,21 @@ def _outcome(e: BaseException) -> str:
 
 @contextmanager
 def audited(
-    operation: str, *, operator: str | None = None, space: str | None = None
+    operation: str,
+    *,
+    operator: str | None = None,
+    space: str | None = None,
+    source_space: str | None = None,
 ) -> Iterator[AuditEntry]:
     """Log exactly one record for the operation run inside, whatever its outcome.
 
     The current key is the actor; `operator` replaces it for a call no key makes
-    (`migrate`), with `space` and no relation.
+    (`migrate`), with `space`, `source_space` and no relation.
     """
     if operator is not None:
-        entry = AuditEntry(operation, key=operator, space=space, relation=None)
+        entry = AuditEntry(
+            operation, key=operator, space=space, relation=None, source_space=source_space
+        )
     else:
         try:
             key = current_key()
@@ -68,7 +83,8 @@ def audited(
         raise
     finally:
         logger.info(
-            "audit operation=%s outcome=%s key=%s space=%s relation=%s ids=%s count=%s scope=%s",
+            "audit operation=%s outcome=%s key=%s space=%s relation=%s ids=%s count=%s scope=%s"
+            " source_space=%s",
             entry.operation,
             entry.outcome,
             entry.key,
@@ -77,5 +93,6 @@ def audited(
             entry.ids,
             entry.count,
             entry.scope,
+            entry.source_space,
             extra={"audit": asdict(entry)},
         )

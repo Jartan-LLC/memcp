@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from memcp.backends.base import MemoryBackend, MetadataPatch, is_reserved_metadata_key
-from memcp.policy.audit import audited
+from memcp.policy.audit import audited, can_record
 from memcp.policy.metadata import check_metadata_size, validate_metadata
 from memcp.policy.space import check_space, refuse_unusable_partition
 from memcp.types import (
@@ -306,15 +306,23 @@ async def migrate(
     `target_partition` defaults to `partition`; pass it to land the memories under a
     different partition on the target. `operator` names who runs the migration; the audit
     record gives it as the key. Raises ValueError, before reading anything, for an empty
-    operator, an empty or `*` partition, or one its backend refuses. Both backends need
+    operator, logging that would drop the audit record, an empty or `*` partition, or one
+    its backend refuses. Both backends need
     the `list` capability. What does not survive the trip is listed in `docs/reference.md`
     ("Moving memories between backends"), except `author`: each copy keeps the source
     memory's system fields, with `space` set to the target partition.
     """
     if not operator.strip():
         raise ValueError("migrate needs an operator: the name of who runs it")
+    if not can_record():
+        # migrate runs from operator code, which may never have configured logging.
+        raise ValueError(
+            "migrate writes an audit record to the logger memcp.audit at INFO, and nothing "
+            "would receive it: configure logging first, for example with "
+            "memcp.http.logging.setup_logging()"
+        )
     landing = partition if target_partition is None else target_partition
-    with audited("migrate", operator=operator, space=landing) as entry:
+    with audited("migrate", operator=operator, space=landing, source_space=partition) as entry:
         refuse_unusable_partition(source, partition)
         refuse_unusable_partition(target, landing)
         memories, truncated = await _list_all(source, partition, limit, "migrate")

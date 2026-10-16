@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import suppress
@@ -210,3 +211,105 @@ def test_the_audit_logger_stays_at_info_whatever_the_log_level(monkeypatch: pyte
     http_logging.setup_logging(level="WARNING")
     assert seen[0]["loggers"]["memcp.audit"]["level"] == "INFO"
     assert seen[0]["loggers"]["memcp"]["level"] == "WARNING"
+
+
+# --- refusals keep what the call named -------------------------------------------------
+
+
+async def test_a_refused_by_id_call_records_its_valid_id(caplog: pytest.LogCaptureFixture):
+    policy = Policy(_Everything())
+    forbidden = await _run(policy, lambda p: p.delete(MISSING_ID), caplog, relation="reader")
+    caplog.clear()
+    refused = await _run(policy, lambda p: p.update(MISSING_ID), caplog)
+    assert [(r.audit["outcome"], r.audit["ids"]) for r in forbidden + refused] == [  # type: ignore[attr-defined]
+        ("forbidden", [MISSING_ID]),
+        ("validation_error", [MISSING_ID]),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("raised", "outcome"),
+    [(asyncio.CancelledError(), "cancelled"), (RuntimeError("bug"), "error")],
+    ids=["cancelled", "unexpected"],
+)
+async def test_an_interrupted_call_is_recorded_and_still_raised(
+    raised: BaseException,
+    outcome: str,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    backend = _Everything()
+
+    async def fail(*args: Any, **kwargs: Any) -> Any:
+        raise raised
+
+    monkeypatch.setattr(backend, "search", fail)
+    token = set_key(make_key("team"))
+    try:
+        with caplog.at_level(logging.INFO, logger="memcp.audit"), pytest.raises(type(raised)):
+            await Policy(backend).search("anything")
+    finally:
+        reset_key(token)
+    assert [r.audit["outcome"] for r in _records(caplog)] == [outcome]  # type: ignore[attr-defined]
+
+
+async def test_counts_and_scope_of_the_remaining_operations(caplog: pytest.LogCaptureFixture):
+    policy = Policy(_Everything())
+    token = set_key(make_key("team"))
+    try:
+        await policy.add("one", scope={"agent_id": "a"}, infer=False)
+        await policy.add("two", scope={"agent_id": "b"}, infer=False)
+        with caplog.at_level(logging.INFO, logger="memcp.audit"):
+            await policy.list_memories(scope={"agent_id": "a"})
+            await policy.export_memories()
+            await policy.entities(scope={"agent_id": "a"})
+            await policy.import_memories([{"content": "three"}, {"content": "four"}])
+    finally:
+        reset_key(token)
+    audits = {r.audit["operation"]: r.audit for r in _records(caplog)}  # type: ignore[attr-defined]
+    assert (audits["list_memories"]["count"], audits["list_memories"]["scope"]) == (
+        1,
+        {"agent_id": "a"},
+    )
+    assert audits["export_memories"]["count"] == 2
+    assert (audits["entities"]["count"], audits["entities"]["scope"]) == (0, {"agent_id": "a"})
+    assert audits["import_memories"]["count"] == 2
+
+
+# --- migrate needs somewhere to write its record ------------------------------------
+
+
+async def test_a_migration_records_its_source_space(caplog: pytest.LogCaptureFixture):
+    with caplog.at_level(logging.INFO, logger="memcp.audit"):
+        await migrate(
+            InMemoryBackend(), InMemoryBackend(), "team", target_partition="moved", operator="ops"
+        )
+    audit = _records(caplog)[0].audit  # type: ignore[attr-defined]
+    assert (audit["source_space"], audit["space"]) == ("team", "moved")
+
+
+class _Unreadable(InMemoryBackend):
+    async def list_memories(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("migrate read the source")
+
+
+@pytest.mark.parametrize("cause", ["level", "handler"])
+async def test_a_migration_whose_record_would_be_lost_is_refused(
+    cause: str, monkeypatch: pytest.MonkeyPatch
+):
+    audit = logging.getLogger("memcp.audit")
+    if cause == "level":
+        monkeypatch.setattr(audit, "level", logging.WARNING)
+    else:
+        monkeypatch.setattr(audit, "hasHandlers", lambda: False)
+    with pytest.raises(ValueError, match="setup_logging"):
+        await migrate(_Unreadable(), InMemoryBackend(), "team", operator="ops")
+
+
+def test_the_audit_logger_writes_each_record_once(monkeypatch: pytest.MonkeyPatch):
+    from memcp.http import logging as http_logging
+
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(http_logging.logging.config, "dictConfig", seen.append)
+    http_logging.setup_logging()
+    assert seen[0]["loggers"]["memcp.audit"]["propagate"] is False

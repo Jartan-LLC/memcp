@@ -187,8 +187,9 @@ With a keys file, a request without a bearer token, or with one no key lists, ge
 Every memory operation writes one record to the logger `memcp.audit`, whether it succeeds
 or is refused, at `INFO` whatever `MEMCP_LOG_LEVEL` says. A JSON log line carries the
 record as an `audit` object; a plain line carries the same fields as `field=value` text. A
-record holds no content, query or metadata. A request refused with 401 writes none: it
-never reaches a key.
+record holds no content, query or metadata. Three refusals write none, since no memory
+operation starts: a request refused with 401, a tool call whose arguments don't match its
+schema, and a `migrate()` call with a blank operator.
 
 | Field | Value |
 |---|---|
@@ -196,10 +197,11 @@ never reaches a key.
 | `key` | The key's name; for `migrate`, the operator its caller names |
 | `space` | The key's space; for `migrate`, the target space |
 | `relation` | `reader` or `writer`; `null` for `migrate` |
-| `outcome` | `ok`, or the [error code](#errors) the call returned; `validation_error` for a refused migration, `error` for an unexpected failure |
-| `ids` | The ids `add` stored, or the id `get`, `update`, `delete` or `history` named, once it is a valid id |
+| `outcome` | `ok`, or the [error code](#errors) the call returned; `validation_error` for a refused migration, `cancelled` for a call the client abandoned, `error` for an unexpected failure |
+| `ids` | The ids `add` stored, or the id `get`, `update`, `delete` or `history` named, if it is a valid id |
 | `count` | The results of `search` and `list_memories`, the memories exported, imported or migrated, the entity rows, or the memories `delete_all` deleted (`null` when the backend doesn't say) |
 | `scope` | The validated scope, for a call that takes one |
+| `source_space` | For `migrate`, the source space; otherwise `null` |
 
 ## Known limitations
 

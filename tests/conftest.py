@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from memcp.backends.in_memory import InMemoryBackend
@@ -27,6 +29,16 @@ def config() -> Config:
 @pytest.fixture
 def backend() -> InMemoryBackend:
     return InMemoryBackend()
+
+
+@pytest.fixture(autouse=True)
+def audit_at_info():
+    """Let memcp.audit log at INFO, as setup_logging() does: migrate() refuses otherwise."""
+    audit = logging.getLogger("memcp.audit")
+    level = audit.level
+    audit.setLevel(logging.INFO)
+    yield
+    audit.setLevel(level)
 
 
 @pytest.fixture(autouse=True)
