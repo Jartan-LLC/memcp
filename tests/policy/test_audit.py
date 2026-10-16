@@ -16,7 +16,7 @@ from memcp.http.logging import JsonFormatter, PlainFormatter
 from memcp.identity import reset_key, set_key
 from memcp.policy import Policy
 from memcp.policy.transfer import migrate
-from memcp.types import EntitiesResult, MemoryAPIError, PolicyError
+from memcp.types import EntitiesResult, Memory, MemoryAPIError, PolicyError
 from tests.keys import make_key
 from tests.policy.test_access import CALLS, MISSING_ID, WRITES
 
@@ -103,8 +103,9 @@ async def test_a_refused_by_id_call_records_its_valid_id(caplog: pytest.LogCaptu
         (MemoryAPIError(408, "store said no"), "timeout"),
         (asyncio.CancelledError(), "cancelled"),
         (RuntimeError("bug"), "error"),
+        (ValueError("store sent no JSON"), "error"),
     ],
-    ids=["5xx", "timeout", "cancelled", "unexpected"],
+    ids=["5xx", "timeout", "cancelled", "unexpected", "a backend's ValueError"],
 )
 async def test_a_failed_call_is_recorded_and_still_raised(
     raised: BaseException,
@@ -125,6 +126,21 @@ async def test_a_failed_call_is_recorded_and_still_raised(
     finally:
         reset_key(token)
     assert [r.audit["outcome"] for r in _records(caplog)] == [outcome]  # type: ignore[attr-defined]
+
+
+async def test_an_add_that_fails_its_space_check_still_records_what_was_stored(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+    backend = _Everything()
+
+    async def foreign(partition: str, memory_id: str) -> Memory:
+        return Memory(id=memory_id, content="x", partition="someone-else")
+
+    monkeypatch.setattr(backend, "get", foreign)
+    records = await _run(Policy(backend), lambda p: p.add("a fact", infer=False), caplog)
+    audit = records[0].audit  # type: ignore[attr-defined]
+    assert audit["outcome"] == "internal_error"
+    assert audit["ids"] and len(audit["ids"]) == 1
 
 
 # --- what a record holds ---------------------------------------------------------------

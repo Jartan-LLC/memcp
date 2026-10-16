@@ -56,8 +56,8 @@ def _outcome(e: BaseException) -> str:
         return e.code
     if isinstance(e, MemoryAPIError):
         return "timeout" if e.timed_out else "backend_error"
-    if isinstance(e, ValueError):
-        return "validation_error"
+    # Policy turns a refused argument into PolicyError, so a bare ValueError here is a
+    # backend's; an operation that refuses with one sets its outcome itself.
     return "error"
 
 
@@ -88,7 +88,8 @@ def audited(
     try:
         yield entry
     except BaseException as e:
-        entry.outcome = _outcome(e)
+        if entry.outcome == "ok":
+            entry.outcome = _outcome(e)
         raise
     finally:
         logger.info(

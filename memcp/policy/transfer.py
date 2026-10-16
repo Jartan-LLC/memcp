@@ -323,8 +323,12 @@ async def migrate(
         )
     landing = partition if target_partition is None else target_partition
     with audited("migrate", operator=operator, space=landing, source_space=partition) as entry:
-        refuse_unusable_partition(source, partition)
-        refuse_unusable_partition(target, landing)
+        try:
+            refuse_unusable_partition(source, partition)
+            refuse_unusable_partition(target, landing)
+        except ValueError:
+            entry.outcome = "validation_error"
+            raise
         memories, truncated = await _list_all(source, partition, limit, "migrate")
 
         def copy_system(index: int, stored: System | None) -> System:
