@@ -317,9 +317,9 @@ async def migrate(
     if not can_record():
         # migrate runs from operator code, which may never have configured logging.
         raise ValueError(
-            "migrate writes an audit record to the logger memcp.audit at INFO, and nothing "
-            "would receive it: configure logging first, for example with "
-            "memcp.http.logging.setup_logging()"
+            "migrate writes an audit record to the logger memcp.audit at INFO, and no handler "
+            "would write it (the logger is disabled, below INFO, or has no handler at INFO): "
+            "configure logging first, for example with memcp.http.logging.setup_logging()"
         )
     landing = partition if target_partition is None else target_partition
     with audited("migrate", operator=operator, space=landing, source_space=partition) as entry:

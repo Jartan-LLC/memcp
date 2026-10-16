@@ -67,6 +67,8 @@ async def test_every_operation_writes_exactly_one_record(
         "writer",
     )
     assert audit["outcome"] == ("not_found" if operation in BY_ID else "ok")
+    if operation in BY_ID:
+        assert audit["ids"] == [MISSING_ID]
 
 
 @pytest.mark.parametrize("operation", sorted(WRITES))
@@ -165,7 +167,8 @@ async def test_the_json_line_carries_the_audit_object_and_plain_text_its_fields(
     assert payload["audit"] == records[0].audit  # type: ignore[attr-defined]
     plain = PlainFormatter().format(records[0])
     for field in ("operation=get", "outcome=not_found", "key=laptop", "space=team"):
-        assert field in plain
+        assert plain.count(field) == 1, plain
+    assert (payload["key"], payload["space"]) == ("laptop", "team")
 
 
 # --- migrate -------------------------------------------------------------------------
@@ -185,7 +188,10 @@ async def test_a_migration_is_recorded_under_its_operator(caplog: pytest.LogCapt
     )
     assert (audits[0]["relation"], audits[0]["outcome"]) == (None, "ok")
     assert audits[0]["count"] == report.imported == 1
-    assert CONTENT not in JsonFormatter().format(_records(caplog)[0])
+    line = json.loads(JsonFormatter().format(_records(caplog)[0]))
+    assert (line["key"], line["space"]) == ("ops", "moved")
+    assert "key=ops space=moved" in PlainFormatter().format(_records(caplog)[0])
+    assert CONTENT not in json.dumps(line)
 
 
 async def test_a_refused_migration_is_recorded(caplog: pytest.LogCaptureFixture):
@@ -293,15 +299,27 @@ class _Unreadable(InMemoryBackend):
         raise AssertionError("migrate read the source")
 
 
-@pytest.mark.parametrize("cause", ["level", "handler"])
+@pytest.mark.parametrize(
+    "cause", ["level", "no handler", "warning handler", "null handler", "disabled"]
+)
 async def test_a_migration_whose_record_would_be_lost_is_refused(
     cause: str, monkeypatch: pytest.MonkeyPatch
 ):
     audit = logging.getLogger("memcp.audit")
     if cause == "level":
         monkeypatch.setattr(audit, "level", logging.WARNING)
+    elif cause == "disabled":
+        monkeypatch.setattr(audit, "disabled", True)
     else:
-        monkeypatch.setattr(audit, "hasHandlers", lambda: False)
+        monkeypatch.setattr(audit, "propagate", False)
+        handler = {
+            "no handler": None,
+            "warning handler": logging.StreamHandler(),
+            "null handler": logging.NullHandler(),
+        }[cause]
+        if handler is not None:
+            handler.setLevel(logging.WARNING if cause == "warning handler" else logging.NOTSET)
+        monkeypatch.setattr(audit, "handlers", [] if handler is None else [handler])
     with pytest.raises(ValueError, match="setup_logging"):
         await migrate(_Unreadable(), InMemoryBackend(), "team", operator="ops")
 

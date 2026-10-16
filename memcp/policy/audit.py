@@ -36,8 +36,17 @@ class AuditEntry:
 
 
 def can_record() -> bool:
-    """Whether a record would reach a handler: `setup_logging()` makes this true."""
-    return logger.isEnabledFor(logging.INFO) and logger.hasHandlers()
+    """Whether an INFO record would reach a handler that writes it: `setup_logging()`
+    makes this true."""
+    if logger.disabled or not logger.isEnabledFor(logging.INFO):
+        return False
+    current: logging.Logger | None = logger
+    while current is not None:
+        for handler in current.handlers:
+            if not isinstance(handler, logging.NullHandler) and handler.level <= logging.INFO:
+                return True
+        current = current.parent if current.propagate else None
+    return False
 
 
 def _outcome(e: BaseException) -> str:
@@ -83,16 +92,15 @@ def audited(
         raise
     finally:
         logger.info(
-            "audit operation=%s outcome=%s key=%s space=%s relation=%s ids=%s count=%s scope=%s"
-            " source_space=%s",
+            "audit operation=%s outcome=%s relation=%s ids=%s count=%s scope=%s source_space=%s",
             entry.operation,
             entry.outcome,
-            entry.key,
-            entry.space,
             entry.relation,
             entry.ids,
             entry.count,
             entry.scope,
             entry.source_space,
-            extra={"audit": asdict(entry)},
+            # key and space fill the fields every log line carries, so a migration, which
+            # runs outside a request, names its operator and target there too.
+            extra={"audit": asdict(entry), "key": entry.key, "space": entry.space},
         )
