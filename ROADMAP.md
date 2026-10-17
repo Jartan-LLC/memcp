@@ -1,6 +1,6 @@
 # memcp Roadmap: v0.1 → v1.0
 
-**Current state (2026-10-16):** v0.2.0. 12 MCP tools, 3 backends (mem0, sqlite, in-memory),
+**Current state (2026-10-17):** v0.2.0. 12 MCP tools, 3 backends (mem0, sqlite, in-memory),
 keys with `reader` and `writer` grants on a space, an audit log, export/import with dedup,
 and a conformance suite every backend passes.
 

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-10-16
+## [0.2.0] - 2026-10-17
 
 Upgrading a 0.1.x Compose deployment changes how clients authenticate and where they connect: follow "Upgrade from 0.1.x" in `docs/deployment.md`. Without Docker, write a keys file ("Manage keys" there), set `MEMCP_KEYS_FILE` to its path, and unset `MEMCP_AUTH_TOKENS`.
 
