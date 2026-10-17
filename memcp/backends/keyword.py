@@ -27,12 +27,11 @@ The rules, and why each exists:
   splits Thai. Pairs of their characters, many of them vowel and tone marks, rank far
   worse. A word matches exactly, or, from four characters, as the start of a compound:
   `กรุงเทพ` finds `กรุงเทพมหานคร`.
-- **Query words under three characters are ignored**, unless the query holds one of
-  these scripts and the word is written against a run, in capitals (not `I`), or holds
-  a digit; every Thai, Lao, Khmer or Myanmar word counts. They carry no signal and they
-  are what made every memory a hit; there, as the `AI` of `AIの使い方` or the `3` of
-  `3月`, a short word tells memories apart, while `is`, `My` or `I` would match every
-  memory.
+- **Query words under three characters are ignored**: `is`, `My` or `I` would match every
+  memory. In a query that holds one of these scripts, a short word counts when it's
+  written against a run, written in capitals (not `I`), or holds a digit, as the `AI` of
+  `AIの使い方` or the `3` of `3月`, because there it tells memories apart. Every Thai,
+  Lao, Khmer or Myanmar word counts.
 - **Two words match when they are equal, or share a four-character prefix.** That is
   what connects `linter` to `linting` without pretending to be a stemmer. Four is
   deliberately conservative: three would match `for` to `form` and `the` to `then`.
@@ -70,11 +69,11 @@ _RECOMPOSE = tuple(
     for c in map(chr, [*range(0x0E00, 0x0F00), *range(0x1000, 0x10A0), *range(0x1780, 0x1800)])
     if unicodedata.decomposition(c).startswith("<compat>")
 )
-# A tone mark on SARA AM is spelled two ways, and each dictionary knows one: Thai puts the
-# tone first (น้ำ, not นํ้า), Lao puts it between SARA AM's halves (ນໍ້າ, not ນ້ຳ).
+# A tone mark on SARA AM is typed in three orders, and each dictionary knows one: Thai
+# puts the tone first (น้ำ, not นํ้า or นำ้), Lao puts it between SARA AM's halves (ນໍ້າ,
+# not ນ້ຳ or ນຳ້).
 _THAI_TONED_SARA_AM = re.compile("(\u0e4d)([\u0e48-\u0e4b])(?=\u0e32)")
 _LAO_TONED_SARA_AM = re.compile("([\u0ec8-\u0ecb])(\u0ecd)(?=\u0eb2)")
-# A slip of the keyboard types SARA AM before its tone mark: นำ้ for น้ำ.
 _THAI_LATE_TONE = re.compile("\u0e4d\u0e32([\u0e48-\u0e4b])")
 _LAO_LATE_TONE = re.compile("\u0ecd\u0eb2([\u0ec8-\u0ecb])")
 # Never a token: marks a space or punctuation next to a per-character run, so the runs on
@@ -149,7 +148,8 @@ def _tokens_of(folded: str) -> list[str]:
             flush()
         if _UNSPACED.match(char):
             flush()
-            # Other characters of these blocks, such as U+30FB "・", join the run around them.
+            # Other characters of these blocks, such as U+30FB "・", are dropped; the run
+            # continues across them.
             if char.isalnum() or _is_mark(char):
                 emit(char)
         elif char.isalnum():
@@ -168,7 +168,7 @@ def _tokens_of(folded: str) -> list[str]:
 
 def tokenize(text: str) -> list[str]:
     # Every row of a search is scored, so only the pieces holding non-ASCII take the
-    # per-character path; the result is the same as _tokenize_any(text).
+    # general path; the result is the same as _tokenize_any(text).
     if text.isascii():
         return _ASCII_TOKEN.findall(text.lower())
     tokens: list[str] = []

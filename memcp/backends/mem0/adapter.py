@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 # see, and therefore the most an export of a mem0 tenant can contain.
 LIST_CEILING = 1000
 
-# The event mem0 reports for each memory an add touched; with infer=True its extraction
-# can update or delete memories the space already held.
+# The event mem0 reports for each memory an add touched. mem0 1.x's extraction can also
+# update or delete memories the space held; v2.2.1 reports only ADD.
 _ADD_EVENTS: dict[str, AddEvent] = {"ADD": "add", "UPDATE": "update", "DELETE": "delete"}
 _NO_CHANGE_EVENTS = frozenset({"NONE", "NOOP"})
 

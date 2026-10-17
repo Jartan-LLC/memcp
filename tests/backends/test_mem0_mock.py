@@ -60,7 +60,8 @@ async def test_add_returns_results(backend):
 
 @respx.mock
 async def test_add_reports_what_extraction_did_to_each_memory(backend):
-    """mem0's extraction can add, update or delete memories; no-change items are dropped (#140)."""
+    """mem0 1.x's extraction can add, update or delete memories; no-change items are dropped
+    (#140)."""
     events = [("m-a", "ADD"), ("m-u", "UPDATE"), ("m-d", "DELETE"), ("m-n", "NONE")]
     respx.post(f"{BASE}/memories").mock(
         return_value=httpx.Response(

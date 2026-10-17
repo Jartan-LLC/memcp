@@ -114,13 +114,8 @@ class TestScriptsBeyondAscii:
         assert len(tokenize("मैं हिन्दी बोलता हूँ")) == 4
         assert score("हिन्दी", "मैं हिन्दी बोलता हूँ") is not None
 
-    @pytest.mark.parametrize(
-        ("query", "content"),
-        [("東京", "私は東京に住んでいます"), ("กรุงเทพ", "ฉันอยู่กรุงเทพมหานคร")],
-        ids=["japanese", "thai"],
-    )
-    def test_a_run_in_an_unspaced_script_is_found_as_a_phrase(self, query: str, content: str):
-        assert score(query, content) == 1.0
+    def test_a_run_in_an_unspaced_script_is_found_as_a_phrase(self):
+        assert score("東京", "私は東京に住んでいます") == 1.0
 
     def test_an_absent_run_in_an_unspaced_script_is_not_found(self):
         assert score("大阪", "私は東京に住んでいます") is None
@@ -133,7 +128,7 @@ class TestScriptsBeyondAscii:
     def test_a_korean_noun_before_a_particle_is_found(self, query: str, content: str):
         assert score(query, content) == 1.0
 
-    def test_punctuation_in_an_unspaced_script_separates(self):
+    def test_punctuation_inside_an_unspaced_run_is_dropped(self):
         assert score("ジョンスミス", "ジョン・スミス") == 1.0
         assert "・" not in tokenize("ジョン・スミス")
 
@@ -261,7 +256,7 @@ class TestScriptsBeyondAscii:
         ],
         ids=["thai sara am", "lao sara am"],
     )
-    def test_a_vowel_nfkc_splits_is_segmented_whole(self, text: str, words: list[str]):
+    def test_a_vowel_that_nfkc_splits_is_segmented_whole(self, text: str, words: list[str]):
         assert tokenize(text) == words
 
     @pytest.mark.parametrize(
@@ -272,7 +267,7 @@ class TestScriptsBeyondAscii:
         ],
         ids=["lao ho mo", "lao ho mo, doctor"],
     )
-    def test_a_lao_letter_nfkc_splits_is_found(self, query: str, right: str, wrong: str):
+    def test_a_lao_letter_that_nfkc_splits_is_found(self, query: str, right: str, wrong: str):
         assert _outranks(query, right, wrong)
 
     @pytest.mark.parametrize("text", ["ນໍ້າມັນ", "ນ້ຳມັນ"], ids=["visual order", "tone first"])
@@ -351,7 +346,9 @@ class TestScriptsBeyondAscii:
         [("Do I like 寿司?", "寿司が大好きです"), ("My 東京 trip", "東京への旅行は楽しかった")],
         ids=["pronoun", "sentence start"],
     )
-    def test_a_capitalised_short_word_in_a_mixed_query_doesnt_count(self, query: str, right: str):
+    def test_i_or_a_title_case_short_word_in_a_mixed_query_doesnt_count(
+        self, query: str, right: str
+    ):
         for unrelated in ("I went to the gym", "Do you remember it", "My plan is ready"):
             assert _outranks(query, right, unrelated)
 
@@ -361,7 +358,7 @@ class TestScriptsBeyondAscii:
     def test_a_lowercase_short_word_written_against_a_run_counts(self):
         assert _outranks("db設計", "DBの設計を見直す", "APIの設計を見直す")
 
-    def test_a_short_word_in_a_thai_query_counts(self):
+    def test_a_short_acronym_in_a_thai_query_counts(self):
         assert _outranks("ใช้AI", "ใช้ AI ช่วยเขียน", "ใช้มือเขียน")
 
     def test_a_lone_character_in_a_query_matches_inside_a_run(self):

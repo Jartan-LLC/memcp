@@ -1,4 +1,4 @@
-"""Query, right memory and near-miss wrong memory, in the scripts keyword search matches by pairs.
+"""Query, right memory and near-miss wrong memory, in Chinese, Japanese, Korean and Thai.
 
 The right memory must outrank the wrong one. The table is a regression guard written
 by hand, not a benchmark: the cases are realistic, but no standard collection backs
@@ -63,6 +63,8 @@ CASES: list[tuple[str, str, str]] = [
     ("AWSのS3バケット", "S3バケットはAWSの東京リージョン", "GCSバケットはGCPの東京リージョン"),
     ("iOSアプリ", "iOSアプリはSwiftで書く", "Androidアプリはkotlinで書く"),
     ("iOSのアプリ", "iOSアプリはSwiftで書く", "Androidアプリはkotlinで書く"),
+    ("Gitのブランチ", "Gitブランチはmain", "SVNのブランチはtrunk"),
+    ("JSのテスト", "JSテストはjestで書く", "Pythonのテストはpytest"),
     # Japanese, number
     ("3月の会議", "3月の会議は中止", "5月の会議は中止"),
     ("3月", "3月に引っ越す", "5月に引っ越す"),
@@ -90,6 +92,9 @@ CASES: list[tuple[str, str, str]] = [
     ("1-2月", "1-2月は繁忙期", "3-4月は繁忙期"),
     ("5G回線", "5G 回線は遅い", "4G 回線は遅い"),
     ("東京2024", "2024年の東京オリンピック", "2020年の東京オリンピック"),
+    ("3年", "3年前に入社", "5年前に入社"),
+    ("3年前", "3年前に入社", "3日前に入社"),
+    ("2時間", "会議は2時間", "会議は3時間"),
     # Chinese, plain
     ("北京天气", "北京天气很冷", "上海天气很热"),
     ("会议室", "会议室在三楼", "会议在下午"),
@@ -112,6 +117,7 @@ CASES: list[tuple[str, str, str]] = [
     ("UI设计", "UI的设计由小王负责", "后端的设计由小李负责"),
     ("CI配置", "CI 的配置在 .github", "CD 的配置在 argo"),
     ("A公司", "A公司的合同三月到期", "B公司的合同三月到期"),
+    ("JS代码", "JS 代码在 src", "Go 代码在 cmd"),
     # Chinese, number
     ("3月", "3月搬家", "5月搬家"),
     ("3月份的会议", "3月份的会议取消了", "5月份的会议取消了"),
@@ -122,6 +128,7 @@ CASES: list[tuple[str, str, str]] = [
     ("v2版本", "v2 版本已上线", "v1 版本已下线"),
     ("iPhone 15", "我用 iPhone 15", "我用 iPhone 14"),
     ("iPhone15", "我用iPhone 15 Pro", "我用iPhone 14 Pro"),
+    ("三月", "三月搬家", "五月搬家"),
     # Korean, plain
     ("서울 맛집", "서울 맛집 목록", "부산 맛집 목록"),
     ("회의록", "회의록은 노션에 있다", "회의는 매주 월요일"),
@@ -140,6 +147,7 @@ CASES: list[tuple[str, str, str]] = [
     ("AI를 활용", "AI를 활용한 업무", "IT를 활용한 업무"),
     ("AI 활용", "AI를 활용한 업무", "IT를 활용한 업무"),
     ("AI활용", "AI 활용 사례", "IT 활용 사례"),
+    ("JS 코드", "JS 코드는 src에", "Go 코드는 cmd에"),
     # Korean, number
     ("3월", "3월에 이사", "5월에 이사"),
     ("3월 회의", "3월 회의는 취소", "5월 회의는 취소"),
@@ -148,9 +156,12 @@ CASES: list[tuple[str, str, str]] = [
     ("2024년 3월", "2024년 3월에 입사", "2024년 5월에 퇴사"),
     ("100원", "커피 100원", "차 50원"),
     ("v2 버전", "v2 버전 배포", "v1 버전 배포"),
+    ("2시간", "회의는 2시간", "회의는 3시간"),
     # Thai, plain
     ("ร้านกาแฟ", "ร้านกาแฟใกล้บ้าน", "ร้านอาหารใกล้บ้าน"),
     ("ประชุม", "ประชุมทุกวันจันทร์", "สัมมนาทุกวันศุกร์"),
+    ("กาแฟ", "ดื่มกาแฟทุกเช้า", "ดื่มชาทุกเช้า"),
+    ("ภาษาไทย", "เรียนภาษาไทย", "เรียนภาษาจีน"),
     # Thai, latin short
     ("ใช้AI", "ใช้ AI ช่วยเขียน", "ใช้มือเขียน"),
     ("AIช่วย", "AI ช่วยเขียนโค้ด", "คนช่วยเขียนโค้ด"),
@@ -186,7 +197,7 @@ CASES: list[tuple[str, str, str]] = [
     ("妻の誕生日", "妻誕生日5月", "夫の誕生日は6月"),
     # Korean, particle query
     ("회의를 정리", "회의 정리 완료", "메일 정리 완료"),
-    # English with a Japanese name, mixed en
+    # English, with a Japanese name
     ("meeting in 東京", "東京での meeting は来週", "Osaka meeting next week"),
     ("dinner at 寿司屋", "寿司屋で dinner", "ramen shop dinner"),
     ("Tanaka-san 誕生日", "田中さんの誕生日 Tanaka-san", "佐藤さんの誕生日"),
@@ -204,26 +215,7 @@ CASES: list[tuple[str, str, str]] = [
     ("スケジュール", "スケジュールを更新", "スクリーンを更新"),
     # Japanese, kanji kana
     ("引っ越し", "来月引っ越しする", "来月引き出しを買う"),
-    # Thai, plain
-    ("กาแฟ", "ดื่มกาแฟทุกเช้า", "ดื่มชาทุกเช้า"),
-    ("ภาษาไทย", "เรียนภาษาไทย", "เรียนภาษาจีน"),
-    # Japanese, latin short
-    ("Gitのブランチ", "Gitブランチはmain", "SVNのブランチはtrunk"),
-    ("JSのテスト", "JSテストはjestで書く", "Pythonのテストはpytest"),
-    # Chinese, latin short
-    ("JS代码", "JS 代码在 src", "Go 代码在 cmd"),
-    # Korean, latin short
-    ("JS 코드", "JS 코드는 src에", "Go 코드는 cmd에"),
-    # Japanese, number
-    ("3年", "3年前に入社", "5年前に入社"),
-    ("3年前", "3年前に入社", "3日前に入社"),
-    # Chinese, number
-    ("三月", "三月搬家", "五月搬家"),
-    # Japanese, number
-    ("2時間", "会議は2時間", "会議は3時間"),
-    # Korean, number
-    ("2시간", "회의는 2시간", "회의는 3시간"),
-    # Japanese, ascii in ja
+    # Japanese, Latin word alone
     ("React", "フロントはReactで書く", "フロントはVueで書く"),
     ("linter", "linterはruffを使う", "formatterはblackを使う"),
     ("linting", "linterはruffを使う", "formatterはblackを使う"),

@@ -120,10 +120,10 @@ class MemoryBackend(ABC):
     ) -> AddResult | list[AddResult]:
         """Store `system` as given and return it, with the partition, on every read.
 
-        Each item's `event` says what the add did to that memory: `add`, `update` (a
-        memory the store already held, which keeps its stored `created_by` and `space`)
-        or `delete`. None stores no system fields. Raises
-        MemoryAPIError(400) for a reserved metadata key.
+        `system=None` stores no system fields. Each item's `event` says what the add did
+        to that memory: `add`, `update` (a memory the store already held, which keeps its
+        stored `created_by` and `space`) or `delete`. Raises MemoryAPIError(400) for a
+        reserved metadata key.
         """
         ...
 
