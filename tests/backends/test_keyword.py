@@ -240,6 +240,22 @@ class TestScriptsBeyondAscii:
     ):
         assert tokenize(text) == words
 
+    @pytest.mark.parametrize(
+        ("text", "words"),
+        [
+            ("กรุงเทพฯ", ["กรุงเทพ"]),
+            ("เด็กๆ เล่น", ["เด็ก", "เล่น"]),
+            ("ເດັກໆ", ["ເດັກ"]),
+            ("ក្មេងៗ", ["ក្មេង"]),
+        ],
+        ids=["thai paiyannoi", "thai maiyamok", "lao", "khmer"],
+    )
+    def test_repetition_and_abbreviation_marks_end_a_word(self, text: str, words: list[str]):
+        assert tokenize(text) == words
+
+    def test_a_word_is_found_where_a_memory_repeats_it(self):
+        assert score("ช้า", "เดินช้าๆ") == 1.0
+
     def test_a_southeast_asian_word_matches_the_compound_it_begins(self):
         assert score("กรุงเทพ", "ฉันอยู่กรุงเทพมหานคร") == 1.0
         assert score("กรุงเทพ", "ไปกรุงศรีอยุธยา") is None
@@ -273,6 +289,18 @@ class TestScriptsBeyondAscii:
         self, text: str, words: list[str]
     ):
         assert tokenize(text) == words
+
+    @pytest.mark.parametrize(
+        ("query", "right"),
+        [("Do I like 寿司?", "寿司が大好きです"), ("My 東京 trip", "東京への旅行は楽しかった")],
+        ids=["pronoun", "sentence start"],
+    )
+    def test_a_capitalised_short_word_in_a_mixed_query_doesnt_count(self, query: str, right: str):
+        for unrelated in ("I went to the gym", "Do you remember it", "My plan is ready"):
+            assert _outranks(query, right, unrelated)
+
+    def test_a_short_acronym_outside_ascii_counts(self):
+        assert _outranks("ÖV 時刻表", "ÖV の時刻表", "バスの時刻表")
 
     def test_a_lowercase_short_word_written_against_a_run_counts(self):
         assert _outranks("db設計", "DBの設計を見直す", "APIの設計を見直す")

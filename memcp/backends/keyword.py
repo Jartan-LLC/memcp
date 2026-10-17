@@ -28,10 +28,11 @@ The rules, and why each exists:
   worse. A word matches exactly, or, from four characters, as the start of a compound:
   `กรุงเทพ` finds `กรุงเทพมหานคร`.
 - **Query words under three characters are ignored**, unless the query holds one of
-  these scripts and the word is written against a run, capitalised or holds a digit.
-  They carry no signal and they are what made every memory a hit; there, as the `AI` of
-  `AIの使い方` or the `3` of `3月`, a short word tells memories apart, while a lowercase
-  `is` or `of` would match every memory.
+  these scripts and the word is written against a run, in capitals (not `I`), or holds
+  a digit; every Thai, Lao, Khmer or Myanmar word counts. They carry no signal and they
+  are what made every memory a hit; there, as the `AI` of `AIの使い方` or the `3` of
+  `3月`, a short word tells memories apart, while `is`, `My` or `I` would match every
+  memory.
 - **Two words match when they are equal, or share a four-character prefix.** That is
   what connects `linter` to `linting` without pretending to be a stemmer. Four is
   deliberately conservative: three would match `for` to `form` and `the` to `then`.
@@ -60,7 +61,8 @@ _UNSPACED = re.compile(
 # Scripts segmented into words by ICU's dictionaries: Thai, Lao, Myanmar, Khmer.
 _SEGMENTED = re.compile(r"[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff]")
 _ASCII_TOKEN = re.compile(r"[a-z0-9]+")
-_ASCII_WORD = re.compile(r"[A-Za-z0-9]+")
+# Thai, Lao and Khmer repetition and abbreviation marks (ๆ ฯ ໆ ៗ): ICU keeps them in a word.
+_WORD_MARKS = frozenset("\u0e46\u0e2f\u0ec6\u17d7")
 # Never a token: marks a space or punctuation next to a per-character run, so the runs on
 # either side of it stay apart and no pair spans it.
 _BOUNDARY = " "
@@ -113,6 +115,10 @@ def _tokens_of(folded: str) -> list[str]:
     for char in folded:
         if unicodedata.category(char) == "Cf" and char != "\u200b":
             continue  # joiners and soft hyphens sit inside words; a zero-width space ends one
+        if char in _WORD_MARKS:
+            flush()
+            gap = True
+            continue
         if _SEGMENTED.match(char) and not char.isdigit():  # ICU glues digits to words
             if word:
                 flush()
@@ -236,12 +242,12 @@ def score(query: str, content: str) -> float | None:
     counted = [word for word in query_words if len(word) >= MIN_QUERY_TOKEN]
     if query_runs or any(map(_is_segmented, query_words)):
         # A short word tells memories apart when it's written against a run, as the 3 of
-        # 3月, or marked, as AI or v2; a lowercase is or of only matches every memory.
+        # 3月, or marked, as AI or v2; is, My or I only match every memory.
         attached = {token for run in query_runs for token in run}
         marked = {
             w.lower()
-            for w in _ASCII_WORD.findall(unicodedata.normalize("NFKC", query))
-            if not w.islower() or any(c.isdigit() for c in w)
+            for w in _tokens_of(unicodedata.normalize("NFKC", query))
+            if (w.isupper() and w != "I") or any(c.isdigit() for c in w)
         }
         counted = [
             word
