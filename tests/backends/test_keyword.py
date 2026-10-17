@@ -275,6 +275,18 @@ class TestScriptsBeyondAscii:
     def test_a_lao_letter_nfkc_splits_is_found(self, query: str, right: str, wrong: str):
         assert _outranks(query, right, wrong)
 
+    @pytest.mark.parametrize("text", ["ນໍ້າມັນ", "ນ້ຳມັນ"], ids=["visual order", "tone first"])
+    def test_lao_toned_sara_am_takes_the_spelling_icu_knows(self, text: str):
+        assert tokenize(text) == ["ນໍ້າມັນ"]
+
+    @pytest.mark.parametrize(
+        ("query", "right", "wrong"),
+        [("ນໍ້າໜັກ", "ນໍ້າໜັກຂອງລາວ", "ນ້ຳຖ້ວມບ້ານ"), ("ນ້ຳມັນ", "ລາຄານໍ້າມັນ", "ດື່ມນ້ຳ")],
+        ids=["weight against flood", "fuel against water"],
+    )
+    def test_a_lao_water_compound_isnt_just_water(self, query: str, right: str, wrong: str):
+        assert _outranks(query, right, wrong)
+
     def test_sara_am_in_visual_order_is_found(self):
         assert _outranks("น้ำมัน", "ราคานํ้ามันขึ้น", "ราคาทองขึ้น")
 

@@ -70,8 +70,10 @@ _RECOMPOSE = tuple(
     for c in map(chr, [*range(0x0E00, 0x0F00), *range(0x1000, 0x10A0), *range(0x1780, 0x1800)])
     if unicodedata.decomposition(c).startswith("<compat>")
 )
-# Text set in visual order puts a tone mark between SARA AM's halves: นํ้า for น้ำ.
-_VISUAL_SARA_AM = re.compile("([\u0e4d\u0ecd])([\u0e48-\u0e4b\u0ec8-\u0ecb])(?=[\u0e32\u0eb2])")
+# A tone mark on SARA AM is spelled two ways, and each dictionary knows one: Thai puts the
+# tone first (น้ำ, not นํ้า), Lao puts it between SARA AM's halves (ນໍ້າ, not ນ້ຳ).
+_THAI_TONED_SARA_AM = re.compile("(\u0e4d)([\u0e48-\u0e4b])(?=\u0e32)")
+_LAO_TONED_SARA_AM = re.compile("([\u0ec8-\u0ecb])(\u0ecd)(?=\u0eb2)")
 # Never a token: marks a space or punctuation next to a per-character run, so the runs on
 # either side of it stay apart and no pair spans it.
 _BOUNDARY = " "
@@ -90,7 +92,8 @@ def _is_segmented(token: str) -> bool:
 
 
 def _segment(text: str) -> list[str]:
-    text = _VISUAL_SARA_AM.sub(r"\2\1", text)
+    text = _THAI_TONED_SARA_AM.sub(r"\2\1", text)
+    text = _LAO_TONED_SARA_AM.sub(r"\2\1", text)
     for split, whole in _RECOMPOSE:
         text = text.replace(split, whole)
     return [w for w in WordBreaker(text, "und") if any(c.isalnum() for c in w)]
