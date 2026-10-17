@@ -287,6 +287,14 @@ class TestScriptsBeyondAscii:
     def test_a_lao_water_compound_isnt_just_water(self, query: str, right: str, wrong: str):
         assert _outranks(query, right, wrong)
 
+    @pytest.mark.parametrize(
+        ("text", "words"),
+        [("นำ้มัน", ["น้ำมัน"]), ("ນຳ້ມັນ", ["ນໍ້າມັນ"])],
+        ids=["thai", "lao"],
+    )
+    def test_sara_am_typed_before_its_tone_mark_is_respelled(self, text: str, words: list[str]):
+        assert tokenize(text) == words
+
     def test_sara_am_in_visual_order_is_found(self):
         assert _outranks("น้ำมัน", "ราคานํ้ามันขึ้น", "ราคาทองขึ้น")
 

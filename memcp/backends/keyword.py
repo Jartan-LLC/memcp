@@ -74,6 +74,9 @@ _RECOMPOSE = tuple(
 # tone first (น้ำ, not นํ้า), Lao puts it between SARA AM's halves (ນໍ້າ, not ນ້ຳ).
 _THAI_TONED_SARA_AM = re.compile("(\u0e4d)([\u0e48-\u0e4b])(?=\u0e32)")
 _LAO_TONED_SARA_AM = re.compile("([\u0ec8-\u0ecb])(\u0ecd)(?=\u0eb2)")
+# A slip of the keyboard types SARA AM before its tone mark: นำ้ for น้ำ.
+_THAI_LATE_TONE = re.compile("\u0e4d\u0e32([\u0e48-\u0e4b])")
+_LAO_LATE_TONE = re.compile("\u0ecd\u0eb2([\u0ec8-\u0ecb])")
 # Never a token: marks a space or punctuation next to a per-character run, so the runs on
 # either side of it stay apart and no pair spans it.
 _BOUNDARY = " "
@@ -92,6 +95,8 @@ def _is_segmented(token: str) -> bool:
 
 
 def _segment(text: str) -> list[str]:
+    text = _THAI_LATE_TONE.sub("\\1\u0e4d\u0e32", text)
+    text = _LAO_LATE_TONE.sub("\u0ecd\\1\u0eb2", text)
     text = _THAI_TONED_SARA_AM.sub(r"\2\1", text)
     text = _LAO_TONED_SARA_AM.sub(r"\2\1", text)
     for split, whole in _RECOMPOSE:
