@@ -65,11 +65,16 @@ class GraphBackend(InMemoryBackend):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        count = sum(1 for e in self._store.values() if e["user_id"] == partition)
-        if count == 0:
-            return EntitiesResult(entities=[], relationships=[])
+        counts: dict[str, int] = {}
+        for e in self._store.values():
+            agent = e.get("scope", {}).get("agent_id")
+            if e["user_id"] == partition and agent:
+                counts[agent] = counts.get(agent, 0) + 1
         return EntitiesResult(
-            entities=[{"id": partition, "type": "user", "total_memories": count}],
+            entities=[
+                {"id": agent, "type": "agent", "total_memories": n}
+                for agent, n in sorted(counts.items())
+            ],
             relationships=[],
         )
 
@@ -442,13 +447,13 @@ async def test_memory_history_invalid_id(mcp_with_tools):
 
 async def test_memory_entities_returns_structure(mcp_with_graph):
     mcp, _ = mcp_with_graph
-    await mcp.call("add_memory", content="entity test fact")
+    await mcp.call("add_memory", content="entity test fact", scope={"agent_id": "graph-agent"})
     result = await mcp.call("memory_entities")
     assert "entities" in result
     assert "relationships" in result
     assert result["incomplete"] is False
     assert len(result["entities"]) >= 1
-    assert result["entities"][0]["id"] == "test_user"
+    assert result["entities"][0]["id"] == "graph-agent"
     assert result["entities"][0]["total_memories"] >= 1
 
 

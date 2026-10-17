@@ -11,7 +11,12 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from memcp.backends.base import MemoryBackend, MetadataPatch, refuse_reserved_metadata
+from memcp.backends.base import (
+    MemoryBackend,
+    MetadataPatch,
+    refuse_partition,
+    refuse_reserved_metadata,
+)
 from memcp.backends.mem0.client import Mem0Client
 from memcp.types import (
     SYSTEM_METADATA_KEY,
@@ -127,17 +132,15 @@ def _earliest_and_latest(values: list[str | None]) -> tuple[str | None, str | No
     return min(dated)[1], max(dated)[1]
 
 
-def _entity_rows(partition: str, memories: list[Memory]) -> list[dict[str, Any]]:
-    """Count one tenant's memories per user, agent and run, in mem0's entity row shape."""
+def _entity_rows(memories: list[Memory]) -> list[dict[str, Any]]:
+    """Count memories per agent and run, in mem0's entity row shape."""
     groups: dict[tuple[str, str], list[Memory]] = {}
     for memory in memories:
-        groups.setdefault(("user", partition), []).append(memory)
         for entity_type, key in (("agent", "agent_id"), ("run", "run_id")):
             if memory.scope.get(key):
                 groups.setdefault((entity_type, str(memory.scope[key])), []).append(memory)
     rows: list[dict[str, Any]] = []
-    # The user row first, so a `limit` cuts agent and run rows before it.
-    for entity_type, entity_id in sorted(groups, key=lambda k: (k[0] != "user", k)):
+    for entity_type, entity_id in sorted(groups):
         group = groups[(entity_type, entity_id)]
         created_at, _ = _earliest_and_latest([m.created_at for m in group])
         _, updated_at = _earliest_and_latest([m.updated_at or m.created_at for m in group])
@@ -187,6 +190,7 @@ class Mem0Backend(MemoryBackend):
         infer: bool = True,
         system: System | None = None,
     ) -> list[AddResult]:
+        refuse_partition(self, partition)
         payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": content}],
             "user_id": partition,
@@ -228,6 +232,7 @@ class Mem0Backend(MemoryBackend):
         limit: int = 10,
         threshold: float = 0.0,
     ) -> list[Memory]:
+        refuse_partition(self, partition)
         payload = {
             "query": query,
             "filters": _build_search_filters(partition, scope),
@@ -239,6 +244,7 @@ class Mem0Backend(MemoryBackend):
         return [_parse_memory(r, score=r.get("score")) for r in raw_results]
 
     async def delete(self, partition: str, memory_id: str) -> bool:
+        refuse_partition(self, partition)
         # Fetch-then-verify: mem0 DELETE is global, so check ownership first
         existing = await self.get(partition, memory_id)
         if existing is None:
@@ -250,6 +256,7 @@ class Mem0Backend(MemoryBackend):
         # mem0 ignores a key it doesn't filter on, and httpx sends an empty list as
         # nothing; either widens the delete past the scope asked for. A wildcard value
         # is refused when the params are built. Only an empty scope reaches the whole tenant.
+        refuse_partition(self, partition)
         if any(
             k not in self.scope_keys() or not isinstance(v, (str, int, float))
             for k, v in scope.items()
@@ -280,7 +287,15 @@ class Mem0Backend(MemoryBackend):
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
 
+    def validate_partition(self, partition: str) -> None:
+        """Refuse `*`, which some of mem0's vector stores read as any user; an empty partition,
+        which may drop the user filter; and whitespace at either end, which mem0 trims from
+        scope values and may trim from a user id."""
+        if partition in ("", "*") or partition != partition.strip():
+            raise ValueError(f"mem0 can't match the partition {partition!r} exactly")
+
     async def get(self, partition: str, memory_id: str) -> Memory | None:
+        refuse_partition(self, partition)
         result = await self._client.request("GET", f"/memories/{memory_id}")
         if result is None:
             return None
@@ -299,6 +314,7 @@ class Mem0Backend(MemoryBackend):
         patch: MetadataPatch | None = None,
         system: System | None = None,
     ) -> Memory:
+        refuse_partition(self, partition)
         if patch is not None:
             refuse_reserved_metadata([*patch.set, *patch.remove])
         # Fetch-then-verify: mem0 PUT is global, check ownership first.
@@ -337,6 +353,7 @@ class Mem0Backend(MemoryBackend):
         limit: int = 100,
         cursor: str | None = None,
     ) -> ListResult:
+        refuse_partition(self, partition)
         params = _build_identifier_params(partition, scope)
         # mem0 defaults top_k to 20, which would hide the rest from list, export and the
         # import dedup index. The list ceiling is mem0's own maximum; it rejects more.
@@ -359,6 +376,7 @@ class Mem0Backend(MemoryBackend):
 
     async def history(self, partition: str, memory_id: str) -> list[HistoryEntry]:
         # Fetch-then-verify: mem0 history endpoint is global
+        refuse_partition(self, partition)
         existing = await self.get(partition, memory_id)
         if existing is None:
             raise MemoryAPIError(404, "Not found")
@@ -390,9 +408,10 @@ class Mem0Backend(MemoryBackend):
     ) -> EntitiesResult:
         # Not mem0's GET /entities: it counts every tenant's user, agent and run
         # values together, so another tenant's writes would show up here.
+        refuse_partition(self, partition)
         listed = await self.list_memories(partition, scope=scope, limit=self.list_ceiling)
         return EntitiesResult(
-            entities=_entity_rows(partition, listed.memories)[:limit],
+            entities=_entity_rows(listed.memories)[:limit],
             incomplete=listed.incomplete,
         )
 

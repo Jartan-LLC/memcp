@@ -26,7 +26,7 @@ from memcp.types import (
     scope_text,
 )
 
-from .base import MemoryBackend, MetadataPatch, refuse_reserved_metadata
+from .base import MemoryBackend, MetadataPatch, refuse_partition, refuse_reserved_metadata
 from .keyword import score as _score
 
 
@@ -67,6 +67,7 @@ class InMemoryBackend(MemoryBackend):
         infer: bool = True,
         system: System | None = None,
     ) -> list[AddResult]:
+        refuse_partition(self, partition)
         if scope:
             reject_nested_filters(scope)
         # Refused here as well as by policy: whoever calls this method, a reserved key
@@ -103,6 +104,7 @@ class InMemoryBackend(MemoryBackend):
         limit: int = 10,
         threshold: float = 0.0,
     ) -> list[Memory]:
+        refuse_partition(self, partition)
         if scope:
             reject_nested_filters(scope)
         results = []
@@ -121,6 +123,7 @@ class InMemoryBackend(MemoryBackend):
         return [_entry_to_memory(mid, entry, score=score) for score, mid, entry in results[:limit]]
 
     async def delete(self, partition: str, memory_id: str) -> bool:
+        refuse_partition(self, partition)
         entry = self._store.get(memory_id)
         if entry is None:
             raise MemoryAPIError(404, "Not found")
@@ -131,6 +134,7 @@ class InMemoryBackend(MemoryBackend):
         return True
 
     async def delete_all(self, partition: str, scope: dict[str, Any]) -> int:
+        refuse_partition(self, partition)
         reject_nested_filters(scope)
         to_delete = []
         for mid, entry in self._store.items():
@@ -154,7 +158,11 @@ class InMemoryBackend(MemoryBackend):
     def scope_keys(self) -> list[str]:
         return ["agent_id", "run_id"]
 
+    def validate_partition(self, partition: str) -> None:
+        """Refuses nothing: each stored partition is compared with ==, which folds nothing."""
+
     async def get(self, partition: str, memory_id: str) -> Memory | None:
+        refuse_partition(self, partition)
         entry = self._store.get(memory_id)
         if entry is None or entry["user_id"] != partition:
             return None
@@ -171,6 +179,7 @@ class InMemoryBackend(MemoryBackend):
         patch: MetadataPatch | None = None,
         system: System | None = None,
     ) -> Memory:
+        refuse_partition(self, partition)
         if patch is not None:
             refuse_reserved_metadata([*patch.set, *patch.remove])
         entry = self._store.get(memory_id)
@@ -207,6 +216,7 @@ class InMemoryBackend(MemoryBackend):
         limit: int = 100,
         cursor: str | None = None,
     ) -> ListResult:
+        refuse_partition(self, partition)
         memories = []
         for mid, entry in self._store.items():
             if entry["user_id"] != partition:
@@ -219,6 +229,7 @@ class InMemoryBackend(MemoryBackend):
         return paginate(memories, cursor, limit)
 
     async def history(self, partition: str, memory_id: str) -> list[HistoryEntry]:
+        refuse_partition(self, partition)
         entry = self._store.get(memory_id)
         if entry is None or entry["user_id"] != partition:
             raise MemoryAPIError(404, "Not found")

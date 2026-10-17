@@ -454,7 +454,7 @@ async def test_migrate_reports_an_incomplete_target_dedup_read():
 async def test_migrate_into_a_different_tenant():
     source, target = InMemoryBackend(), InMemoryBackend()
     await source.add(TENANT, "carried across", infer=False)
-    report = await migrate(source, target, TENANT, target_user_id=OTHER)
+    report = await migrate(source, target, TENANT, target_partition=OTHER)
     assert report.imported == 1
     assert (await target.list_memories(TENANT)).memories == []
     assert (await target.list_memories(OTHER)).memories[0].content == "carried across"
@@ -483,9 +483,57 @@ async def test_migrate_copies_system_and_sets_the_target_space():
     source, target = InMemoryBackend(), InMemoryBackend()
     stamp: System = {"space": TENANT, "author": "writer", "created_by": "creator"}
     await source.add(TENANT, "moved fact", system=stamp, infer=False)
-    await migrate(source, target, TENANT, target_user_id=OTHER)
+    await migrate(source, target, TENANT, target_partition=OTHER)
     landed = await target.list_memories(OTHER)
     assert [m.system for m in landed.memories] == [{**stamp, "space": OTHER}]
+
+
+class UnlistableBackend(InMemoryBackend):
+    """Fails the test if listed, so a migration must refuse before it reads."""
+
+    async def list_memories(self, partition, *, scope=None, limit=100, cursor=None) -> ListResult:
+        raise AssertionError("migrate read the source before checking its partitions")
+
+
+class RefusingBackend(UnlistableBackend):
+    """Refuses one partition, as a store that can't match it exactly would."""
+
+    def __init__(self, refused: str) -> None:
+        super().__init__()
+        self.refused = refused
+
+    def validate_partition(self, partition: str) -> None:
+        if partition == self.refused:
+            raise ValueError(f"this store can't match {partition!r} exactly")
+
+
+@pytest.mark.parametrize("partition", ["", "*", " * "])
+async def test_migrate_refuses_an_empty_or_wildcard_source(partition: str):
+    source, target = UnlistableBackend(), InMemoryBackend()
+    with pytest.raises(ValueError, match="empty or a wildcard"):
+        await migrate(source, target, partition)
+
+
+@pytest.mark.parametrize("partition", ["", "*"])
+async def test_migrate_refuses_an_empty_or_wildcard_target(partition: str):
+    source, target = UnlistableBackend(), InMemoryBackend()
+    await source.add(TENANT, "fact", infer=False)
+    with pytest.raises(ValueError, match="empty or a wildcard"):
+        await migrate(source, target, TENANT, target_partition=partition)
+    assert (await target.list_memories(TENANT)).memories == []
+
+
+async def test_migrate_refuses_a_source_partition_its_backend_refuses():
+    source, target = RefusingBackend(TENANT), InMemoryBackend()
+    with pytest.raises(ValueError, match="exactly"):
+        await migrate(source, target, TENANT, target_partition=OTHER)
+
+
+async def test_migrate_refuses_a_target_partition_its_backend_refuses_before_reading():
+    source, target = UnlistableBackend(), RefusingBackend(OTHER)
+    await source.add(TENANT, "fact", infer=False)
+    with pytest.raises(ValueError, match="exactly"):
+        await migrate(source, target, TENANT, target_partition=OTHER)
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +563,7 @@ async def test_migrate_refuses_a_source_memory_from_another_partition(
     source, target = ForeignPartitionBackend(), InMemoryBackend()
     await source.add(TENANT, "fact", infer=False)
     with pytest.raises(PolicyError) as refused:
-        await migrate(source, target, TENANT, target_user_id=OTHER)
+        await migrate(source, target, TENANT, target_partition=OTHER)
     assert refused.value.code == "internal_error"
     assert "operation=migrate " in caplog.text
     assert (await target.list_memories(OTHER)).memories == []
@@ -582,5 +630,5 @@ async def test_a_migration_logs_its_target_side_checks_as_migrate(
     await source.add(TENANT, "fact", infer=False)
     await target.add(OTHER, "already there", infer=False)
     with pytest.raises(PolicyError):
-        await migrate(source, target, TENANT, target_user_id=OTHER)
+        await migrate(source, target, TENANT, target_partition=OTHER)
     assert "operation=migrate " in caplog.text

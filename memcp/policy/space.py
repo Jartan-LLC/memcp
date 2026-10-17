@@ -1,10 +1,12 @@
-"""The space check: every memory policy reads back is in the partition it asked for."""
+"""The space check: every memory policy reads back is in the partition it asked for, and
+no space uses a partition a store can't keep apart."""
 
 from __future__ import annotations
 
 import logging
 
-from memcp.types import Memory, PolicyError
+from memcp.backends.base import MemoryBackend
+from memcp.types import Memory, PolicyError, is_wildcard
 
 logger = logging.getLogger(__name__)
 
@@ -33,3 +35,11 @@ def check_space(memory: Memory | None, partition: str, operation: str, memory_id
         None if memory is None else memory.system.get("space"),
     )
     raise PolicyError("internal_error", INTERNAL_ERROR_MSG)
+
+
+def refuse_unusable_partition(backend: MemoryBackend, partition: str) -> None:
+    """Raise ValueError for a partition no space may use: empty, `*`, or one `backend` can't
+    match exactly."""
+    if is_wildcard(partition):
+        raise ValueError(f"partition {partition!r} is empty or a wildcard")
+    backend.validate_partition(partition)

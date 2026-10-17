@@ -244,8 +244,10 @@ prefix and the wildcard and empty-value check in `types.py`; nothing else keeps 
 
 `tests/conformance` checks each guarantee against every backend, including:
 
-- isolation between two spaces for every operation, and partitions that differ only by
-  prefix, case or Unicode normalization;
+- isolation between two spaces for every operation, and between partitions where one is
+  a prefix of the other, that differ only by case, Unicode normalization or whitespace at
+  either end, or that are `*` or empty, unless the backend refuses one of them;
+- every data method refusing, with a 400, a partition `validate_partition` refuses;
 - a memory written to one partition and fetched by id from another returning `None`, which
   catches a backend that copies the requested partition into its results;
 - paging past the page size, and the incomplete mark past the list ceiling;

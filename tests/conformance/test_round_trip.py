@@ -119,7 +119,7 @@ async def test_round_trip_preserves_content_scope_and_retrieval(
         source,
         target,
         tenant,
-        target_user_id=other_tenant,
+        target_partition=other_tenant,
         source_name=source_name,
         target_name=target_name,
         limit=LIST_LIMIT,

@@ -58,6 +58,17 @@ def refuse_reserved_metadata(keys: Iterable[str]) -> None:
             raise MemoryAPIError(400, f"metadata key {key!r} is reserved")
 
 
+def refuse_partition(backend: MemoryBackend, partition: str) -> None:
+    """Raise MemoryAPIError(400) for a partition `backend.validate_partition` refuses.
+
+    Every data method calls this before it reaches the store.
+    """
+    try:
+        backend.validate_partition(partition)
+    except ValueError as e:
+        raise MemoryAPIError(400, str(e)) from e
+
+
 @dataclass(frozen=True)
 class MetadataPatch:
     """A merge patch over a memory's metadata: keys to set, and keys to remove."""
@@ -146,6 +157,11 @@ class MemoryBackend(ABC):
     def scope_keys(self) -> list[str]: ...
 
     @abstractmethod
+    def validate_partition(self, partition: str) -> None:
+        """Raise ValueError for a partition the store can't match by exact equality."""
+        ...
+
+    @abstractmethod
     async def get(self, partition: str, memory_id: str) -> Memory | None:
         """Returns None if not found or in another partition."""
         ...
@@ -201,7 +217,10 @@ class MemoryBackend(ABC):
         scope: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> EntitiesResult:
-        """Set `incomplete` when the counts come from an incomplete `list_memories` result."""
+        """Set `incomplete` when the counts come from an incomplete `list_memories` result.
+
+        No row names the partition: it is never shown to a client.
+        """
         raise NotImplementedError
 
     # --- lifecycle ---
