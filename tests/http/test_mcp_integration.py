@@ -6,10 +6,13 @@ Catches lifespan/initialization issues that unit tests miss.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from memcp.config import Config
+from tests.keys import write_keys_file
 
 MCP_HEADERS = {
     "Content-Type": "application/json",
@@ -52,14 +55,12 @@ async def test_mcp_endpoint_responds(config: Config):
     assert "error" not in resp.text
 
 
-async def test_mcp_endpoint_with_auth():
+async def test_mcp_endpoint_with_auth(tmp_path: Path):
     """MCP endpoint rejects unauthenticated, accepts authenticated."""
     from memcp.http.app import create_app
 
-    auth_config = Config(
-        MEMCP_BACKEND="in_memory",
-        MEMCP_AUTH_TOKENS="testtoken:testuser",
-    )
+    keys = write_keys_file(tmp_path / "keys.toml", ("tester", "testtoken", "testuser", "writer"))
+    auth_config = Config(MEMCP_BACKEND="in_memory", MEMCP_KEYS_FILE=str(keys))
     app, _backend = create_app(auth_config)
 
     async with (

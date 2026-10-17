@@ -26,13 +26,13 @@ def serve() -> None:
         raise SystemExit(1) from None
     setup_logging(level=config.log_level, fmt=config.log_format)
 
-    if not config.memcp_auth_tokens:
+    if not config.memcp_keys_file:
         # Config refuses this combination on any non-loopback bind, so reaching here
         # means a local dev server. Still worth saying out loud.
         logger.warning(
-            "MEMCP_AUTH_TOKENS is unset — the MCP endpoint is UNAUTHENTICATED and every "
-            "request is served as one tenant. Bound to %s, so nothing off this machine "
-            "can reach it.",
+            "MEMCP_KEYS_FILE is unset — the MCP endpoint is UNAUTHENTICATED and every "
+            "request is served as the key 'local', writer on the space 'default_user'. "
+            "Bound to %s, so nothing off this machine can reach it.",
             config.host,
         )
         if not is_loopback(config.host):  # pragma: no cover - Config raises first

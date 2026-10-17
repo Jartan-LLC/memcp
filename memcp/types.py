@@ -156,10 +156,9 @@ def canonical_error(code: str, message: str, *, retry: bool = False) -> dict[str
 
 
 class System(TypedDict, total=False):
-    """Fields only policy sets: the memory's space, and the seats that last wrote and created it.
+    """Fields only policy sets: the memory's space, and the keys that last wrote and created it.
 
-    `author` and `created_by` are absent for a write no token resolved (dev mode), and any
-    field is absent on a memory written before memcp recorded it.
+    Any field is absent on a memory written before memcp recorded it.
     """
 
     space: str
@@ -181,7 +180,7 @@ class Memory:
 
     @property
     def author(self) -> str | None:
-        """The seat that last wrote this memory, or None when none was recorded."""
+        """The name of the key that last wrote this memory, or None when none was recorded."""
         return self.system.get("author")
 
 
@@ -195,7 +194,7 @@ class AddResult:
 def serialize_memory(m: Memory) -> dict[str, Any]:
     """Wire shape for a Memory — the export/import payload and MCP tool results.
 
-    The partition and the rest of `system` stay server-side. `author` records which seat
+    The partition and the rest of `system` stay server-side. `author` records which key
     wrote the memory, not who the facts came from — see `memcp.http.app.INSTRUCTIONS`.
     """
     return {
@@ -238,7 +237,7 @@ class HistoryEntry:
     timestamp: str
     content_before: str | None = None
     content_after: str | None = None
-    # The principal that performed this event, where the backend can record one
+    # The key that performed this event, where the backend can record one
     # per event. None on a backend whose own history log has no room for it
     # (mem0's `/memories/{id}/history` is entirely upstream-managed) or on an
     # event recorded before this field existed.

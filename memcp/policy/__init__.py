@@ -1,8 +1,9 @@
 """The policy layer: every decision about what memcp accepts and returns.
 
-`Policy` is the only caller of a backend. Each method validates its arguments,
-calls the backend, and raises `PolicyError` for a request it refuses; a backend
-failure it doesn't decide on reaches the caller as `MemoryAPIError`.
+`Policy` is the only caller of a backend. Each data method checks the current key's
+relation, validates its arguments, calls the backend in the key's space, and raises
+`PolicyError` for a request it refuses; a backend failure it doesn't decide on reaches the
+caller as `MemoryAPIError`. `health` and `close` need no key.
 """
 
 from __future__ import annotations
@@ -15,10 +16,9 @@ from typing import Any
 from memcp.backends import MemoryBackend
 from memcp.backends.base import RETRIEVAL_KINDS, Retrieval
 from memcp.backends.capabilities import ALL_CAPABILITIES
-from memcp.identity import get_principal, get_tenant
+from memcp.policy.access import require
 from memcp.policy.metadata import (
     as_patch,
-    author_for,
     check_metadata_size,
     patched,
     system_for,
@@ -141,22 +141,21 @@ class Policy:
         infer: bool = True,
     ) -> AddResult | list[AddResult]:
         """Store content for the caller, stamped as its write; each item is space-checked."""
+        key = require("writer")
+        partition = key.grant.space
         with _validation():
             validate_content(content)
             if metadata is not None:
                 validate_metadata(metadata, nulls=False)
                 check_metadata_size(metadata)
-        principal = get_principal()
-        partition = principal.tenant
         scope = validate_scope(scope, self._scope_keys)
-        author = author_for(principal)
         result = await self._backend.add(
             partition,
             content,
             scope=scope,
             metadata=metadata,
             infer=infer,
-            system=system_for(partition, author, author),
+            system=system_for(partition, key.name, key.name),
         )
         for item in result if isinstance(result, list) else [result]:
             stored = await self._backend.get(partition, item.id)
@@ -172,31 +171,30 @@ class Policy:
         threshold: float = 0.0,
     ) -> list[Memory]:
         """The caller's memories that match `query`, ranked by the backend."""
+        partition = require("reader").grant.space
         with _validation():
             validate_query(query)
             validate_limit(limit)
             if not (0.0 <= threshold <= 1.0):
                 raise ValueError("threshold must be between 0.0 and 1.0")
-        user_id = get_tenant()
         scope = validate_scope(scope, self._scope_keys)
         found = await self._backend.search(
-            user_id, query, scope=scope, limit=limit, threshold=threshold
+            partition, query, scope=scope, limit=limit, threshold=threshold
         )
-        return _in_scope([check_space(m, user_id, "search", m.id) for m in found], scope)
+        return _in_scope([check_space(m, partition, "search", m.id) for m in found], scope)
 
     async def get(self, memory_id: str) -> Memory:
         """One of the caller's memories; `not_found` when missing or someone else's."""
-        return await self._read(memory_id, "get")
+        return await self._read(require("reader").grant.space, memory_id, "get")
 
-    async def _read(self, memory_id: str, operation: str) -> Memory:
-        user_id = get_tenant()
+    async def _read(self, partition: str, memory_id: str, operation: str) -> Memory:
         with _validation():
             validate_memory_id(memory_id)
         with _not_found():
-            result = await self._backend.get(user_id, memory_id)
+            result = await self._backend.get(partition, memory_id)
         if result is None:
             raise PolicyError("not_found", NOT_FOUND_MSG)
-        return check_space(result, user_id, operation, memory_id)
+        return check_space(result, partition, operation, memory_id)
 
     async def update(
         self,
@@ -208,8 +206,8 @@ class Policy:
         """Change a memory's content, its metadata (a merge patch: null removes a key), or
         both, with the caller as author and its creator kept; `not_found` when missing or
         someone else's."""
-        principal = get_principal()
-        partition = principal.tenant
+        key = require("writer")
+        partition = key.grant.space
         with _validation():
             if content is None and not metadata:
                 raise ValueError("update_memory needs content, or metadata to change")
@@ -217,14 +215,14 @@ class Policy:
                 validate_content(content)
             if metadata:
                 validate_metadata(metadata, nulls=True)
-        existing = await self._read(memory_id, "update")
+        existing = await self._read(partition, memory_id, "update")
         patch = as_patch(metadata) if metadata else None
         if patch is not None:
             # Checked against the read above, not inside the write, so two concurrent
             # patches can together pass the cap: it bounds what one write adds.
             with _validation():
                 check_metadata_size(patched(existing.metadata, patch), stored=existing.metadata)
-        system = system_for(partition, author_for(principal), existing.system.get("created_by"))
+        system = system_for(partition, key.name, existing.system.get("created_by"))
         with _not_found():
             updated = await self._backend.update(
                 partition, memory_id, content, patch=patch, system=system
@@ -233,20 +231,20 @@ class Policy:
 
     async def delete(self, memory_id: str) -> bool:
         """Delete one of the caller's memories; `not_found` when missing or someone else's."""
-        user_id = get_tenant()
-        await self._read(memory_id, "delete")
+        partition = require("writer").grant.space
+        await self._read(partition, memory_id, "delete")
         with _not_found():
-            return await self._backend.delete(user_id, memory_id)
+            return await self._backend.delete(partition, memory_id)
 
     async def delete_all(self, scope: dict[str, Any]) -> int | None:
         """Delete the caller's memories in a non-empty, concrete scope; the count if known."""
-        user_id = get_tenant()
+        partition = require("writer").grant.space
         cleaned = validate_scope(scope, self._scope_keys)
         if not cleaned:
             raise PolicyError(
                 "scope_required", "delete_all_memories requires at least one scope key."
             )
-        return await self._backend.delete_all(user_id, cleaned)
+        return await self._backend.delete_all(partition, cleaned)
 
     async def list_memories(
         self,
@@ -256,45 +254,48 @@ class Policy:
         cursor: str | None = None,
     ) -> ListResult:
         """One page of the caller's memories."""
+        partition = require("reader").grant.space
         with _validation():
             validate_limit(limit)
-        user_id = get_tenant()
         scope = validate_scope(scope, self._scope_keys)
         # A backend raises ValueError for a cursor it can't read.
         with _validation():
             page = await self._backend.list_memories(
-                user_id, scope=scope, limit=limit, cursor=cursor
+                partition, scope=scope, limit=limit, cursor=cursor
             )
         page.memories = _in_scope(
-            [check_space(m, user_id, "list", m.id) for m in page.memories], scope
+            [check_space(m, partition, "list", m.id) for m in page.memories], scope
         )
         return page
 
     async def history(self, memory_id: str) -> list[HistoryEntry]:
         """A memory's change log; `not_found` when missing or someone else's."""
-        user_id = get_tenant()
-        await self._read(memory_id, "history")
+        partition = require("reader").grant.space
+        await self._read(partition, memory_id, "history")
         with _not_found():
-            return await self._backend.history(user_id, memory_id)
+            return await self._backend.history(partition, memory_id)
 
     async def entities(
         self, *, scope: dict[str, Any] | None = None, limit: int = 100
     ) -> EntitiesResult:
         """Entity counts over the caller's memories."""
+        partition = require("reader").grant.space
         with _validation():
             validate_limit(limit)
-        user_id = get_tenant()
         scope = validate_scope(scope, self._scope_keys)
-        return await self._backend.entities(user_id, scope=scope, limit=limit)
+        return await self._backend.entities(partition, scope=scope, limit=limit)
 
     async def export_memories(self) -> ExportPayload:
         """Every memory of the caller's, up to the export cap."""
-        return await export_payload(self._backend, get_tenant(), limit=MAX_EXPORT)
+        partition = require("reader").grant.space
+        return await export_payload(self._backend, partition, limit=MAX_EXPORT)
 
     async def import_memories(
         self, memories: Sequence[dict[str, Any]], *, on_conflict: str = "skip"
     ) -> ImportOutcome:
         """Store a batch for the caller; per-entry failures are in the outcome, not raised."""
+        key = require("writer")
+        partition = key.grant.space
         if not memories:
             raise PolicyError("validation_error", "memories array must not be empty")
         if len(memories) > MAX_IMPORT:
@@ -310,13 +311,9 @@ class Policy:
                 "not_supported", "on_conflict='overwrite' requires the backend's update capability"
             )
 
-        principal = get_principal()
-        partition = principal.tenant
-        author = author_for(principal)
-
         def stamp(index: int, stored: System | None) -> System:
-            created_by = author if stored is None else stored.get("created_by")
-            return system_for(partition, author, created_by)
+            created_by = key.name if stored is None else stored.get("created_by")
+            return system_for(partition, key.name, created_by)
 
         def validate_entry_scope(scope: Any) -> Any:
             try:

@@ -1,171 +1,168 @@
-"""Authentication — bearer token resolution and ASGI middleware.
+"""Authentication — the keys file, bearer token resolution and the ASGI gate.
 
-Identity flows: Bearer token → Resolver → ContextVar (`memcp.identity`) → tool handlers.
+Identity flows: Bearer token → its SHA-256 → `Key` → ContextVar (`memcp.identity`) →
+policy. The keys file holds only digests, which keep a random token secret.
 """
 
 from __future__ import annotations
 
-import hmac
+import hashlib
 import json
 import logging
-import re
-from typing import Any, Protocol, runtime_checkable
+import tomllib
+from typing import Annotated, Any, Literal
 
-from memcp.identity import DEFAULT_PRINCIPAL, Principal, reset_tenant, set_principal
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from memcp.identity import Grant, Key, reset_key, set_key
 from memcp.types import canonical_error
 
 logger = logging.getLogger(__name__)
 
-_SEAT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+# Dev mode: no keys file, one local key, on loopback only (config.py refuses the rest).
+LOCAL_KEY = Key(name="local", grant=Grant(space="default_user", relation="writer"))
 
-# ---------------------------------------------------------------------------
-# Resolver protocol
-# ---------------------------------------------------------------------------
-
-
-@runtime_checkable
-class Resolver(Protocol):
-    async def resolve(self, token: str) -> Principal | None:
-        """Map a bearer token to a Principal. Returns None for invalid tokens (never raises)."""
-        ...
+_SECRET_PREFIX = "sha256:"
 
 
-class StaticResolver:
-    """Resolves tokens from a static dict (parsed from env var)."""
+class _Entry(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    def __init__(self, mapping: dict[str, Principal]):
-        self._mapping = mapping
 
-    async def resolve(self, token: str) -> Principal | None:
-        # Iterate all tokens without early return — constant-time to prevent timing oracle
-        matched: Principal | None = None
-        for known_token, principal in self._mapping.items():
-            if hmac.compare_digest(token.encode(), known_token.encode()):
-                matched = principal
-        return matched
+class _GrantEntry(_Entry):
+    space: str
+    relation: Literal["reader", "writer"]
 
-    @classmethod
-    def from_env(cls, raw: str, seats_raw: str | None = None) -> StaticResolver:
-        """Parse `MEMCP_AUTH_TOKENS` ('token:user_id', comma-separated) with
-        `split(":", 1)` per pair, so a `user_id` containing a colon round-trips
-        byte-for-byte unchanged. No seat field is ever read out of this string:
-        a positional third field would be indistinguishable from a
-        colon-containing `user_id`.
 
-        `seats_raw` (`MEMCP_AUTH_SEATS`, 'token:seat', comma-separated) is a
-        second, independent variable: an optional seat for a token already
-        named in `MEMCP_AUTH_TOKENS`, keyed by token rather than embedded in
-        the same field. The discriminator is which variable a value came
-        from, not its shape. A token in `MEMCP_AUTH_SEATS` with no
-        `MEMCP_AUTH_TOKENS` entry is unresolvable and fails closed, named; a
-        seat outside `[A-Za-z0-9_.-]+` does too. A token absent from
-        `MEMCP_AUTH_SEATS` gets a seat equal to its tenant.
+class _KeyEntry(_Entry):
+    name: Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]{1,64}$")]
+    secrets: Annotated[
+        list[Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]], Field(min_length=1)
+    ]
+    grants: Annotated[list[_GrantEntry], Field(min_length=1, max_length=1)]
+
+
+class _KeysFile(_Entry):
+    keys: Annotated[list[_KeyEntry], Field(min_length=1)]
+
+
+class KeyTable:
+    """The configured keys, found by the SHA-256 of a token."""
+
+    def __init__(self, by_digest: dict[str, Key]):
+        self._by_digest = by_digest
+
+    def resolve(self, token: str) -> Key | None:
+        """The key `token` belongs to, or None.
+
+        A dict lookup on the digest: its timing can reveal only the digest, and turning
+        that into a token needs a preimage.
         """
-        # Errors name an entry by position, never by content: an entry holds a token,
-        # and these messages are logged.
-        mapping: dict[str, str] = {}
-        for n, pair in enumerate(raw.split(","), 1):
-            pair = pair.strip()
-            if not pair:
-                continue
-            if ":" not in pair:
-                raise ValueError(
-                    f"Invalid token mapping: MEMCP_AUTH_TOKENS entry {n}. "
-                    "Expected format: token:user_id"
-                )
-            token, user_id = pair.split(":", 1)
-            token, user_id = token.strip(), user_id.strip()
-            if not token or not user_id:
-                raise ValueError(f"Empty token or user_id in MEMCP_AUTH_TOKENS entry {n}")
-            mapping[token] = user_id
-        if not mapping:
-            raise ValueError("MEMCP_AUTH_TOKENS is set but contains no valid mappings")
+        return self._by_digest.get(hashlib.sha256(token.encode()).hexdigest())
 
-        seats: dict[str, str] = {}
-        for n, pair in enumerate((seats_raw or "").split(","), 1):
-            pair = pair.strip()
-            if not pair:
-                continue
-            if ":" not in pair:
-                raise ValueError(
-                    f"Invalid seat mapping: MEMCP_AUTH_SEATS entry {n}. "
-                    "Expected format: token:seat"
-                )
-            token, seat = pair.split(":", 1)
-            token, seat = token.strip(), seat.strip()
-            if not token or not seat:
-                raise ValueError(f"Empty token or seat in MEMCP_AUTH_SEATS entry {n}")
-            if not _SEAT_RE.match(seat):
-                raise ValueError(
-                    f"Invalid seat label in MEMCP_AUTH_SEATS entry {n}. "
-                    f"Seat must match {_SEAT_RE.pattern!r}."
-                )
-            if token not in mapping:
-                raise ValueError(
-                    f"MEMCP_AUTH_SEATS entry {n} names a token with no MEMCP_AUTH_TOKENS mapping."
-                )
-            seats[token] = seat
+    def keys(self) -> list[Key]:
+        """Each configured key once, in file order."""
+        return list(dict.fromkeys(self._by_digest.values()))
 
-        return cls(
-            {
-                token: Principal(tenant=user_id, seat=seats.get(token, user_id))
-                for token, user_id in mapping.items()
-            }
+
+def _where(loc: tuple[int | str, ...]) -> str:
+    """A pydantic error location as the file's terms: `key 2: grants.0.relation`."""
+    if len(loc) >= 2 and loc[0] == "keys" and isinstance(loc[1], int):
+        rest = ".".join(str(part) for part in loc[2:])
+        return f"key {loc[1] + 1}" + (f": {rest}" if rest else "")
+    return ".".join(str(part) for part in loc) or "the file"
+
+
+def load_keys(path: str) -> KeyTable:
+    """Read the keys file at `path`. Raises ValueError for anything startup refuses.
+
+    Messages name a key by its position, never by a secret: they reach the startup log,
+    and a malformed secret may be a token pasted where its hash belongs.
+    """
+    try:
+        with open(path, "rb") as f:
+            raw = tomllib.load(f)
+    except OSError as e:
+        raise ValueError(f"MEMCP_KEYS_FILE {path} can't be read: {e.strerror}") from None
+    except UnicodeDecodeError:
+        # Not the decoder's message: it quotes a byte of the file.
+        raise ValueError(f"MEMCP_KEYS_FILE {path} isn't UTF-8") from None
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"MEMCP_KEYS_FILE {path} isn't valid TOML: {e}") from None
+    try:
+        parsed = _KeysFile.model_validate(raw)
+    except ValidationError as e:
+        problems = "; ".join(
+            f"{_where(err['loc'])}: {err['msg']}"
+            for err in e.errors(include_url=False, include_context=False, include_input=False)
         )
+        raise ValueError(f"MEMCP_KEYS_FILE {path}: {problems}") from None
 
-
-# ---------------------------------------------------------------------------
-# ASGI middleware
-# ---------------------------------------------------------------------------
+    by_digest: dict[str, Key] = {}
+    owner: dict[str, int] = {}
+    names: dict[str, int] = {}
+    for n, entry in enumerate(parsed.keys, 1):
+        if entry.name in names:
+            raise ValueError(
+                f"MEMCP_KEYS_FILE {path}: keys {names[entry.name]} and {n} are both named "
+                f"{entry.name!r}"
+            )
+        names[entry.name] = n
+        grant = entry.grants[0]
+        key = Key(name=entry.name, grant=Grant(space=grant.space, relation=grant.relation))
+        for secret in entry.secrets:
+            digest = secret.removeprefix(_SECRET_PREFIX)
+            if owner.get(digest) == n:
+                raise ValueError(f"MEMCP_KEYS_FILE {path}: key {n} lists the same secret twice")
+            if digest in owner:
+                raise ValueError(
+                    f"MEMCP_KEYS_FILE {path}: keys {owner[digest]} and {n} list the same secret"
+                )
+            owner[digest] = n
+            by_digest[digest] = key
+    return KeyTable(by_digest)
 
 
 class BearerGate:
-    """ASGI middleware that resolves bearer tokens to tenant identity.
+    """ASGI middleware that serves each HTTP request as the key its bearer token resolves to.
 
     Raw ASGI (not BaseHTTPMiddleware) to avoid buffering MCP streaming.
     Non-HTTP scopes (lifespan) pass through.
     """
 
-    def __init__(self, app: Any, resolver: Resolver | None):
+    def __init__(self, app: Any, keys: KeyTable | None):
+        """With `keys` None (no keys file), every request is served as `LOCAL_KEY`."""
         self.app = app
-        self.resolver = resolver
+        self.keys = keys
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        if not self.resolver:
-            # Dev mode: no auth, default user. The literal sentinel, not a
-            # freshly-built equal Principal — is_unattributed() checks identity.
-            token = set_principal(DEFAULT_PRINCIPAL)
-            try:
-                await self.app(scope, receive, send)
-            finally:
-                reset_tenant(token)
-            return
+        if self.keys is None:
+            key = LOCAL_KEY
+        else:
+            headers = dict(scope.get("headers") or [])
+            provided = headers.get(b"authorization", b"").decode("utf-8", errors="replace")
+            if not provided.startswith("Bearer "):
+                logger.warning(
+                    "Rejected request: missing Bearer prefix (path=%s)", scope.get("path")
+                )
+                await self._send_401(send)
+                return
+            resolved = self.keys.resolve(provided[7:])
+            if resolved is None:
+                logger.warning("Rejected request: invalid token (path=%s)", scope.get("path"))
+                await self._send_401(send)
+                return
+            key = resolved
 
-        headers = dict(scope.get("headers") or [])
-        provided = headers.get(b"authorization", b"").decode("utf-8", errors="replace")
-
-        if not provided.startswith("Bearer "):
-            logger.warning("Rejected request: missing Bearer prefix (path=%s)", scope.get("path"))
-            await self._send_401(send)
-            return
-
-        bearer_token = provided[7:]
-        principal = await self.resolver.resolve(bearer_token)
-
-        if principal is None:
-            logger.warning("Rejected request: invalid token (path=%s)", scope.get("path"))
-            await self._send_401(send)
-            return
-
-        token = set_principal(principal)
+        token = set_key(key)
         try:
             await self.app(scope, receive, send)
         finally:
-            reset_tenant(token)
+            reset_key(token)
 
     @staticmethod
     async def _send_401(send: Any) -> None:

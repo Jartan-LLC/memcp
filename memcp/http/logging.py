@@ -9,6 +9,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from memcp.identity import current_key
+
 
 class JsonFormatter(logging.Formatter):
     """Single-line JSON log output for Docker/aggregator consumption."""
@@ -19,14 +21,15 @@ class JsonFormatter(logging.Formatter):
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
-            "user_id": getattr(record, "user_id", "-"),
+            "key": getattr(record, "key", None),
+            "space": getattr(record, "space", None),
         }
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str)
 
 
-_PLAIN_FORMAT = "%(asctime)s %(levelname)s %(name)s user=%(user_id)s %(message)s"
+_PLAIN_FORMAT = "%(asctime)s %(levelname)s %(name)s key=%(key)s space=%(space)s %(message)s"
 
 
 class PlainFormatter(logging.Formatter):
@@ -42,19 +45,22 @@ class PlainFormatter(logging.Formatter):
     )
 
     def __init__(self) -> None:
-        super().__init__(fmt=_PLAIN_FORMAT)
+        super().__init__(fmt=_PLAIN_FORMAT, defaults={"key": "-", "space": "-"})
 
     def formatMessage(self, record: logging.LogRecord) -> str:
         return super().formatMessage(record).translate(self._ESCAPES)
 
 
-class TenantContextFilter(logging.Filter):
-    """Attach tenant user_id from contextvar to every log record."""
+class KeyContextFilter(logging.Filter):
+    """Attach the current request's key name and space to every record logged inside one."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        from memcp.identity import get_tenant
-
-        record.user_id = get_tenant()  # type: ignore[attr-defined]
+        try:
+            key = current_key()
+        except LookupError:
+            return True  # no key: startup, /health, a request refused with 401, shutdown
+        record.key = key.name
+        record.space = key.grant.space
         return True
 
 
@@ -74,7 +80,7 @@ def setup_logging(*, level: str = "INFO", fmt: str = "json") -> None:
             "version": 1,
             "disable_existing_loggers": False,
             "filters": {
-                "tenant_context": {"()": TenantContextFilter},
+                "key_context": {"()": KeyContextFilter},
             },
             "formatters": {
                 "plain": {"()": PlainFormatter},
@@ -85,7 +91,7 @@ def setup_logging(*, level: str = "INFO", fmt: str = "json") -> None:
                     "class": "logging.StreamHandler",
                     "stream": "ext://sys.stdout",
                     "formatter": formatter_name,
-                    "filters": ["tenant_context"],
+                    "filters": ["key_context"],
                 },
             },
             "loggers": {

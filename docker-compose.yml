@@ -1,5 +1,5 @@
-# memcp, running the latest release. Set MEMCP_BACKEND and MEMCP_AUTH_TOKENS in .env,
-# then run `docker compose up -d --wait`.
+# memcp, running the latest release. Set MEMCP_BACKEND in .env and write keys.toml beside
+# this file, then run `docker compose up -d --wait`.
 # Guide: https://github.com/Jartan-LLC/memcp/blob/main/docs/deployment.md
 
 name: memcp
@@ -15,13 +15,21 @@ services:
       MEMCP_SQLITE_PATH: /data/memcp.sqlite3
       MEMCP_HOST: 0.0.0.0
       MEMCP_PORT: "8080"
-      MEMCP_AUTH_TOKENS: ${MEMCP_AUTH_TOKENS:?set MEMCP_AUTH_TOKENS in .env}
+      MEMCP_KEYS_FILE: /etc/memcp/keys.toml
       # DNS-rebinding protection; the SDK leaves it off on a 0.0.0.0 bind.
       MEMCP_ALLOWED_HOSTS: ${MEMCP_ALLOWED_HOSTS:-127.0.0.1:*,localhost:*}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - memcp_data:/data
+      # Without create_host_path, a missing keys.toml fails `up` instead of mounting a
+      # directory.
+      - type: bind
+        source: ./keys.toml
+        target: /etc/memcp/keys.toml
+        read_only: true
+        bind:
+          create_host_path: false
     deploy:
       resources:
         limits:

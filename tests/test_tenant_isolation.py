@@ -1,10 +1,7 @@
 """G7 — two tokens, two identities, and one that cannot reach the other's memories.
 
-memcp's whole security story is that tenant isolation happens *in memcp*: the bearer
-token resolves to a `user_id` and every backend call is scoped to it. Until this
-file existed, nothing asserted it end to end through the MCP surface — which is what
-made `SEC-2026-0038` (one shared token for fifteen agents) collapse isolation to a
-single tenant without anything failing.
+memcp's whole security story is that isolation happens *in memcp*: the bearer token
+resolves to a key, and every backend call names that key's granted space.
 
 So this drives the real ASGI stack with two real tokens, and asserts for **every
 registered tool** that Mallory can neither read, change, delete nor enumerate
@@ -32,6 +29,7 @@ from httpx import ASGITransport, AsyncClient
 
 from memcp.config import Config
 from memcp.http.app import create_app
+from tests.keys import write_keys_file
 
 ALICE_TOKEN = "alice-token-not-a-real-credential"
 MALLORY_TOKEN = "mallory-token-not-a-real-credential"
@@ -67,9 +65,14 @@ def _config(tmp_path: Any, backend: Literal["in_memory", "sqlite", "mem0"]) -> C
     elif backend == "mem0":
         extra["mem0_api_base"] = MEM0_API_BASE
         extra["mem0_api_key"] = MEM0_API_KEY
+    keys = write_keys_file(
+        tmp_path / "keys.toml",
+        ("alice", ALICE_TOKEN, "alice", "writer"),
+        ("mallory", MALLORY_TOKEN, "mallory", "writer"),
+    )
     return Config(
         MEMCP_BACKEND=backend,
-        MEMCP_AUTH_TOKENS=f"{ALICE_TOKEN}:alice,{MALLORY_TOKEN}:mallory",
+        MEMCP_KEYS_FILE=str(keys),
         MEMCP_HOST="127.0.0.1",
         **extra,
     )

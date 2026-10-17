@@ -1,27 +1,26 @@
-"""Server-side author attribution: the seat stamped on a write comes from the resolved
-token, never from the caller.
+"""Server-side author attribution: the name stamped on a write is the acting key's,
+never the caller's.
 
-Before this landed, nothing in memcp distinguished which seat wrote a memory: two
-principals sharing a tenant (the live shape of SEC-2026-0038 — one bearer token for
-fifteen agents) were indistinguishable in every read, and a caller's `metadata` dict
-reached storage and came back out completely unvalidated. That made the shared store
-an anonymous instruction channel — a memory injected by any seat looked exactly like
-one any other seat wrote, and a caller could claim any label it liked. These tests
-drive the MCP tool surface (not backend internals).
+Two keys granted one space must be told apart in every read, and no caller may claim
+another key's name: otherwise a shared space is an anonymous instruction channel. These
+tests drive the MCP tool surface (not backend internals).
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from memcp.backends.in_memory import InMemoryBackend
 from memcp.config import Config
-from memcp.identity import reset_tenant, set_tenant
+from memcp.http.auth import LOCAL_KEY, load_keys
+from memcp.identity import reset_key, set_key
 from memcp.policy import Policy
 from memcp.tools import register_tools
 from memcp.types import SYSTEM_METADATA_KEY
+from tests.keys import make_key, write_keys_file
 
 
 class FakeMCP:
@@ -48,7 +47,7 @@ def mcp_with_tools(config: Config, backend: InMemoryBackend) -> tuple[FakeMCP, I
     return mcp, backend
 
 
-async def test_add_memory_stamps_the_resolved_seat(mcp_with_tools):
+async def test_add_memory_stamps_the_acting_key(mcp_with_tools):
     mcp, _ = mcp_with_tools
     await mcp.call("add_memory", content="a fact")
     result = await mcp.call("search_memory", query="fact")
@@ -69,7 +68,7 @@ async def test_search_result_is_unattributed_when_backend_holds_no_stamp(mcp_wit
 
 async def test_add_memory_caller_cannot_forge_author_via_metadata(mcp_with_tools):
     """The reserved key is refused on the way in, naming it, and nothing is stored —
-    a caller cannot claim to be a different, more-trusted seat."""
+    a caller cannot claim to be a different, more-trusted key."""
     mcp, _ = mcp_with_tools
     refused = await mcp.call(
         "add_memory",
@@ -82,27 +81,25 @@ async def test_add_memory_caller_cannot_forge_author_via_metadata(mcp_with_tools
     assert result["results"] == []
 
 
-async def test_update_memory_relabels_to_the_updating_principal(mcp_with_tools):
+async def test_update_memory_relabels_to_the_updating_key(mcp_with_tools):
     """Attribution-laundering repro: an update must never keep the original
-    writer's label — that would let an attacker edit a trusted seat's memory and
+    writer's label — that would let an attacker edit a trusted key's memory and
     have it keep reading as trusted.
 
-    Same tenant, different seat throughout: update_memory only reaches a memory
-    within its own tenant (a cross-tenant update is a separate, already-tested
-    isolation boundary, not what this test is about), and this is the actual
-    shape one shared bearer token produces (SEC-2026-0038).
+    Two writer keys on one space: update_memory only reaches a memory in the key's
+    own space (a cross-space update is a separate, already-tested isolation
+    boundary, not what this test is about).
     """
-    from memcp.identity import Principal, set_principal
 
     mcp, _ = mcp_with_tools
-    tok = set_principal(Principal(tenant="shared", seat="owner"))
+    tok = set_key(make_key("shared", name="owner"))
     added = await mcp.call("add_memory", content="original", infer=False)
     memory_id = added["results"][0]["id"]
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_principal(Principal(tenant="shared", seat="attacker"))
+    tok = set_key(make_key("shared", name="attacker"))
     result = await mcp.call("update_memory", memory_id=memory_id, content="tampered")
-    reset_tenant(tok)
+    reset_key(tok)
 
     assert result["author"] == "attacker"
     assert result["author"] != "owner"
@@ -111,64 +108,62 @@ async def test_update_memory_relabels_to_the_updating_principal(mcp_with_tools):
 async def test_update_memory_re_stamps_even_when_metadata_is_not_touched(mcp_with_tools):
     """update_memory's own contract is that omitted metadata is left alone — the
     re-stamp must not turn 'I'm not touching metadata' into 'wipe it'."""
-    from memcp.identity import Principal, set_principal
 
     mcp, _ = mcp_with_tools
-    tok = set_principal(Principal(tenant="shared", seat="owner"))
+    tok = set_key(make_key("shared", name="owner"))
     added = await mcp.call(
         "add_memory", content="has metadata", metadata={"tag": "keep-me"}, infer=False
     )
     memory_id = added["results"][0]["id"]
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_principal(Principal(tenant="shared", seat="updater"))
+    tok = set_key(make_key("shared", name="updater"))
     result = await mcp.call("update_memory", memory_id=memory_id, content="edited")
-    reset_tenant(tok)
+    reset_key(tok)
 
     assert result["metadata"] == {"tag": "keep-me"}
     assert result["author"] == "updater"
 
 
-async def test_memory_history_entries_carry_the_acting_principal(mcp_with_tools):
-    from memcp.identity import Principal, set_principal
+async def test_memory_history_entries_carry_the_acting_key(mcp_with_tools):
 
     mcp, _ = mcp_with_tools
-    tok = set_principal(Principal(tenant="shared", seat="creator"))
+    tok = set_key(make_key("shared", name="creator"))
     added = await mcp.call("add_memory", content="v1", infer=False)
     memory_id = added["results"][0]["id"]
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_principal(Principal(tenant="shared", seat="editor"))
+    tok = set_key(make_key("shared", name="editor"))
     await mcp.call("update_memory", memory_id=memory_id, content="v2")
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_principal(Principal(tenant="shared", seat="reader"))
+    tok = set_key(make_key("shared", "reader", name="reader"))
     history = (await mcp.call("memory_history", memory_id=memory_id))["history"]
-    reset_tenant(tok)
+    reset_key(tok)
 
     assert [h["author"] for h in history] == ["creator", "editor"]
 
 
-async def test_import_memories_stamps_the_importing_principal_not_an_incoming_author(
+async def test_import_memories_stamps_the_importing_key_not_an_incoming_author(
     mcp_with_tools,
 ):
     """export_memories now emits `author` on every entry, so a raw export payload
     is valid import_memories input carrying someone else's author label. Import
     must never honour it — the round trip does not preserve author, by design."""
     mcp, _ = mcp_with_tools
-    tok = set_tenant("original_writer")
+    tok = set_key(make_key("original_writer"))
     await mcp.call("add_memory", content="carried over", infer=False)
     exported = await mcp.call("export_memories")
-    reset_tenant(tok)
+    reset_key(tok)
     assert exported["memories"][0]["author"] == "original_writer"
 
-    tok = set_tenant("importer")
+    tok = set_key(make_key("importer"))
     result = await mcp.call(
         "import_memories", memories=exported["memories"], on_conflict="duplicate"
     )
     assert result["imported"] == 1
     listing = await mcp.call("list_memories")
-    reset_tenant(tok)
+    reset_key(tok)
 
     imported = next(m for m in listing["memories"] if m["content"] == "carried over")
     assert imported["author"] == "importer"
@@ -177,20 +172,17 @@ async def test_import_memories_stamps_the_importing_principal_not_an_incoming_au
 
 async def test_import_memories_overwrite_re_stamps_author_too(mcp_with_tools):
     """on_conflict='overwrite' reaches backend.update — the same laundering repro
-    as test_update_memory_relabels_to_the_updating_principal, through import.
+    as test_update_memory_relabels_to_the_updating_key, through import.
 
-    Dedup only matches within one tenant, so both calls share a tenant here and
-    differ only in seat — the shape a shared bearer token actually produces
-    (SEC-2026-0038: one tenant, many seats).
+    Dedup only matches within one space, so both keys are granted the same one.
     """
-    from memcp.identity import Principal, set_principal
 
     mcp, _ = mcp_with_tools
-    tok = set_principal(Principal(tenant="shared", seat="owner"))
+    tok = set_key(make_key("shared", name="owner"))
     await mcp.call("add_memory", content="dup content", infer=False)
-    reset_tenant(tok)
+    reset_key(tok)
 
-    tok = set_principal(Principal(tenant="shared", seat="importer"))
+    tok = set_key(make_key("shared", name="importer"))
     result = await mcp.call(
         "import_memories",
         memories=[{"content": "dup content"}],
@@ -198,53 +190,44 @@ async def test_import_memories_overwrite_re_stamps_author_too(mcp_with_tools):
     )
     assert result["imported"] == 1
     listing = await mcp.call("list_memories")
-    reset_tenant(tok)
+    reset_key(tok)
 
     memory = next(m for m in listing["memories"] if m["content"] == "dup content")
     assert memory["author"] == "importer"
 
 
-async def test_no_auth_dev_mode_write_is_not_attributed(mcp_with_tools):
-    """With no resolver, nothing authenticated the caller, so a write made
-    under the dev-mode fallback principal must record no author — one would
-    tell a reader "the server resolved this seat" when it resolved nothing at
-    all.
-
-    No `tenant_context` fixture override here: the default `DEFAULT_PRINCIPAL`
-    context (unset contextvar) is exactly the no-`MEMCP_AUTH_TOKENS` shape.
-    """
-    from memcp.identity import DEFAULT_PRINCIPAL, reset_tenant, set_principal
-
+async def test_a_dev_mode_write_is_attributed_to_the_local_key(mcp_with_tools):
+    """Without a keys file every request is the key `local`, and its writes say so."""
     mcp, _ = mcp_with_tools
-    tok = set_principal(DEFAULT_PRINCIPAL)
+    tok = set_key(LOCAL_KEY)
     try:
-        await mcp.call("add_memory", content="no auth configured")
-        result = await mcp.call("search_memory", query="no auth")
+        await mcp.call("add_memory", content="no keys file configured")
+        result = await mcp.call("search_memory", query="no keys file")
     finally:
-        reset_tenant(tok)
+        reset_key(tok)
 
     memory = result["results"][0]
-    assert memory["author"] is None
+    assert memory["author"] == "local"
 
 
-async def test_real_token_onto_the_default_tenant_name_is_still_attributed(mcp_with_tools):
-    """A real, resolved token that happens to map onto memcp's own dev-mode
-    tenant name ('default_user') is not the dev-mode fallback — something did
-    authenticate it — so it must not be misread as unattributed. The natural
-    way this mapping arises: migrating a no-auth deployment onto tokens while
-    keeping existing data's tenant name."""
-    from memcp.http.auth import StaticResolver
-    from memcp.identity import reset_tenant, set_principal
-
+async def test_a_key_granted_the_dev_mode_space_is_attributed_by_its_own_name(
+    mcp_with_tools, tmp_path: Path
+):
+    """A keys-file key granted `default_user`, the dev-mode space, writes as itself,
+    not as `local`. The natural way this arises: moving a dev deployment onto keys
+    while keeping its existing memories."""
     mcp, _ = mcp_with_tools
-    resolved = await StaticResolver.from_env("realtoken:default_user").resolve("realtoken")
+    path = write_keys_file(
+        tmp_path / "keys.toml", ("migrated", "realtoken", "default_user", "writer")
+    )
+    resolved = load_keys(str(path)).resolve("realtoken")
     assert resolved is not None
-    tok = set_principal(resolved)
+    tok = set_key(resolved)
     try:
         await mcp.call("add_memory", content="authenticated as default_user")
         result = await mcp.call("search_memory", query="authenticated as default")
     finally:
-        reset_tenant(tok)
+        reset_key(tok)
 
     memory = result["results"][0]
-    assert memory["author"] == "default_user"
+    assert memory["author"] == "migrated"

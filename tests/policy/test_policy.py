@@ -11,7 +11,8 @@ import pytest
 
 from memcp.backends.base import RESERVED_METADATA_KEYS, MetadataPatch
 from memcp.backends.in_memory import InMemoryBackend
-from memcp.identity import DEFAULT_PRINCIPAL, Principal, reset_tenant, set_principal, set_tenant
+from memcp.http.auth import LOCAL_KEY
+from memcp.identity import reset_key, set_key
 from memcp.policy import Policy
 from memcp.types import (
     MAX_IMPORT,
@@ -22,6 +23,7 @@ from memcp.types import (
     MemoryAPIError,
     PolicyError,
 )
+from tests.keys import make_key
 
 
 @pytest.fixture
@@ -258,11 +260,11 @@ async def test_get_of_a_missing_memory_is_not_found(policy: Policy):
 @pytest.mark.parametrize("operation", BY_ID)
 async def test_a_by_id_call_on_another_tenants_memory_is_not_found(policy: Policy, operation: str):
     memory_id = await _add_one(policy)
-    token = set_tenant("someone_else")
+    token = set_key(make_key("someone_else"))
     try:
         await _refused(BY_ID[operation](policy, memory_id), "not_found")
     finally:
-        reset_tenant(token)
+        reset_key(token)
 
 
 async def test_update_of_a_missing_memory_is_not_found(policy: Policy):
@@ -736,8 +738,8 @@ async def test_a_memory_without_system_fields_passes_on_its_partition(
 # ---------------------------------------------------------------------------
 
 
-def _as(seat: str) -> Any:
-    return set_principal(Principal(tenant=TENANT, seat=seat))
+def _as(name: str) -> Any:
+    return set_key(make_key(TENANT, name=name))
 
 
 async def _stored_system(backend: InMemoryBackend, memory_id: str) -> Any:
@@ -753,7 +755,7 @@ async def test_add_stamps_the_caller_as_author_and_creator(
     try:
         memory_id = await _add_one(policy)
     finally:
-        reset_tenant(token)
+        reset_key(token)
     assert await _stored_system(backend, memory_id) == {
         "space": TENANT,
         "author": "laptop",
@@ -768,12 +770,12 @@ async def test_update_keeps_the_creator_and_stamps_the_caller(
     try:
         memory_id = await _add_one(policy)
     finally:
-        reset_tenant(token)
+        reset_key(token)
     token = _as("phone")
     try:
         await policy.update(memory_id, "changed")
     finally:
-        reset_tenant(token)
+        reset_key(token)
     assert await _stored_system(backend, memory_id) == {
         "space": TENANT,
         "author": "phone",
@@ -789,19 +791,21 @@ async def test_update_of_a_memory_without_a_creator_adds_none(
     try:
         await policy.update(memory_id, "changed")
     finally:
-        reset_tenant(token)
+        reset_key(token)
     assert await _stored_system(backend, memory_id) == {"space": TENANT, "author": "phone"}
 
 
-async def test_a_dev_mode_write_stamps_only_the_space(policy: Policy, backend: InMemoryBackend):
-    token = set_principal(DEFAULT_PRINCIPAL)
+async def test_a_dev_mode_write_is_stamped_as_the_local_key(
+    policy: Policy, backend: InMemoryBackend
+):
+    token = set_key(LOCAL_KEY)
     try:
         memory_id = await _add_one(policy)
-        stored = await backend.get(DEFAULT_PRINCIPAL.tenant, memory_id)
+        stored = await backend.get("default_user", memory_id)
     finally:
-        reset_tenant(token)
+        reset_key(token)
     assert stored is not None
-    assert stored.system == {"space": DEFAULT_PRINCIPAL.tenant}
+    assert stored.system == {"space": "default_user", "author": "local", "created_by": "local"}
 
 
 async def test_import_stamps_the_importer_whatever_the_entry_says(
@@ -813,7 +817,7 @@ async def test_import_stamps_the_importer_whatever_the_entry_says(
             [{"content": "imported", "author": "forged", "system": {"created_by": "forged"}}]
         )
     finally:
-        reset_tenant(token)
+        reset_key(token)
     assert await _stored_system(backend, outcome.imported[0]["id"]) == {
         "space": TENANT,
         "author": "importer",
@@ -826,12 +830,12 @@ async def test_an_import_overwrite_keeps_the_creator(policy: Policy, backend: In
     try:
         memory_id = await _add_one(policy, "shared fact")
     finally:
-        reset_tenant(token)
+        reset_key(token)
     token = _as("importer")
     try:
         await policy.import_memories([{"content": "shared fact"}], on_conflict="overwrite")
     finally:
-        reset_tenant(token)
+        reset_key(token)
     assert await _stored_system(backend, memory_id) == {
         "space": TENANT,
         "author": "importer",

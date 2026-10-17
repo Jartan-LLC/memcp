@@ -1,69 +1,49 @@
-"""The current request's identity, propagated through a context variable.
+"""The current request's key, propagated through a context variable.
 
-A `Principal` splits *tenant* (what scopes storage) from *seat* (who the caller
-is; author attribution stamps it onto every write). `get_tenant()` returns the
-bare tenant string; `get_principal()` returns both.
+A `Key` is a configured identity: its name is the author of every write it makes, and
+its one `Grant` names the space it reaches and the relation it holds there. The current
+key has no default: reading it when none is set raises `LookupError`, so nothing can
+run as a key it wasn't given.
 """
 
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import Any
+from typing import Literal
 
-DEFAULT_USER = "default_user"
+Relation = Literal["reader", "writer"]
 
 
 @dataclass(frozen=True)
-class Principal:
-    """A resolved caller: the tenant it scopes storage under, and the seat that
-    identifies it for attribution."""
+class Grant:
+    """Permission to use one space with one relation."""
 
-    tenant: str
-    seat: str
-
-
-DEFAULT_PRINCIPAL = Principal(tenant=DEFAULT_USER, seat=DEFAULT_USER)
-
-_principal_var: ContextVar[Principal] = ContextVar("principal")
+    space: str
+    relation: Relation
 
 
-def get_tenant() -> str:
-    """Read the current request's user_id. Falls back to default in dev mode."""
-    return _principal_var.get(DEFAULT_PRINCIPAL).tenant
+@dataclass(frozen=True)
+class Key:
+    """A configured identity: a name and the grant it holds. Never carries a secret."""
+
+    name: str
+    grant: Grant
 
 
-def get_principal() -> Principal:
-    """Read the current request's resolved principal. Falls back to default in dev mode."""
-    return _principal_var.get(DEFAULT_PRINCIPAL)
+_key_var: ContextVar[Key] = ContextVar("key")
 
 
-def is_unattributed(principal: Principal) -> bool:
-    """True when `principal` is the dev-mode fallback — nothing was actually
-    resolved, so a write made under it should not be stamped as attributed.
-
-    Identity, not equality: a real resolved `Principal` that happens to equal
-    `DEFAULT_PRINCIPAL` by value (a token mapped onto memcp's own default
-    tenant name, e.g. while migrating a no-auth deployment onto tokens) must
-    still count as attributed — that mapping is a legitimate configuration,
-    and a value comparison would misread it as the fallback. Only the literal
-    sentinel object, never rebuilt, ever satisfies this —
-    `set_principal(DEFAULT_PRINCIPAL)` is how a caller opts into it
-    deliberately."""
-    return principal is DEFAULT_PRINCIPAL
+def current_key() -> Key:
+    """The current request's key. Raises LookupError when none is set."""
+    return _key_var.get()
 
 
-def set_tenant(user_id: str) -> Any:
-    """Set the current request's principal from a bare tenant id (seat mirrors
-    tenant). Returns a reset token."""
-    return _principal_var.set(Principal(tenant=user_id, seat=user_id))
+def set_key(key: Key) -> Token[Key]:
+    """Make `key` the current request's key. Returns a token for `reset_key`."""
+    return _key_var.set(key)
 
 
-def set_principal(principal: Principal) -> Any:
-    """Set the current request's principal. Returns a reset token."""
-    return _principal_var.set(principal)
-
-
-def reset_tenant(token: Any) -> None:
-    """Reset the contextvar to its previous value."""
-    _principal_var.reset(token)
+def reset_key(token: Token[Key]) -> None:
+    """Restore the key that was current before `set_key` returned `token`."""
+    _key_var.reset(token)
