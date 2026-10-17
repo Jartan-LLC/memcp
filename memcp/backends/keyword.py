@@ -63,8 +63,15 @@ _SEGMENTED = re.compile(r"[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff]")
 _ASCII_TOKEN = re.compile(r"[a-z0-9]+")
 # Thai, Lao and Khmer repetition and abbreviation marks (ๆ ฯ ໆ ຯ ៗ): ICU keeps them in a word.
 _WORD_MARKS = frozenset("\u0e46\u0e2f\u0ec6\u0eaf\u17d7")
-# NFKC splits Thai and Lao SARA AM (ำ ຳ) in two, and ICU's dictionaries only know it whole.
-_SARA_AM = (("\u0e4d\u0e32", "\u0e33"), ("\u0ecd\u0eb2", "\u0eb3"))
+# NFKC splits letters that ICU's dictionaries only know whole, such as Thai and Lao SARA AM
+# (ำ ຳ) and Lao ໜ ໝ, so the segmented scripts get their compatibility forms back.
+_RECOMPOSE = tuple(
+    (unicodedata.normalize("NFKC", c), c)
+    for c in map(chr, [*range(0x0E00, 0x0F00), *range(0x1000, 0x10A0), *range(0x1780, 0x1800)])
+    if unicodedata.decomposition(c).startswith("<compat>")
+)
+# Text set in visual order puts a tone mark between SARA AM's halves: นํ้า for น้ำ.
+_VISUAL_SARA_AM = re.compile("([\u0e4d\u0ecd])([\u0e48-\u0e4b\u0ec8-\u0ecb])(?=[\u0e32\u0eb2])")
 # Never a token: marks a space or punctuation next to a per-character run, so the runs on
 # either side of it stay apart and no pair spans it.
 _BOUNDARY = " "
@@ -83,7 +90,8 @@ def _is_segmented(token: str) -> bool:
 
 
 def _segment(text: str) -> list[str]:
-    for split, whole in _SARA_AM:
+    text = _VISUAL_SARA_AM.sub(r"\2\1", text)
+    for split, whole in _RECOMPOSE:
         text = text.replace(split, whole)
     return [w for w in WordBreaker(text, "und") if any(c.isalnum() for c in w)]
 

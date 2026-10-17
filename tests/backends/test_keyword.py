@@ -264,6 +264,20 @@ class TestScriptsBeyondAscii:
     def test_a_vowel_nfkc_splits_is_segmented_whole(self, text: str, words: list[str]):
         assert tokenize(text) == words
 
+    @pytest.mark.parametrize(
+        ("query", "right", "wrong"),
+        [
+            ("ໝາ", "ໝາຂອງຂ້ອຍ", "ແມວຂອງຂ້ອຍ"),
+            ("ໝໍ", "ໄປຫາໝໍ", "ໄປຫາເພື່ອນ"),
+        ],
+        ids=["lao ho mo", "lao ho mo, doctor"],
+    )
+    def test_a_lao_letter_nfkc_splits_is_found(self, query: str, right: str, wrong: str):
+        assert _outranks(query, right, wrong)
+
+    def test_sara_am_in_visual_order_is_found(self):
+        assert _outranks("น้ำมัน", "ราคานํ้ามันขึ้น", "ราคาทองขึ้น")
+
     def test_a_thai_word_with_sara_am_is_found(self):
         assert _outranks("ทำงาน", "ฉันทำงานที่สำนักงาน", "ฉันไปโรงเรียน")
 
