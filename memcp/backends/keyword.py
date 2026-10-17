@@ -61,8 +61,10 @@ _UNSPACED = re.compile(
 # Scripts segmented into words by ICU's dictionaries: Thai, Lao, Myanmar, Khmer.
 _SEGMENTED = re.compile(r"[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff]")
 _ASCII_TOKEN = re.compile(r"[a-z0-9]+")
-# Thai, Lao and Khmer repetition and abbreviation marks (ๆ ฯ ໆ ៗ): ICU keeps them in a word.
-_WORD_MARKS = frozenset("\u0e46\u0e2f\u0ec6\u17d7")
+# Thai, Lao and Khmer repetition and abbreviation marks (ๆ ฯ ໆ ຯ ៗ): ICU keeps them in a word.
+_WORD_MARKS = frozenset("\u0e46\u0e2f\u0ec6\u0eaf\u17d7")
+# NFKC splits Thai and Lao SARA AM (ำ ຳ) in two, and ICU's dictionaries only know it whole.
+_SARA_AM = (("\u0e4d\u0e32", "\u0e33"), ("\u0ecd\u0eb2", "\u0eb3"))
 # Never a token: marks a space or punctuation next to a per-character run, so the runs on
 # either side of it stay apart and no pair spans it.
 _BOUNDARY = " "
@@ -81,6 +83,8 @@ def _is_segmented(token: str) -> bool:
 
 
 def _segment(text: str) -> list[str]:
+    for split, whole in _SARA_AM:
+        text = text.replace(split, whole)
     return [w for w in WordBreaker(text, "und") if any(c.isalnum() for c in w)]
 
 
@@ -89,8 +93,9 @@ def _tokenize_any(text: str) -> list[str]:
 
 
 def _tokens_of(folded: str) -> list[str]:
-    """Tokens of text already normalized and lowercased: normalizing again isn't safe,
-    since lowercasing can produce marks that NFKC then reorders."""
+    """Tokens of text already normalized, and lowercased unless the caller reads its case:
+    normalizing again isn't safe, since lowercasing can produce marks that NFKC then
+    reorders."""
     tokens: list[str] = []
     word: list[str] = []
     segment: list[str] = []

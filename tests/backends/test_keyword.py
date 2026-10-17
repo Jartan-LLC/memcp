@@ -253,6 +253,23 @@ class TestScriptsBeyondAscii:
     def test_repetition_and_abbreviation_marks_end_a_word(self, text: str, words: list[str]):
         assert tokenize(text) == words
 
+    @pytest.mark.parametrize(
+        ("text", "words"),
+        [
+            ("ฉันทำงานที่สำนักงาน", ["ฉัน", "ทำงาน", "ที่", "สำนักงาน"]),
+            ("ຂ້ອຍທຳວຽກ", ["ຂ້ອຍ", "ທຳ", "ວຽກ"]),
+        ],
+        ids=["thai sara am", "lao sara am"],
+    )
+    def test_a_vowel_nfkc_splits_is_segmented_whole(self, text: str, words: list[str]):
+        assert tokenize(text) == words
+
+    def test_a_thai_word_with_sara_am_is_found(self):
+        assert _outranks("ทำงาน", "ฉันทำงานที่สำนักงาน", "ฉันไปโรงเรียน")
+
+    def test_the_lao_ellipsis_ends_a_word(self):
+        assert tokenize("ໄປວຽງຈັນຯ") == ["ໄປ", "ວຽງຈັນ"]
+
     def test_a_word_is_found_where_a_memory_repeats_it(self):
         assert score("ช้า", "เดินช้าๆ") == 1.0
 
