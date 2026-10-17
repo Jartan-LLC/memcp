@@ -16,7 +16,7 @@ MAX_LOGGED_BODY = 2_000
 # Validation
 # ---------------------------------------------------------------------------
 
-_MEMORY_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
+_MEMORY_ID_RE = re.compile(r"[a-zA-Z0-9_\-]{1,128}")
 _NESTED_FILTER_KEYS = frozenset({"AND", "OR", "NOT", "and", "or", "not"})
 
 MAX_CONTENT_LENGTH = 100_000
@@ -38,7 +38,7 @@ SYSTEM_METADATA_KEY = f"{RESERVED_METADATA_PREFIX}system"
 
 
 def validate_memory_id(memory_id: str) -> str:
-    if not _MEMORY_ID_RE.match(memory_id):
+    if not _MEMORY_ID_RE.fullmatch(memory_id):
         raise ValueError(
             "Invalid memory_id format. Expected alphanumeric, hyphens, or "
             "underscores (max 128 chars)."

@@ -23,7 +23,7 @@ mid-task rather than read through. For getting a deployment running, see
 | `MEMCP_HOST` | No | Bind address (default: `0.0.0.0`) |
 | `MEMCP_PORT` | No | Bind port (default: `8080`) |
 | `MEMCP_ALLOWED_HOSTS` | No | Host header allow-list for DNS-rebinding protection, comma-separated, `:*` for any port. `docker-compose.yml` defaults it to `127.0.0.1:*,localhost:*`; a value replaces that. Without Docker, unset leaves the MCP SDK's rule, which is off unless `MEMCP_HOST` is loopback |
-| `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`) |
+| `MEMCP_LOG_LEVEL` | No | Log level (default: `INFO`). The [audit log](#audit-log) stays at `INFO` |
 | `MEMCP_LOG_FORMAT` | No | Log format: `json` or `plain` (default: `json`) |
 
 `.env.example` carries the same set in the shape a deployment reads it.
@@ -181,6 +181,27 @@ logs only the first failure's response, and one line counting the rest.
 
 With a keys file, a request without a bearer token, or with one no key lists, gets HTTP
 401 with the same object and the code `unauthorized`.
+
+## Audit log
+
+Every memory operation writes one record to the logger `memcp.audit`, whether it succeeds
+or is refused, at `INFO` whatever `MEMCP_LOG_LEVEL` says. A JSON log line carries the
+record as an `audit` object; a plain line carries the same fields as `field=value` text. A
+record holds no content, query or metadata. Three refusals write none, since no memory
+operation starts: a request refused with 401, a tool call whose arguments don't match its
+schema, and a `migrate()` call with a blank operator.
+
+| Field | Value |
+|---|---|
+| `operation` | `add`, `search`, `get`, `update`, `delete`, `delete_all`, `list_memories`, `history`, `entities`, `export_memories`, `import_memories` or `migrate` |
+| `key` | The key's name; for `migrate`, the operator its caller names |
+| `space` | The key's space; for `migrate`, the target space |
+| `relation` | `reader` or `writer`; `null` for `migrate` |
+| `outcome` | `ok`, or the [error code](#errors) the call returned; `validation_error` for a refused migration, `cancelled` for a call the client abandoned, `error` for an unexpected failure |
+| `ids` | The ids `add` stored, or the id `get`, `update`, `delete` or `history` named, if it is a valid id |
+| `count` | The results of `search` and `list_memories`, the memories exported, imported or migrated, the entity rows, or the memories `delete_all` deleted (`null` when the backend doesn't say) |
+| `scope` | The validated scope, for a call that takes one |
+| `source_space` | For `migrate`, the source space; otherwise `null` |
 
 ## Known limitations
 

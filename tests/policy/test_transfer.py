@@ -420,7 +420,9 @@ async def test_migrate_between_backends():
     source, target = InMemoryBackend(), InMemoryBackend()
     for i in range(3):
         await source.add(TENANT, f"fact {i}", scope={"agent_id": "a"}, infer=False)
-    report = await migrate(source, target, TENANT, source_name="src", target_name="dst")
+    report = await migrate(
+        source, target, TENANT, operator="tester", source_name="src", target_name="dst"
+    )
     assert (report.exported, report.imported, report.skipped) == (3, 3, 0)
     assert report.errors == []
     landed = await target.list_memories(TENANT)
@@ -430,7 +432,7 @@ async def test_migrate_between_backends():
 async def test_migrate_reports_an_incomplete_source():
     source, target = PagedBackend(page_size=100, incomplete=True), InMemoryBackend()
     await source.add(TENANT, "fact", infer=False)
-    report = await migrate(source, target, TENANT)
+    report = await migrate(source, target, TENANT, operator="tester")
     assert report.truncated is True
     assert report.dedup_incomplete is False
 
@@ -439,14 +441,14 @@ async def test_migrate_flags_truncation_across_pages():
     source, target = PagedBackend(page_size=2), InMemoryBackend()
     for i in range(5):
         await source.add(TENANT, f"fact {i}", infer=False)
-    report = await migrate(source, target, TENANT, limit=3)
+    report = await migrate(source, target, TENANT, operator="tester", limit=3)
     assert (report.exported, report.truncated) == (3, True)
 
 
 async def test_migrate_reports_an_incomplete_target_dedup_read():
     source, target = InMemoryBackend(), PagedBackend(page_size=100, incomplete=True)
     await source.add(TENANT, "fact", infer=False)
-    report = await migrate(source, target, TENANT)
+    report = await migrate(source, target, TENANT, operator="tester")
     assert report.truncated is False
     assert report.dedup_incomplete is True
 
@@ -454,7 +456,7 @@ async def test_migrate_reports_an_incomplete_target_dedup_read():
 async def test_migrate_into_a_different_tenant():
     source, target = InMemoryBackend(), InMemoryBackend()
     await source.add(TENANT, "carried across", infer=False)
-    report = await migrate(source, target, TENANT, target_partition=OTHER)
+    report = await migrate(source, target, TENANT, operator="tester", target_partition=OTHER)
     assert report.imported == 1
     assert (await target.list_memories(TENANT)).memories == []
     assert (await target.list_memories(OTHER)).memories[0].content == "carried across"
@@ -464,7 +466,7 @@ async def test_migrate_preserves_scope_across_duplicated_content():
     source, target = InMemoryBackend(), InMemoryBackend()
     await source.add(TENANT, "shared", scope={"agent_id": "a"}, infer=False)
     await source.add(TENANT, "shared", scope={"agent_id": "b"}, infer=False)
-    report = await migrate(source, target, TENANT)
+    report = await migrate(source, target, TENANT, operator="tester")
     assert report.imported == 2
     landed = await target.list_memories(TENANT)
     assert {m.scope["agent_id"] for m in landed.memories} == {"a", "b"}
@@ -473,8 +475,8 @@ async def test_migrate_preserves_scope_across_duplicated_content():
 async def test_migrate_is_idempotent_on_a_second_run():
     source, target = InMemoryBackend(), InMemoryBackend()
     await source.add(TENANT, "once", infer=False)
-    await migrate(source, target, TENANT)
-    second = await migrate(source, target, TENANT)
+    await migrate(source, target, TENANT, operator="tester")
+    second = await migrate(source, target, TENANT, operator="tester")
     assert (second.imported, second.skipped) == (0, 1)
     assert len((await target.list_memories(TENANT)).memories) == 1
 
@@ -483,7 +485,7 @@ async def test_migrate_copies_system_and_sets_the_target_space():
     source, target = InMemoryBackend(), InMemoryBackend()
     stamp: System = {"space": TENANT, "author": "writer", "created_by": "creator"}
     await source.add(TENANT, "moved fact", system=stamp, infer=False)
-    await migrate(source, target, TENANT, target_partition=OTHER)
+    await migrate(source, target, TENANT, operator="tester", target_partition=OTHER)
     landed = await target.list_memories(OTHER)
     assert [m.system for m in landed.memories] == [{**stamp, "space": OTHER}]
 
@@ -511,7 +513,7 @@ class RefusingBackend(UnlistableBackend):
 async def test_migrate_refuses_an_empty_or_wildcard_source(partition: str):
     source, target = UnlistableBackend(), InMemoryBackend()
     with pytest.raises(ValueError, match="empty or a wildcard"):
-        await migrate(source, target, partition)
+        await migrate(source, target, partition, operator="tester")
 
 
 @pytest.mark.parametrize("partition", ["", "*"])
@@ -519,21 +521,21 @@ async def test_migrate_refuses_an_empty_or_wildcard_target(partition: str):
     source, target = UnlistableBackend(), InMemoryBackend()
     await source.add(TENANT, "fact", infer=False)
     with pytest.raises(ValueError, match="empty or a wildcard"):
-        await migrate(source, target, TENANT, target_partition=partition)
+        await migrate(source, target, TENANT, operator="tester", target_partition=partition)
     assert (await target.list_memories(TENANT)).memories == []
 
 
 async def test_migrate_refuses_a_source_partition_its_backend_refuses():
     source, target = RefusingBackend(TENANT), InMemoryBackend()
     with pytest.raises(ValueError, match="exactly"):
-        await migrate(source, target, TENANT, target_partition=OTHER)
+        await migrate(source, target, TENANT, operator="tester", target_partition=OTHER)
 
 
 async def test_migrate_refuses_a_target_partition_its_backend_refuses_before_reading():
     source, target = UnlistableBackend(), RefusingBackend(OTHER)
     await source.add(TENANT, "fact", infer=False)
     with pytest.raises(ValueError, match="exactly"):
-        await migrate(source, target, TENANT, target_partition=OTHER)
+        await migrate(source, target, TENANT, operator="tester", target_partition=OTHER)
 
 
 # ---------------------------------------------------------------------------
@@ -563,9 +565,9 @@ async def test_migrate_refuses_a_source_memory_from_another_partition(
     source, target = ForeignPartitionBackend(), InMemoryBackend()
     await source.add(TENANT, "fact", infer=False)
     with pytest.raises(PolicyError) as refused:
-        await migrate(source, target, TENANT, target_partition=OTHER)
+        await migrate(source, target, TENANT, operator="tester", target_partition=OTHER)
     assert refused.value.code == "internal_error"
-    assert "operation=migrate " in caplog.text
+    assert "isolation_violation: operation=migrate " in caplog.text
     assert (await target.list_memories(OTHER)).memories == []
 
 
@@ -630,5 +632,5 @@ async def test_a_migration_logs_its_target_side_checks_as_migrate(
     await source.add(TENANT, "fact", infer=False)
     await target.add(OTHER, "already there", infer=False)
     with pytest.raises(PolicyError):
-        await migrate(source, target, TENANT, target_partition=OTHER)
-    assert "operation=migrate " in caplog.text
+        await migrate(source, target, TENANT, operator="tester", target_partition=OTHER)
+    assert "isolation_violation: operation=migrate " in caplog.text

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from memcp.backends.base import MemoryBackend, MetadataPatch, is_reserved_metadata_key
+from memcp.policy.audit import audited, can_record
 from memcp.policy.metadata import check_metadata_size, validate_metadata
 from memcp.policy.space import check_space, refuse_unusable_partition
 from memcp.types import (
@@ -144,6 +145,14 @@ async def build_dedup_index(
     return {dedup_key(m.content, m.scope): m for m in memories}, incomplete
 
 
+def refuse_on_conflict(backend: MemoryBackend, on_conflict: str) -> None:
+    """Raise ValueError for an `on_conflict` that `backend` can't carry out."""
+    if on_conflict not in ON_CONFLICT_CHOICES:
+        raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
+    if on_conflict == "overwrite" and "update" not in backend.capabilities():
+        raise ValueError("on_conflict='overwrite' requires the backend's update capability")
+
+
 async def import_payload(
     backend: MemoryBackend,
     user_id: str,
@@ -167,10 +176,7 @@ async def import_payload(
     names the caller in a space-check log. Only an entry's `content`, `scope` and
     `metadata` are read, so an exported `author` is never imported back.
     """
-    if on_conflict not in ON_CONFLICT_CHOICES:
-        raise ValueError(f"on_conflict must be one of {ON_CONFLICT_CHOICES}")
-    if on_conflict == "overwrite" and "update" not in backend.capabilities():
-        raise ValueError("on_conflict='overwrite' requires the backend's update capability")
+    refuse_on_conflict(backend, on_conflict)
 
     existing: dict[DedupKey, Memory] = {}
     outcome = ImportOutcome()
@@ -292,6 +298,7 @@ async def migrate(
     target: MemoryBackend,
     partition: str,
     *,
+    operator: str,
     target_partition: str | None = None,
     on_conflict: str = "skip",
     limit: int = MAX_EXPORT,
@@ -302,42 +309,60 @@ async def migrate(
     """Copy one partition's memories from `source` into `target` (GitHub #27).
 
     `target_partition` defaults to `partition`; pass it to land the memories under a
-    different partition on the target. Raises ValueError, before reading anything, for
-    an empty or `*` partition, or one its backend refuses. Both backends need the `list`
-    capability. What does not survive the trip is listed in `docs/reference.md`
-    ("Moving memories between backends"), except `author`: each copy keeps the source
-    memory's system fields, with `space` set to the target partition.
+    different partition on the target. `operator` names who runs the migration; the audit
+    record gives it as the key. Raises ValueError, before reading anything, for a blank
+    operator, logging that would drop the audit record, an empty or `*` partition, one
+    its backend refuses, or an `on_conflict` the target can't carry out. Both backends
+    need the `list` capability. What does not survive the trip is listed in
+    `docs/reference.md` ("Moving memories between backends"), except `author`: each copy
+    keeps the source memory's system fields, with `space` set to the target partition.
     """
+    if not operator.strip():
+        raise ValueError("migrate needs an operator: the name of who runs it")
+    if not can_record():
+        # migrate runs from operator code, which may never have configured logging.
+        raise ValueError(
+            "migrate writes an audit record to the logger memcp.audit at INFO, and no handler "
+            "would write it (the logger is disabled, below INFO, or has no handler at INFO): "
+            "configure logging first, for example with memcp.http.logging.setup_logging()"
+        )
     landing = partition if target_partition is None else target_partition
-    refuse_unusable_partition(source, partition)
-    refuse_unusable_partition(target, landing)
-    memories, truncated = await _list_all(source, partition, limit, "migrate")
+    with audited("migrate", operator=operator, space=landing, source_space=partition) as entry:
+        try:
+            refuse_unusable_partition(source, partition)
+            refuse_unusable_partition(target, landing)
+            refuse_on_conflict(target, on_conflict)
+        except ValueError:
+            entry.outcome = "validation_error"
+            raise
+        memories, truncated = await _list_all(source, partition, limit, "migrate")
 
-    def copy_system(index: int, stored: System | None) -> System:
-        system = System(**memories[index].system)
-        system["space"] = landing
-        return system
+        def copy_system(index: int, stored: System | None) -> System:
+            system = System(**memories[index].system)
+            system["space"] = landing
+            return system
 
-    outcome = await import_payload(
-        target,
-        landing,
-        [serialize_memory(m) for m in memories],
-        on_conflict=on_conflict,
-        scope_validator=scope_validator,
-        dedup_limit=limit,
-        stamp=copy_system,
-        operation="migrate",
-    )
-    return MigrationReport(
-        source=source_name,
-        target=target_name,
-        exported=len(memories),
-        truncated=truncated,
-        imported=len(outcome.imported),
-        skipped=len(outcome.skipped),
-        errors=outcome.errors,
-        dedup_incomplete=outcome.dedup_incomplete,
-    )
+        outcome = await import_payload(
+            target,
+            landing,
+            [serialize_memory(m) for m in memories],
+            on_conflict=on_conflict,
+            scope_validator=scope_validator,
+            dedup_limit=limit,
+            stamp=copy_system,
+            operation="migrate",
+        )
+        entry.count = len(outcome.imported)
+        return MigrationReport(
+            source=source_name,
+            target=target_name,
+            exported=len(memories),
+            truncated=truncated,
+            imported=len(outcome.imported),
+            skipped=len(outcome.skipped),
+            errors=outcome.errors,
+            dedup_incomplete=outcome.dedup_incomplete,
+        )
 
 
 def memory_by_identity(memories: Sequence[Memory]) -> dict[DedupKey, Memory]:
