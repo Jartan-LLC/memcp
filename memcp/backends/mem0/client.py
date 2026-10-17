@@ -41,7 +41,13 @@ class Mem0Client:
             raise MemoryAPIError(503, f"Network error: {e}") from e
         if resp.status_code >= 400:
             raise MemoryAPIError(resp.status_code, resp.text)
-        return resp.json() if resp.content else None
+        if not resp.content:
+            return None
+        try:
+            return resp.json()
+        except ValueError:
+            # A proxy page or a cut-off body: a bad gateway, not a caller's mistake.
+            raise MemoryAPIError(502, resp.text) from None
 
     async def close(self) -> None:
         await self._http.aclose()

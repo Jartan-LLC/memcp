@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -184,11 +184,17 @@ class Memory:
         return self.system.get("author")
 
 
+# What an add did to one memory: an extracting store can also change or remove ones it
+# already held.
+AddEvent = Literal["add", "update", "delete"]
+
+
 @dataclass
 class AddResult:
     id: str
     status: str = "ready"
     created_at: str = ""
+    event: AddEvent = "add"
 
 
 def serialize_memory(m: Memory) -> dict[str, Any]:

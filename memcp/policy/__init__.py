@@ -170,6 +170,8 @@ class Policy:
             items = result if isinstance(result, list) else [result]
             entry.ids = [item.id for item in items]
             for item in items:
+                if item.event == "delete":
+                    continue  # the store removed it; nothing is left to check
                 stored = await self._backend.get(partition, item.id)
                 check_space(stored, partition, "add", item.id)
             return result

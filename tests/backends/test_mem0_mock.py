@@ -59,6 +59,57 @@ async def test_add_returns_results(backend):
 
 
 @respx.mock
+async def test_add_reports_what_extraction_did_to_each_memory(backend):
+    """mem0 1.x's extraction can add, update or delete memories; no-change items are dropped
+    (#140)."""
+    events = [("m-a", "ADD"), ("m-u", "UPDATE"), ("m-d", "DELETE"), ("m-n", "NONE")]
+    respx.post(f"{BASE}/memories").mock(
+        return_value=httpx.Response(
+            200, json={"results": [{"id": i, "event": e, "memory": "x"} for i, e in events]}
+        )
+    )
+    results = await backend.add(USER, "a fact", infer=True)
+    assert [(r.id, r.event) for r in results] == [
+        ("m-a", "add"),
+        ("m-u", "update"),
+        ("m-d", "delete"),
+    ]
+
+
+@respx.mock
+@pytest.mark.parametrize("event", ["PENDING", None], ids=["unknown", "null"])
+async def test_an_unrecognised_add_event_is_kept_as_an_add(backend, event):
+    """Kept, so policy still fetches and space-checks the memory."""
+    respx.post(f"{BASE}/memories").mock(
+        return_value=httpx.Response(
+            200, json={"results": [{"id": "m-x", "event": event, "memory": "x"}]}
+        )
+    )
+    results = await backend.add(USER, "a fact", infer=True)
+    assert [(r.id, r.event) for r in results] == [("m-x", "add")]
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "body", [b"<html>proxy error</html>", b"{truncated"], ids=["html", "truncated"]
+)
+async def test_a_2xx_body_that_isnt_json_is_a_backend_error(backend, body):
+    """A proxy page or a cut-off body in front of mem0 fails as backend_error (#143)."""
+    respx.post(f"{BASE}/search").mock(
+        return_value=httpx.Response(200, content=body, headers={"content-type": "text/html"})
+    )
+    with pytest.raises(MemoryAPIError) as failed:
+        await backend.search(USER, "anything")
+    assert failed.value.status == 502
+
+
+@respx.mock
+async def test_add_with_null_results_stores_nothing(backend):
+    respx.post(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={"results": None}))
+    assert await backend.add(USER, "nothing here", infer=True) == []
+
+
+@respx.mock
 async def test_add_empty_extraction(backend):
     respx.post(f"{BASE}/memories").mock(return_value=httpx.Response(200, json={"results": []}))
     results = await backend.add(USER, "nothing here", infer=True)

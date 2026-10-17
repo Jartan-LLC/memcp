@@ -20,6 +20,7 @@ from memcp.backends.base import (
 from memcp.backends.mem0.client import Mem0Client
 from memcp.types import (
     SYSTEM_METADATA_KEY,
+    AddEvent,
     AddResult,
     EntitiesResult,
     HealthStatus,
@@ -41,6 +42,11 @@ logger = logging.getLogger(__name__)
 # 1000 (ALL_MEMORIES_LIMIT in its server). This is the most memories one call can
 # see, and therefore the most an export of a mem0 tenant can contain.
 LIST_CEILING = 1000
+
+# The event mem0 reports for each memory an add touched. mem0 1.x's extraction can also
+# update or delete memories the space held; v2.2.1 reports only ADD.
+_ADD_EVENTS: dict[str, AddEvent] = {"ADD": "add", "UPDATE": "update", "DELETE": "delete"}
+_NO_CHANGE_EVENTS = frozenset({"NONE", "NOOP"})
 
 
 def _concrete(value: Any) -> Any:
@@ -211,17 +217,18 @@ class Mem0Backend(MemoryBackend):
         if not isinstance(result, dict):
             logger.warning("Unexpected mem0 POST response shape: %s", type(result).__name__)
             return []
-        results = result.get("results", [])
-        if not results:
-            return []
-        return [
-            AddResult(
-                id=r["id"],
-                status="ready",
-                created_at=r.get("created_at", ""),
-            )
-            for r in results
-        ]
+        added: list[AddResult] = []
+        for r in result.get("results") or []:
+            mem0_event = str(r.get("event") or "ADD").upper()
+            if mem0_event in _NO_CHANGE_EVENTS:
+                continue
+            event = _ADD_EVENTS.get(mem0_event)
+            if event is None:
+                # Kept as an add, so policy fetches and space-checks it.
+                logger.warning("Unknown mem0 add event %r for memory %s", mem0_event, r["id"])
+                event = "add"
+            added.append(AddResult(id=r["id"], created_at=r.get("created_at", ""), event=event))
+        return added
 
     async def search(
         self,
