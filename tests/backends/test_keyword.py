@@ -295,6 +295,11 @@ class TestScriptsBeyondAscii:
     def test_sara_am_typed_before_its_tone_mark_is_respelled(self, text: str, words: list[str]):
         assert tokenize(text) == words
 
+    @pytest.mark.parametrize("tone", ["\u0e48", "\u0e49", "\u0e4a", "\u0e4b"])
+    def test_every_thai_tone_mark_on_sara_am_gets_one_spelling(self, tone: str):
+        spellings = [f"จ{tone}ำ", f"จ\u0e4d{tone}\u0e32", f"จำ{tone}"]
+        assert len({tuple(tokenize(s)) for s in spellings}) == 1
+
     def test_sara_am_in_visual_order_is_found(self):
         assert _outranks("น้ำมัน", "ราคานํ้ามันขึ้น", "ราคาทองขึ้น")
 
