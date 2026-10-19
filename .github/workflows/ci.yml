@@ -45,7 +45,7 @@ jobs:
 
       # `version-file` is required: without it this action installs uv `latest`,
       # not the ci/requirements.txt pin.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version-file: ci/requirements.txt
           enable-cache: true
@@ -73,7 +73,7 @@ jobs:
         with:
           python-version-file: .python-version
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version-file: ci/requirements.txt
           enable-cache: true
@@ -98,7 +98,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version-file: ci/requirements.txt
           enable-cache: true
@@ -125,7 +125,7 @@ jobs:
 
       # No enable-cache: this job installs only the pinned CI tools, and uv build builds
       # in its own isolated env.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version-file: ci/requirements.txt
 
@@ -148,7 +148,7 @@ jobs:
         with:
           python-version-file: .python-version
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version-file: ci/requirements.txt
           enable-cache: true
@@ -170,7 +170,7 @@ jobs:
         with:
           python-version-file: .python-version
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version-file: ci/requirements.txt
           enable-cache: true
