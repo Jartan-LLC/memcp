@@ -36,19 +36,19 @@
       "integrity": "sha256:6502c7a8c7b6a0b38bbd720d6df3d75db883c62fe5ea82e3628222addefdb443"
     },
     "ghcr.io/jartan-llc/enchantments/grimoire:1": {
-      "version": "1.0.2",
-      "resolved": "ghcr.io/jartan-llc/enchantments/grimoire@sha256:6728fa1748468664e7d87921e58945dfbaea3bc68833cab84043dce4d0889e26",
-      "integrity": "sha256:6728fa1748468664e7d87921e58945dfbaea3bc68833cab84043dce4d0889e26"
+      "version": "1.1.0",
+      "resolved": "ghcr.io/jartan-llc/enchantments/grimoire@sha256:9e22983577b4c900b4d91a43af605115b422067114d82524e5f29471009f600f",
+      "integrity": "sha256:9e22983577b4c900b4d91a43af605115b422067114d82524e5f29471009f600f"
     },
     "ghcr.io/jartan-llc/enchantments/liza-toolchain:1": {
-      "version": "1.4.0",
-      "resolved": "ghcr.io/jartan-llc/enchantments/liza-toolchain@sha256:a2526c63f92071a813c561d803750d400d9eaed193217670b21cabde1870926f",
-      "integrity": "sha256:a2526c63f92071a813c561d803750d400d9eaed193217670b21cabde1870926f"
+      "version": "1.7.0",
+      "resolved": "ghcr.io/jartan-llc/enchantments/liza-toolchain@sha256:7e6c42fc085e576349b806254afd53d4a88f62afc70d6b03c6baaddbda04515d",
+      "integrity": "sha256:7e6c42fc085e576349b806254afd53d4a88f62afc70d6b03c6baaddbda04515d"
     },
     "ghcr.io/jartan-llc/enchantments/liza:1": {
-      "version": "1.2.0",
-      "resolved": "ghcr.io/jartan-llc/enchantments/liza@sha256:f71cd0d56552b4a62819c83a144a677414a9a0a1d897c4a26515052aef6efdd7",
-      "integrity": "sha256:f71cd0d56552b4a62819c83a144a677414a9a0a1d897c4a26515052aef6efdd7"
+      "version": "1.4.0",
+      "resolved": "ghcr.io/jartan-llc/enchantments/liza@sha256:249d34193f1749764a6f1cb47efc871f949fb3a35634bb45bbf6297b702bdce6",
+      "integrity": "sha256:249d34193f1749764a6f1cb47efc871f949fb3a35634bb45bbf6297b702bdce6"
     }
   }
 }
